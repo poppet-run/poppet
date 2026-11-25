@@ -16,10 +16,117 @@ const request: ModelRequest = {
   settings: {},
 };
 
-const fixture = (catalogIds = ["gpt-6-luna", "glm-5.3", "minimax-m3"]) => {
+interface FixtureModel {
+  readonly id: string;
+  readonly name?: string;
+  readonly type?: string;
+  readonly recommended_api?: string;
+  readonly api?: Record<string, { readonly base_url: string }>;
+  readonly modalities?: {
+    readonly input: ReadonlyArray<string>;
+    readonly output: ReadonlyArray<string>;
+  };
+  readonly capabilities?: {
+    readonly tools?: { readonly supported?: boolean };
+    readonly temperature?: boolean;
+  };
+  readonly limit?: {
+    readonly context?: number | null;
+    readonly output?: number | null;
+  };
+  readonly go?: {
+    readonly monthly_usage?: Record<string, number> | null;
+  };
+}
+
+const defaultCatalog: ReadonlyArray<FixtureModel> = [
+  {
+    id: "gpt-6-luna",
+    name: "GPT-6 Luna",
+    type: "chat",
+    recommended_api: "responses",
+    api: { responses: { base_url: "https://opencode.ai/inference/go/openai/v1" } },
+    modalities: { input: ["text", "image/jpeg", "image/png"], output: ["text"] },
+    capabilities: { tools: { supported: true }, temperature: true },
+    limit: { context: 1_050_000, output: 128_000 },
+    go: { monthly_usage: { go: 15, "go-plus": 60, "go-teams": 20 } },
+  },
+  {
+    id: "glm-5.3",
+    name: "GLM-5.3",
+    type: "chat",
+    recommended_api: "chat-completions",
+    api: { "chat-completions": { base_url: "https://opencode.ai/inference/go/openai/v1" } },
+    modalities: { input: ["text"], output: ["text"] },
+    capabilities: { tools: { supported: true }, temperature: true },
+    limit: { context: 1_000_000, output: 131_072 },
+    go: { monthly_usage: { go: 200, "go-plus": 400, "go-teams": 205 } },
+  },
+  {
+    id: "claude-haiku-5-5",
+    name: "Claude Haiku 5.5",
+    type: "chat",
+    recommended_api: "messages",
+    api: { messages: { base_url: "https://opencode.ai/inference/go/anthropic/v1" } },
+    modalities: { input: ["text", "image/png", "application/pdf"], output: ["text"] },
+    capabilities: { tools: { supported: true }, temperature: false },
+    limit: { context: 1_000_000, output: 128_000 },
+    go: { monthly_usage: { go: 15, "go-plus": 60, "go-teams": 20 } },
+  },
+  {
+    id: "gemini-4-argon",
+    name: "Gemini 4 Argon",
+    type: "chat",
+    recommended_api: "interactions",
+    api: { interactions: { base_url: "https://opencode.ai/inference/go/google/v1beta" } },
+    modalities: { input: ["text", "image/webp"], output: ["text"] },
+    capabilities: { tools: { supported: true }, temperature: false },
+    limit: { context: 1_048_576, output: 65_536 },
+    go: { monthly_usage: { go: 30, "go-plus": 120, "go-teams": 35 } },
+  },
+  {
+    id: "beam-free",
+    name: "Beam Free",
+    type: "chat",
+    recommended_api: "chat-completions",
+    modalities: { input: ["text"], output: ["text"] },
+    capabilities: { tools: { supported: true }, temperature: true },
+    limit: { context: 1_048_576, output: 131_072 },
+    go: { monthly_usage: null },
+  },
+  {
+    id: "jev-1.14",
+    name: "Jev 1.14",
+    type: "decision",
+    recommended_api: "systemone",
+    modalities: { input: ["text"], output: ["decision"] },
+    capabilities: { tools: { supported: false }, temperature: false },
+    limit: { context: 64_000 },
+    go: { monthly_usage: { go: 10, "go-plus": 40, "go-teams": 15 } },
+  },
+  {
+    id: "text-embedding-3-small",
+    name: "text-embedding-3-small",
+    type: "embedding",
+    recommended_api: "embeddings",
+    modalities: { input: ["text"], output: ["embedding"] },
+    capabilities: { tools: { supported: false }, temperature: false },
+    limit: { context: 8192, output: 0 },
+    go: { monthly_usage: { go: 10, "go-plus": 40, "go-teams": 15 } },
+  },
+];
+
+const fixture = (options?: {
+  readonly catalog?: (authorization: string | null) => ReadonlyArray<FixtureModel>;
+  readonly token?: () => string | null;
+}) => {
   const requests: Array<{ path: string; headers: Headers; body: Schema.JsonObject }> = [];
+  const catalogAuthHeaders: Array<string | null> = [];
   let keyReads = 0;
   let catalogReads = 0;
+
+  const catalogFor = options?.catalog ?? (() => defaultCatalog);
+  const readToken = options?.token ?? (() => "go-test-secret");
 
   const http: HttpFetch = async (input, init) => {
     const incoming =
@@ -30,11 +137,13 @@ const fixture = (catalogIds = ["gpt-6-luna", "glm-5.3", "minimax-m3"]) => {
     if (path.endsWith("/models")) {
       catalogReads++;
       expect(incoming.headers.get("user-agent")).toBe("poppet/0.0.0");
-      expect(incoming.headers.get("authorization")).toBeNull();
+      const authorization = incoming.headers.get("authorization");
+      catalogAuthHeaders.push(authorization);
+      const entries = catalogFor(authorization);
 
       return Response.json({
         object: "list",
-        data: catalogIds.map((id) => ({ id, object: "model" })),
+        data: entries.map((entry) => ({ object: "model", ...entry })),
       });
     }
 
@@ -112,12 +221,24 @@ const fixture = (catalogIds = ["gpt-6-luna", "glm-5.3", "minimax-m3"]) => {
   const key = Effect.sync(() => {
     keyReads++;
 
-    return Redacted.make("go-test-secret");
+    return Redacted.make(readToken() ?? "go-test-secret");
   });
 
-  const provider = makeOpenCodeProvider(key, http, "https://go.invalid/v1");
+  const optionalKey = Effect.sync(() => {
+    const token = readToken();
 
-  return { provider, requests, keyReads: () => keyReads, catalogReads: () => catalogReads };
+    return token === null ? null : Redacted.make(token);
+  });
+
+  const provider = makeOpenCodeProvider(key, http, "https://go.invalid/v1", optionalKey);
+
+  return {
+    provider,
+    requests,
+    catalogAuthHeaders,
+    keyReads: () => keyReads,
+    catalogReads: () => catalogReads,
+  };
 };
 
 describe("makeOpenCodeProvider", () => {
@@ -149,6 +270,8 @@ describe("makeOpenCodeProvider", () => {
           }),
         );
       },
+      undefined,
+      Effect.succeed(null),
     );
 
     const result = await Effect.runPromise(
@@ -200,29 +323,127 @@ describe("makeOpenCodeProvider", () => {
     },
   );
 
-  test("when discovering models without credentials, returns only the supported model and protocol set", async () => {
-    const harness = fixture();
+  test("when discovering models without credentials, returns public paid chat models with capabilities", async () => {
+    const harness = fixture({ token: () => null });
     const models = await Effect.runPromise(harness.provider.models);
 
-    expect(models.map((model) => model.id)).toEqual(["gpt-6-luna", "glm-5.3"]);
+    expect(harness.catalogAuthHeaders).toEqual([null]);
+    expect(models).toEqual([
+      {
+        provider: "opencode-go",
+        id: "gpt-6-luna",
+        name: "GPT-6 Luna",
+        capabilities: {
+          tools: true,
+          images: true,
+          generationSettings: ["temperature", "maxOutputTokens"],
+          contextWindow: 1_050_000,
+          maxOutputTokens: 128_000,
+        },
+      },
+      {
+        provider: "opencode-go",
+        id: "glm-5.3",
+        name: "GLM-5.3",
+        capabilities: {
+          tools: true,
+          images: false,
+          generationSettings: ["temperature", "maxOutputTokens"],
+          contextWindow: 1_000_000,
+          maxOutputTokens: 131_072,
+        },
+      },
+      {
+        provider: "opencode-go",
+        id: "claude-haiku-5-5",
+        name: "Claude Haiku 5.5",
+        capabilities: {
+          tools: true,
+          images: true,
+          generationSettings: ["maxOutputTokens"],
+          contextWindow: 1_000_000,
+          maxOutputTokens: 128_000,
+        },
+      },
+      {
+        provider: "opencode-go",
+        id: "gemini-4-argon",
+        name: "Gemini 4 Argon",
+        capabilities: {
+          tools: true,
+          images: true,
+          generationSettings: ["maxOutputTokens"],
+          contextWindow: 1_048_576,
+          maxOutputTokens: 65_536,
+        },
+      },
+    ]);
     expect(models.every((model) => !("protocol" in model))).toBe(true);
     expect(harness.keyReads()).toBe(0);
   });
 
-  test.each(["gpt-6-luna", "glm-5.3"])(
-    "when %s is resolved, completes the tool exchange on its documented endpoint",
-    async (modelId) => {
+  test("when credentials are configured or change, authenticates catalog discovery and isolates cached catalogs per key", async () => {
+    let activeToken: string | null = null;
+
+    const catalogsByAuth = new Map<string, ReadonlyArray<FixtureModel>>([
+      ["Bearer workspace-a", defaultCatalog.filter((entry) => entry.id === "glm-5.3")],
+      ["Bearer workspace-b", defaultCatalog.filter((entry) => entry.id === "claude-haiku-5-5")],
+    ]);
+
+    const harness = fixture({
+      token: () => activeToken,
+      catalog: (authorization) =>
+        authorization === null
+          ? defaultCatalog
+          : (catalogsByAuth.get(authorization) ?? defaultCatalog),
+    });
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const publicModel = yield* harness.provider.resolve("gpt-6-luna");
+        expect(publicModel.description.id).toBe("gpt-6-luna");
+
+        activeToken = "workspace-a";
+        const workspaceAModels = yield* harness.provider.models;
+        expect(workspaceAModels.map((model) => model.id)).toEqual(["glm-5.3"]);
+
+        const workspaceAModel = yield* harness.provider.resolve("glm-5.3");
+        expect(workspaceAModel.description.id).toBe("glm-5.3");
+        expect(harness.catalogReads()).toBe(2);
+
+        activeToken = "workspace-b";
+        const workspaceBModel = yield* harness.provider.resolve("claude-haiku-5-5");
+        expect(workspaceBModel.description.id).toBe("claude-haiku-5-5");
+        expect(harness.catalogReads()).toBe(3);
+
+        const rejected = yield* harness.provider.resolve("glm-5.3").pipe(Effect.result);
+        expect(rejected).toHaveProperty("failure.reason", "invalid-request");
+      }).pipe(Effect.provide(TestClock.layer())),
+    );
+
+    expect(harness.catalogAuthHeaders).toEqual([
+      null,
+      "Bearer workspace-a",
+      "Bearer workspace-b",
+      "Bearer workspace-b",
+    ]);
+  });
+
+  test.each([
+    { modelId: "gpt-6-luna", endpoint: "/responses" },
+    { modelId: "glm-5.3", endpoint: "/chat/completions" },
+    { modelId: "claude-haiku-5-5", endpoint: "/chat/completions" },
+    { modelId: "gemini-4-argon", endpoint: "/chat/completions" },
+  ])(
+    "when $modelId is resolved, completes the tool exchange on $endpoint",
+    async ({ modelId, endpoint }) => {
       const harness = fixture();
       const model = await Effect.runPromise(harness.provider.resolve(modelId));
       expect(harness.keyReads()).toBe(0);
       await Effect.runPromise(verifyModel(model));
 
       expect(harness.requests).toHaveLength(2);
-      expect(
-        harness.requests.every((item) =>
-          item.path.endsWith(modelId === "gpt-6-luna" ? "/responses" : "/chat/completions"),
-        ),
-      ).toBe(true);
+      expect(harness.requests.every((item) => item.path.endsWith(endpoint))).toBe(true);
       expect(harness.requests.every((item) => item.body.model === modelId)).toBe(true);
       expect(
         harness.requests.every(
@@ -242,9 +463,9 @@ describe("makeOpenCodeProvider", () => {
     },
   );
 
-  test("when settings are unsupported, rejects them before reading credentials", async () => {
+  test("when settings are unsupported, rejects them before reading inference credentials", async () => {
     const harness = fixture();
-    const model = await Effect.runPromise(harness.provider.resolve("gpt-6-luna"));
+    const model = await Effect.runPromise(harness.provider.resolve("claude-haiku-5-5"));
 
     await expect(
       Effect.runPromise(completeModel(model, { ...request, settings: { temperature: 1 } })),
@@ -253,17 +474,31 @@ describe("makeOpenCodeProvider", () => {
     expect(harness.requests).toHaveLength(0);
   });
 
-  test("when a model is unsupported or absent from the catalog, rejects it without selecting an alternative", async () => {
-    const harness = fixture(["glm-5.3"]);
+  test("when a model is free-tier, non-chat, or absent from the catalog, rejects it without selecting an alternative", async () => {
+    const harness = fixture({
+      catalog: () => defaultCatalog.filter((entry) => entry.id !== "gpt-6-luna"),
+    });
 
-    await expect(Effect.runPromise(harness.provider.resolve("minimax-m3"))).rejects.toMatchObject({
-      reason: "invalid-request",
-    });
-    expect(harness.catalogReads()).toBe(0);
-    await expect(Effect.runPromise(harness.provider.resolve("gpt-6-luna"))).rejects.toMatchObject({
-      reason: "invalid-request",
-    });
+    for (const modelId of ["beam-free", "jev-1.14", "text-embedding-3-small", "gpt-6-luna"]) {
+      await expect(Effect.runPromise(harness.provider.resolve(modelId))).rejects.toMatchObject({
+        reason: "invalid-request",
+      });
+    }
+
     expect(harness.requests).toHaveLength(0);
+  });
+
+  test("when the remote catalog has no decodable entries, fails with invalid-request", async () => {
+    const provider = makeOpenCodeProvider(
+      Effect.die("Key must not be read"),
+      async () => Response.json({ object: "list", data: [{ id: "glm-5.3" }] }),
+      "https://go.invalid/v1",
+      Effect.succeed(null),
+    );
+
+    await expect(Effect.runPromise(provider.models)).rejects.toMatchObject({
+      reason: "invalid-request",
+    });
   });
 
   test("when resolving models repeatedly, caches catalog lookups for 60 seconds and refreshes on expiry or explicit listing", async () => {

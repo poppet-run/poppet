@@ -335,4 +335,73 @@ describe("apiKeyProvider", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  test("when reading the optional key, returns null without credentials and surfaces saved or environment keys", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-optional-key-provider-"));
+    const observed: Array<string | null> = [];
+
+    const { registration } = apiKeyProvider({
+      id: "test-provider",
+      name: "Test provider",
+      environment: "TEST_PROVIDER_KEY",
+      make: (_key, optionalKey) => ({
+        id: "test-provider",
+        models: optionalKey.pipe(
+          Effect.tap((value) =>
+            Effect.sync(() => observed.push(value === null ? null : Redacted.value(value))),
+          ),
+          Effect.as([]),
+        ),
+        resolve: () => Effect.die("No model resolution expected"),
+      }),
+    });
+
+    try {
+      const [provider, connection] = await Effect.runPromise(
+        Effect.all([Provider, ProviderConnection]).pipe(
+          Effect.provide(registration.layer),
+          Effect.provideService(ProviderEnvironment, {
+            applicationName: "Test",
+            dataDirectory: directory,
+          }),
+        ),
+      );
+
+      await Effect.runPromise(provider.models);
+      await Effect.runPromise(
+        connection.login({ openBrowser: true, callbackPort: null }).pipe(
+          Effect.provideService(CredentialInput, {
+            readKey: () => Effect.succeed(Redacted.make("saved-key")),
+            readLine: () => Effect.never,
+          }),
+        ),
+      );
+      await Effect.runPromise(provider.models);
+      await Effect.runPromise(
+        provider.models.pipe(
+          Effect.provideService(
+            ConfigProvider.ConfigProvider,
+            ConfigProvider.fromEnv({ env: { TEST_PROVIDER_KEY: "env-key" } }),
+          ),
+        ),
+      );
+      await expect(
+        Effect.runPromise(
+          provider.models.pipe(
+            Effect.provideService(
+              ConfigProvider.ConfigProvider,
+              ConfigProvider.fromEnv({
+                env: { TEST_PROVIDER_KEY: "" },
+                preserveEmptyStrings: true,
+              }),
+            ),
+          ),
+        ),
+      ).rejects.toMatchObject({ reason: "authentication" });
+
+      expect(observed).toEqual([null, "saved-key", "env-key"]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });

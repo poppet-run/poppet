@@ -1,104 +1,183 @@
+import { createHash } from "node:crypto";
+
 import { apiKeyProvider } from "@poppet/credentials";
-import type { ProviderError } from "@poppet/provider";
-import { ModelDescription, invalidRequest, userAgent } from "@poppet/provider";
-import type { HttpFetch, ModelOperations, ProviderOperations } from "@poppet/provider";
+import type {
+  HttpFetch,
+  ModelDescription,
+  ModelOperations,
+  ProviderError,
+  ProviderOperations,
+} from "@poppet/provider";
+import { invalidRequest, userAgent } from "@poppet/provider";
 import {
-  openAIClient,
-  fetchModelCatalog,
-  createCatalogCache,
-  inferenceFailure,
   chatCompletionsModel,
+  createCatalogCache,
+  fetchModelCatalog,
+  inferenceFailure,
+  openAIClient,
   responsesModel,
 } from "@poppet/provider/protocol";
-import type { Redacted } from "effect";
-import { Effect, Schema } from "effect";
+import { Effect, Option, Redacted, Schema } from "effect";
 
-import { sessionHeaders, goOptions } from "#src/protocol";
+import { goOptions, sessionHeaders } from "#src/protocol";
 
 export type { HttpFetch } from "@poppet/provider";
 
-const Catalog = Schema.Struct({ data: Schema.Array(Schema.Struct({ id: Schema.NonEmptyString })) });
+const supportedImageTypes = new Set<string>(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
-const supportedModels: ReadonlyArray<
-  ModelDescription & { readonly protocol: "responses" | "chat-completions" }
-> = [
-  {
-    provider: "opencode-go",
-    id: "gpt-6-luna",
-    name: "GPT 6 Luna",
-    protocol: "responses",
-    capabilities: {
-      tools: true,
-      images: false,
-      generationSettings: ["maxOutputTokens"],
-      contextWindow: null,
-      maxOutputTokens: null,
-    },
-  },
-  {
-    provider: "opencode-go",
-    id: "glm-5.3",
-    name: "GLM-5.3",
-    protocol: "chat-completions",
-    capabilities: {
-      tools: true,
-      images: false,
-      generationSettings: ["temperature", "maxOutputTokens"],
-      contextWindow: null,
-      maxOutputTokens: null,
-    },
-  },
-];
+const CatalogModel = Schema.Struct({
+  id: Schema.NonEmptyString,
+  name: Schema.optionalKey(Schema.NullOr(Schema.NonEmptyString)),
+  type: Schema.String,
+  modalities: Schema.Struct({
+    input: Schema.Array(Schema.String),
+    output: Schema.Array(Schema.String),
+  }),
+  capabilities: Schema.Struct({
+    tools: Schema.optionalKey(
+      Schema.Struct({
+        supported: Schema.optionalKey(Schema.Boolean),
+      }),
+    ),
+    temperature: Schema.optionalKey(Schema.Boolean),
+  }),
+  limit: Schema.optionalKey(
+    Schema.Struct({
+      context: Schema.optionalKey(Schema.NullOr(Schema.Natural)),
+      output: Schema.optionalKey(Schema.NullOr(Schema.Natural)),
+    }),
+  ),
+  recommended_api: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  api: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
+  go: Schema.optionalKey(
+    Schema.Struct({
+      monthly_usage: Schema.optionalKey(Schema.NullOr(Schema.Unknown)),
+    }),
+  ),
+});
 
-const catalogCache = createCatalogCache<ModelDescription>();
+const Catalog = Schema.Struct({ data: Schema.Array(Schema.Unknown) });
+
+const supportsChat = (model: typeof CatalogModel.Type) =>
+  model.type === "chat" &&
+  model.modalities.input.includes("text") &&
+  model.modalities.output.length === 1 &&
+  model.modalities.output[0] === "text" &&
+  model.go?.monthly_usage !== null;
+
+const protocolFor = (model: typeof CatalogModel.Type): "responses" | "chat-completions" =>
+  model.recommended_api === "responses" ||
+  ((model.recommended_api === undefined || model.recommended_api === null) &&
+    model.api !== undefined &&
+    "responses" in model.api)
+    ? "responses"
+    : "chat-completions";
+
+const describeModel = (model: typeof CatalogModel.Type): ModelDescription => {
+  const generationSettings: Array<ModelDescription["capabilities"]["generationSettings"][number]> =
+    [];
+
+  if (model.capabilities.temperature === true) {
+    generationSettings.push("temperature");
+  }
+
+  generationSettings.push("maxOutputTokens");
+
+  const contextWindow =
+    model.limit?.context !== undefined && model.limit.context !== null && model.limit.context > 0
+      ? model.limit.context
+      : null;
+
+  const maxOutputTokens =
+    model.limit?.output !== undefined && model.limit.output !== null && model.limit.output > 0
+      ? model.limit.output
+      : null;
+
+  return {
+    provider: "opencode-go",
+    id: model.id,
+    name: model.name ?? model.id,
+    capabilities: {
+      tools: model.capabilities.tools?.supported === true,
+      images: model.modalities.input.some(
+        (modality) => modality === "image" || supportedImageTypes.has(modality),
+      ),
+      generationSettings,
+      contextWindow,
+      maxOutputTokens,
+    },
+  };
+};
+
+const catalogCache = createCatalogCache<typeof CatalogModel.Type>();
+
+const cacheKeyFor = (baseUrl: string, token: Redacted.Redacted<string> | null) =>
+  token === null
+    ? `${baseUrl}\0public`
+    : `${baseUrl}\0${createHash("sha256").update(Redacted.value(token)).digest("hex")}`;
 
 export const makeOpenCodeProvider = (
   key: Effect.Effect<Redacted.Redacted<string>, ProviderError>,
   http: HttpFetch = fetch,
-  baseUrl = "https://opencode.ai/inference/go/v1",
-): ProviderOperations => {
-  const load = fetchModelCatalog({
-    provider: "opencode-go",
-    label: "OpenCode Go",
-    url: `${baseUrl}/models`,
-    http,
-    headers: { "User-Agent": userAgent },
-    schema: Catalog,
-    failure: (cause) => inferenceFailure("opencode-go", cause),
-  }).pipe(
-    Effect.map((catalog) =>
-      supportedModels
-        .values()
-        .filter((model) => catalog.data.some((entry) => entry.id === model.id))
-        .map((model) => Schema.decodeUnknownSync(ModelDescription)(model))
-        .toArray(),
+  baseUrl = "https://opencode.ai/inference/go/openai/v1",
+  optionalKey: Effect.Effect<Redacted.Redacted<string> | null, ProviderError> = key.pipe(
+    Effect.catchIf(
+      (error) => error.reason === "authentication",
+      () => Effect.succeed(null),
     ),
-  );
+  ),
+): ProviderOperations => {
+  const load = (token: Redacted.Redacted<string> | null) =>
+    fetchModelCatalog({
+      provider: "opencode-go",
+      label: "OpenCode Go",
+      url: `${baseUrl}/models`,
+      http,
+      headers:
+        token === null
+          ? { "User-Agent": userAgent }
+          : { "User-Agent": userAgent, Authorization: `Bearer ${Redacted.value(token)}` },
+      schema: Catalog,
+      failure: (cause) => inferenceFailure("opencode-go", cause),
+    }).pipe(
+      Effect.flatMap((value) => {
+        const models = value.data.flatMap((entry) => {
+          const model = Schema.decodeUnknownOption(CatalogModel)(entry);
 
-  const readCatalog = catalogCache({ http, key: baseUrl, load });
-  const models = readCatalog();
+          return Option.isSome(model) ? [model.value] : [];
+        });
+
+        return models.length === 0 && value.data.length > 0
+          ? Effect.fail(
+              invalidRequest("opencode-go", "OpenCode Go returned an unsupported model catalog."),
+            )
+          : Effect.succeed(models.filter(supportsChat));
+      }),
+    );
+
+  const readCatalog = (requested?: string) =>
+    Effect.gen(function* () {
+      const token = yield* optionalKey;
+
+      return yield* catalogCache({
+        http,
+        key: cacheKeyFor(baseUrl, token),
+        load: load(token),
+      })(requested);
+    });
+
+  const models = readCatalog().pipe(Effect.map((entries) => entries.map(describeModel)));
 
   const resolve = (modelId: string) =>
     Effect.gen(function* () {
-      const supported = supportedModels.find((model) => model.id === modelId);
-
-      if (!supported) {
-        return yield* Effect.fail(
-          invalidRequest(
-            "opencode-go",
-            "This OpenCode Go model is not supported yet. Choose gpt-6-luna or glm-5.3.",
-          ),
-        );
-      }
-
       const catalog = yield* readCatalog(modelId);
-      const description = catalog.find((model) => model.id === modelId);
+      const selected = catalog.find((model) => model.id === modelId);
 
-      if (!description) {
+      if (!selected) {
         return yield* Effect.fail(
           invalidRequest(
             "opencode-go",
-            "The selected model is absent from the OpenCode Go catalog.",
+            "Choose a chat model ID from the OpenCode Go catalog. No model fallback is allowed.",
           ),
         );
       }
@@ -109,8 +188,10 @@ export const makeOpenCodeProvider = (
         ),
       );
 
+      const description = describeModel(selected);
+
       const model =
-        supported.protocol === "responses"
+        protocolFor(selected) === "responses"
           ? responsesModel(description, client, { headers: sessionHeaders })
           : chatCompletionsModel(description, client, "max_tokens", goOptions);
 
@@ -124,5 +205,5 @@ export const { registration: openCodeGo } = apiKeyProvider({
   id: "opencode-go",
   name: "OpenCode Go",
   environment: "POPPET_OPENCODE_GO_API_KEY",
-  make: makeOpenCodeProvider,
+  make: (key, optionalKey) => makeOpenCodeProvider(key, fetch, undefined, optionalKey),
 });

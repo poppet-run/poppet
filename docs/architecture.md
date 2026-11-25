@@ -311,18 +311,19 @@ by index when the terminal snapshot omits them, along with the complete tool and
 reasoning history required for continuation.
 [OpenAI inference requirements](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
 
-OpenCode Go uses an API key and documents Responses, Chat Completions, and
-Anthropic Messages endpoints depending on the model. Its adapter selects the
-protocol per model and sends a Poppet user agent and a stable
-`x-opencode-session` conversation ID. Start with an explicit supported
-model/protocol set and expand it as each protocol passes validation. See the
-provider documentation for usage requirements.
-[OpenCode Go requirements](https://opencode.ai/v2/docs/console/go/)
-
-The first Go model set is `gpt-6-luna` using Responses and `glm-5.3` using
-Chat Completions. Only these models are listed from the remote public catalog;
-unrecognized models and Messages protocol models are rejected. The key is read
-from `POPPET_OPENCODE_GO_API_KEY` or protected API-key storage only when inference begins.
+OpenCode Go uses an API key and discovers chat models from
+`https://opencode.ai/inference/go/openai/v1/models`. When an API key is configured,
+discovery authenticates with that key so OpenCode filters the catalog to the models
+enabled for the user's workspace, caching results per credential; without a key, it
+falls back to the public Go catalog. Non-chat models (decision and embedding) and
+free-tier models restricted to OpenCode's own app are excluded. Models whose
+recommended API is Responses route through the Responses adapter; other chat models
+route through Chat Completions (using OpenCode Console's server-side protocol
+translation for Messages and Gemini models). Both protocols send the Poppet user
+agent and a stable `x-opencode-session` conversation ID. Inference reads the required
+key from `POPPET_OPENCODE_GO_API_KEY` or protected API-key storage. See the provider
+documentation for usage requirements.
+[OpenCode Go requirements](https://opencode.ai/docs/console/go/)
 
 The reusable protocol adapters in `@poppet/provider/protocol` bind a model
 description and a supplied client Effect. Both providers reuse Responses parsing;

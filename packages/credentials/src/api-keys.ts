@@ -149,25 +149,27 @@ export const saveApiKey = (provider: ProviderId) =>
     yield* ApiKeyStore.use((store) => store.write(provider, key));
   });
 
+export const loadOptionalApiKey = (provider: ProviderId, environment: string) =>
+  findApiKey(provider, environment).pipe(
+    Effect.provide(ApiKeyStoreLive),
+    Effect.map(({ key }) => key),
+    Effect.mapError((error) => (error instanceof ProviderError ? error : storageError(provider))),
+  );
+
 export const loadApiKey = (provider: ProviderId, environment: string) =>
-  Effect.gen(function* () {
-    const { key } = yield* findApiKey(provider, environment).pipe(
-      Effect.provide(ApiKeyStoreLive),
-      Effect.mapError((error) => (error instanceof ProviderError ? error : storageError(provider))),
-    );
-
-    if (key !== null) {
-      return key;
-    }
-
-    return yield* Effect.fail(
-      new ProviderError({
-        provider,
-        reason: "authentication",
-        message: `Run provider login ${provider} or set ${environment}.`,
-      }),
-    );
-  });
+  loadOptionalApiKey(provider, environment).pipe(
+    Effect.flatMap((key) =>
+      key !== null
+        ? Effect.succeed(key)
+        : Effect.fail(
+            new ProviderError({
+              provider,
+              reason: "authentication",
+              message: `Run provider login ${provider} or set ${environment}.`,
+            }),
+          ),
+    ),
+  );
 
 export const makeApiKeyConnection = (provider: ProviderOperations, environment: string) =>
   Effect.gen(function* () {
@@ -221,16 +223,21 @@ export const apiKeyProvider = (options: {
   readonly environment: string;
   readonly make: (
     key: Effect.Effect<Redacted.Redacted<string>, ProviderError>,
+    optionalKey: Effect.Effect<Redacted.Redacted<string> | null, ProviderError>,
   ) => ProviderOperations;
 }) => {
   const key = loadApiKey(options.id, options.environment);
+  const optionalKey = loadOptionalApiKey(options.id, options.environment);
 
   const inference = Layer.effect(
     Provider,
     Effect.gen(function* () {
       const environment = yield* ProviderEnvironment;
 
-      return options.make(key.pipe(Effect.provideService(ProviderEnvironment, environment)));
+      return options.make(
+        key.pipe(Effect.provideService(ProviderEnvironment, environment)),
+        optionalKey.pipe(Effect.provideService(ProviderEnvironment, environment)),
+      );
     }),
   );
 
