@@ -10,8 +10,12 @@ import { boundedFetch } from "#src/transport";
 
 const loopback = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
-const blocked = () =>
-  new Error("OAuth endpoints must use public HTTPS or explicitly configured loopback.");
+export class BlockedOAuthEndpoint extends Error {
+  override readonly message =
+    "OAuth endpoints must use public HTTPS or explicitly configured loopback.";
+}
+
+const blocked = () => new BlockedOAuthEndpoint();
 
 export const oauthAddress = async (server: URL, endpoint: URL, signal: AbortSignal) => {
   signal.throwIfAborted();
