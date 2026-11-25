@@ -5,10 +5,12 @@ import { WorkerRequestError } from "@poppet/worker";
 import { Console, Effect } from "effect";
 
 import type { ChatCommand } from "#src/commands/chat/chat";
+import { renderMascot } from "#src/commands/chat/mascot";
+import type { MascotExpression } from "#src/commands/chat/mascot";
 import { interactiveChat } from "#src/commands/chat/prompt";
 import { ChatTerminal } from "#src/commands/chat/terminal";
 
-const fixture = (color = false) => {
+const fixture = (color = false, expression?: MascotExpression) => {
   let frame = "";
   let exits = 0;
 
@@ -30,6 +32,8 @@ const fixture = (color = false) => {
       exits++;
     },
     color,
+    undefined,
+    expression,
   );
 
   return {
@@ -431,6 +435,59 @@ describe("ChatTerminal", () => {
       expect(exits()).toBe(1);
     } finally {
       terminal.close();
+    }
+  });
+
+  test("when welcome renders with colour enabled, shows the chosen mascot expression and adapts to width", () => {
+    const happy = fixture(true, "happy");
+    const wink = fixture(true, "wink");
+
+    try {
+      happy.output.columns = 70;
+      happy.output.rows = 20;
+      wink.output.columns = 70;
+      wink.output.rows = 20;
+
+      Effect.runSync(happy.terminal.welcome("/attach <path> adds a file."));
+      Effect.runSync(wink.terminal.welcome("/attach <path> adds a file."));
+
+      expect(happy.screen()).toContain("/attach <path> adds a file.");
+      expect(wink.screen()).toContain("/attach <path> adds a file.");
+      expect(happy.frame()).toContain(` ${renderMascot("happy", "truecolor")[2]!}`);
+      expect(wink.frame()).toContain(` ${renderMascot("wink", "truecolor")[2]!}`);
+      expect(happy.frame()).not.toBe(wink.frame());
+
+      happy.output.columns = 30;
+      const stacked = happy.screen().split("\r\n");
+      expect(stacked.every((line) => Bun.stringWidth(line) <= 29)).toBe(true);
+      expect(happy.frame()).toContain(` ${renderMascot("happy", "truecolor")[0]!}`);
+
+      happy.output.columns = 22;
+      const narrow = happy.screen().split("\r\n");
+      expect(narrow.every((line) => Bun.stringWidth(line) <= 21)).toBe(true);
+      expect(happy.frame()).not.toContain("█");
+    } finally {
+      happy.terminal.close();
+      wink.terminal.close();
+    }
+  });
+
+  test("when colour is disabled or limited to 16 colours, omits the mascot from the welcome banner", () => {
+    const noColor = fixture(false, "happy");
+    const basicColor = fixture(true, "happy");
+    basicColor.output.hasColors = (count?: number) => (count ?? 16) <= 16;
+
+    try {
+      Effect.runSync(noColor.terminal.welcome("/attach <path> adds a file."));
+      Effect.runSync(basicColor.terminal.welcome("/attach <path> adds a file."));
+
+      expect(noColor.screen()).toContain("/attach <path> adds a file.");
+      expect(noColor.frame()).not.toContain("▀");
+      expect(basicColor.screen()).toContain("/attach <path> adds a file.");
+      expect(basicColor.frame()).not.toContain("▀");
+    } finally {
+      noColor.terminal.close();
+      basicColor.terminal.close();
     }
   });
 });

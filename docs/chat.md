@@ -60,6 +60,9 @@ poppet chat interactive $session_id
 ```
 
 The conversation appears above a bordered input box at the bottom of the terminal.
+On 256-colour and truecolour terminals, the welcome banner opens with the coloured
+Poppet mascot using a randomly chosen expression each time the prompt starts; narrow
+terminals stack or omit the artwork.
 Messages have bold yellow `You` and bold cyan `Poppet` labels, with blank lines
 between them. Instructions,
 attachments, and session details use neutral colours; errors use red. `NO_COLOR`
