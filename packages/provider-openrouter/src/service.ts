@@ -151,5 +151,5 @@ export const { registration: openRouter } = apiKeyProvider({
   id: "openrouter",
   name: "OpenRouter",
   environment: "POPPET_OPENROUTER_API_KEY",
-  make: makeOpenRouterProvider,
+  make: (key) => makeOpenRouterProvider(key),
 });
