@@ -13,15 +13,15 @@
   ],
   "type": "module",
   "scripts": {
-    "typecheck": "bun --check && effect-tsgo tsc && bun run --workspaces typecheck",
-    "lint": "oxlint .",
+    "typecheck": "bun --check && bun run --workspaces typecheck",
+    "lint": "oxlint --deny-warnings .",
     "lint:fix": "oxlint --fix .",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "test": "bun run build:web && bun --no-env-file tools/testing/run.ts --parallel=4 --max-concurrency=2",
     "check": "bun run format:check && bun run lint && bun run typecheck && bun run test",
     "build:web": "bun run --cwd apps/web build",
-    "prepare": "lefthook install"
+    "prepare": "test x\"$CI\" != x || test ! -e .git || lefthook install"
   },
   "devDependencies": {
     "@cloudflare/oxlint-config": "0.2.0",
