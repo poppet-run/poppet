@@ -8,7 +8,7 @@ import { readProtectedFile, writeFileAtomic } from "@poppet/io";
 import { MCPServers, mcpFileValue } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Layer, Schedule, Schema } from "effect";
 
-import { QuietHours } from "#src/quiet-hours";
+import { QuietHours, TimeZone } from "#src/quiet-hours";
 
 export const ConfigText = Schema.NonEmptyString.check(Schema.isTrimmed());
 
@@ -35,6 +35,7 @@ const FileSettings = Schema.Struct({
   applicationName: Schema.optionalKey(ConfigText),
   provider: Schema.optionalKey(ConfigText),
   model: Schema.optionalKey(ConfigText),
+  timeZone: Schema.optionalKey(TimeZone),
   webSearchProvider: Schema.optionalKey(Schema.Literals(["brave", "kagi"])),
   mcpServers: Schema.optionalKey(MCPServers),
   gatewayPackages: Schema.optionalKey(Schema.Array(ConfigText)),
@@ -108,6 +109,7 @@ export const loadConfigSource = Effect.gen(function* () {
     applicationName: file.applicationName,
     provider: file.provider,
     model: file.model,
+    timeZone: file.timeZone,
     webSearchProvider: file.webSearchProvider,
     mcpServers: mcpFileValue(file.mcpServers, directory),
     gatewayPackages:

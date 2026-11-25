@@ -4,6 +4,7 @@ import {
   ConfigSource,
   quietHours,
   taskCatchUpMinutes,
+  timeZone,
   webSearchProvider,
   gatewayPackages,
 } from "@poppet/config";
@@ -24,6 +25,7 @@ const showConfig = (json: boolean) =>
       json,
       {
         ...(yield* AppConfig),
+        timeZone: yield* timeZone,
         webSearchProvider: yield* webSearchProvider,
         mcpServers: yield* mcpServers,
         gatewayPackages: yield* gatewayPackages,

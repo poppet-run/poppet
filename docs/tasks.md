@@ -54,7 +54,8 @@ poppet worker run
 `--in` accepts a positive whole number followed by `s`, `m`, `h`, or `d`.
 For example, `30s`, `10m`, `2h`, or `1d`. A day is exactly 24 elapsed hours.
 The CLI resolves the duration once and saves an absolute time. Use `--at` for
-an exact timestamp, or `--cron` with `--tz` for recurring work. These schedule
+an exact timestamp, or `--cron` with `--tz` for recurring work; `--tz` defaults to
+[`timeZone`](configuration.md#time-zone) when it is set. These schedule
 forms cannot be combined. A recurring task can also carry an
 [end time](#end-a-recurring-task) with `--until`.
 
@@ -91,7 +92,7 @@ poppet tasks run <task-id>
 ```
 
 Edits change only supplied name, prompt, schedule, or end time fields. A cron replacement
-requires both expression and timezone; a one-off replacement requires a future
+requires both expression and timezone, where `--tz` defaults to `timeZone`; a one-off replacement requires a future
 offset-qualified timestamp. `--until` sets or changes a recurring task's
 [end time](#end-a-recurring-task), and `--until none` clears it. Empty patches, unknown fields, conflicting schedules,
 and timezone-only changes are rejected. Identical values are a no-op. Provider,
@@ -203,7 +204,9 @@ The `poppet_tasks.manage_tasks` tool uses the existing scheduler. New tasks reta
 the current session's provider and model, with a self-contained prompt
 and an optional explicitly selected skill snapshot. They start fresh occurrence
 sessions. The agent receives the current UTC time for relative dates and should
-ask when the intended time, timezone, prompt, or task is unclear. One-off times
+ask when the intended time, timezone, prompt, or task is unclear. With
+[`timeZone`](configuration.md#time-zone) set, it also receives your local time and
+uses that zone when you give none. One-off times
 must be in the future and include a UTC offset; recurring schedules require an
 explicit timezone. A receipt reports the saved ID, schedule, state, next time,
 end time, and destination.
@@ -422,7 +425,8 @@ task prompt is ordinary text; scheduled runs do not load skills from it.
 
 ## Recurring schedules
 
-Use a five-field cron expression and explicit timezone for a recurring task:
+Use a five-field cron expression and explicit timezone, or set
+[`timeZone`](configuration.md#time-zone), for a recurring task:
 
 ```sh
 poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London "Summarize recent conversations"

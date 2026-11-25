@@ -64,13 +64,24 @@ const scheduledRunGuidance = [
   ].join(" "),
 ].join("\n");
 
-const taskSchedulingGuidance = (now: number) =>
+const localTime = (now: number, timeZone: string) =>
+  new Intl.DateTimeFormat("en-GB", { timeZone, dateStyle: "full", timeStyle: "long" }).format(now);
+
+const taskSchedulingGuidance = (now: number, timeZone: string | null) =>
   [
     "## Task scheduling",
     [
       `Current UTC time: ${new Date(now).toISOString()}.`,
-      "Resolve relative task times against this time.",
-      "Ask for an explicit offset or IANA timezone when unclear;",
+      ...(timeZone === null
+        ? [
+            "Resolve relative task times against this time.",
+            "Ask for an explicit offset or IANA timezone when unclear;",
+          ]
+        : [
+            `The owner's timezone is ${timeZone}, where it is ${localTime(now, timeZone)}.`,
+            "Resolve relative task times against this time.",
+            `Use ${timeZone} when the owner gives no offset or timezone;`,
+          ]),
       "task prompts must be self-contained because each occurrence starts a fresh session.",
     ].join(" "),
   ].join("\n");
@@ -184,7 +195,7 @@ export const conversation = Effect.gen(function* () {
     }
 
     return task !== null
-      ? `${baseInstructions}\n\n${taskSchedulingGuidance(clock.currentTimeMillisUnsafe())}`
+      ? `${baseInstructions}\n\n${taskSchedulingGuidance(clock.currentTimeMillisUnsafe(), policy.timeZone)}`
       : baseInstructions;
   };
 

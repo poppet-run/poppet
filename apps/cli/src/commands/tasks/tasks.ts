@@ -39,6 +39,7 @@ export const parseTaskSchedule = (
   cron: Option.Option<string>,
   tz: Option.Option<string>,
   delay: Option.Option<string> = Option.none(),
+  defaultZone: string | null = null,
 ): Schedule => {
   if (Option.isSome(delay)) {
     if (Option.isSome(at) || Option.isSome(cron) || Option.isSome(tz)) {
@@ -52,12 +53,15 @@ export const parseTaskSchedule = (
     return { type: "once", at: parseTimestamp(at.value) };
   }
 
-  if (Option.isNone(at) && Option.isSome(cron) && Option.isSome(tz)) {
-    return { type: "cron", expression: cron.value, timezone: tz.value };
+  const zone = Option.isSome(tz) ? tz : Option.fromNullOr(defaultZone);
+
+  if (Option.isNone(at) && Option.isSome(cron) && Option.isSome(zone)) {
+    return { type: "cron", expression: cron.value, timezone: zone.value };
   }
 
   throw new TaskError({
-    message: "Use --in <duration>, --at <timestamp>, or --cron <expression> --tz <timezone>.",
+    message:
+      "Use --in <duration>, --at <timestamp>, or --cron <expression> with --tz <timezone> or timeZone in config.json.",
   });
 };
 
