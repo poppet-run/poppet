@@ -2325,7 +2325,7 @@ describe.concurrent("Gateway", () => {
               sessionId: secondSession.id,
             },
           );
-          yield* repo.cancel("discord", "bot", "other-guild", "shared");
+          yield* repo.cancel("discord", "bot", "other-guild", "shared", second.id + 1);
           expect((yield* repo.item(first.id)).state).toBe("queued");
           expect((yield* repo.item(second.id)).state).toBe("cancelled");
         }),
@@ -3246,6 +3246,62 @@ describe.concurrent("Gateway concurrent requests", () => {
           failApprove = false;
           yield* gateway.deliverNext;
           expect(state.sent.at(-1)?.text).toContain("Thread access lost.");
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when a prompt arrives while an earlier /cancel is still starting, leaves the prompt running", async () => {
+    const marking = Deferred.makeUnsafe<void>();
+    const releaseMark = Deferred.makeUnsafe<void>();
+    const started = Deferred.makeUnsafe<void>();
+    const releaseModel = Deferred.makeUnsafe<void>();
+    const incoming = await Effect.runPromise(Queue.unbounded<IncomingMessage>());
+
+    const state = await fixture(
+      {
+        messages: Stream.fromQueue(incoming),
+        mark: (input, markState) =>
+          input.messageId === "cancel" && markState === "working"
+            ? Deferred.succeed(marking, undefined).pipe(Effect.andThen(Deferred.await(releaseMark)))
+            : Effect.void,
+      },
+      (request) => {
+        const last = request.messages.at(-1);
+
+        return last?.role === "user" && last.text === "Next"
+          ? Stream.fromEffect(
+              Deferred.succeed(started, undefined).pipe(
+                Effect.andThen(Deferred.await(releaseModel)),
+              ),
+            ).pipe(Stream.flatMap(() => response()))
+          : response();
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const worker = yield* gateway.run.pipe(Effect.forkChild);
+
+          Queue.offerUnsafe(incoming, message("seed", "thread-a", "Hello"));
+          yield* settledInbox("seed");
+
+          Queue.offerUnsafe(incoming, message("cancel", "thread-a", "/cancel"));
+          yield* Deferred.await(marking);
+          Queue.offerUnsafe(incoming, message("next", "thread-a", "Next"));
+          yield* Deferred.await(started);
+
+          yield* Deferred.succeed(releaseMark, undefined);
+          yield* settledInbox("cancel");
+          yield* Deferred.succeed(releaseModel, undefined);
+          yield* settledInbox("next");
+          expect(yield* inboxStates).toMatchObject({ cancel: "completed", next: "completed" });
+
+          yield* Fiber.interrupt(worker);
         }),
       );
     } finally {
