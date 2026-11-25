@@ -28,6 +28,7 @@ try {
         TMP: home,
         POPPET_TEST_HOME: home,
         DO_NOT_TRACK: "1",
+        NO_COLOR: "1",
       },
       stdin: "ignore",
       stdout: "inherit",
