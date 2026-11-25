@@ -291,6 +291,37 @@ describe.each([
     expect(cancelled).toBe(true);
   });
 
+  test(`when a ${provider} response body stalls and the search is interrupted, cancels the body`, async () => {
+    const reading = Promise.withResolvers<void>();
+    const cancelled = Promise.withResolvers<void>();
+
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull() {
+          reading.resolve();
+
+          return new Promise(() => {});
+        },
+        cancel() {
+          cancelled.resolve();
+        },
+      },
+      { highWaterMark: 0 },
+    );
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* search(
+          http(async () => new Response(body, { headers: { "Content-Type": "application/json" } })),
+        ).pipe(Effect.forkChild);
+
+        yield* Effect.promise(() => reading.promise);
+        yield* Fiber.interrupt(fiber);
+        yield* Effect.promise(() => cancelled.promise);
+      }),
+    );
+  });
+
   test.each([false, true])(
     `when ${provider} cancellation or deadline occurs with timeout=%j, aborts the request`,
     async (timeout) => {

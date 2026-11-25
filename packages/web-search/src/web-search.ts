@@ -133,6 +133,7 @@ export const searchRequest = (
                 reason: "tool-limit",
                 message: "The search response exceeds the 1 MiB body limit.",
               }),
+            signal,
           );
 
           return webSearchResult(decode(text), toolBytes);
