@@ -104,6 +104,21 @@ describe("makeChatGPTModel", () => {
     );
   });
 
+  test("when a forced refresh fails, keeps serving the cached catalog", async () => {
+    const { state, http, auth } = catalogFixture();
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const model = yield* makeChatGPTModel(http);
+        yield* model.resolve("test-model");
+        state.fail = true;
+        expect(yield* model.models.pipe(Effect.isFailure)).toBe(true);
+        yield* model.resolve("test-model");
+        expect(state.reads).toBe(2);
+      }).pipe(Effect.provideService(ChatGPTAuth, auth)),
+    );
+  });
+
   test.each(["fail", "malformed"] as const)(
     "when catalog responses are %s, does not cache them",
     async (mode) => {
