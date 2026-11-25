@@ -50,9 +50,9 @@ The Bun monorepo uses private workspaces:
 | `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                                                              | Config, agent, store, worker transport, provider contract                                            |
 | `@poppet/worker`              | Protected local command transport and request lifecycle                                                                | Effect                                                                                               |
 | `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery                                               | Agent, config, credentials, I/O helpers, store, tasks, provider contract                             |
-| `@poppet/channel-discord`     | Discord connections, mentions, threads, permissions, and protected settings                                            | Config, credentials, gateway contract                                                                |
-| `@poppet/channel-slack`       | Slack Socket Mode, thread messages, attachments, permissions, and protected settings                                   | Config, credentials, gateway contract                                                                |
-| `@poppet/channel-telegram`    | Telegram Bot API long polling, chats, forum topics, and protected settings                                             | Gateway contract                                                                                     |
+| `@poppet/gateway-discord`     | Discord connections, mentions, threads, permissions, and protected settings                                            | Config, credentials, gateway contract                                                                |
+| `@poppet/gateway-slack`       | Slack Socket Mode, thread messages, attachments, permissions, and protected settings                                   | Config, credentials, gateway contract                                                                |
+| `@poppet/gateway-telegram`    | Telegram Bot API long polling, chats, forum topics, and protected settings                                             | Gateway contract                                                                                     |
 | `@poppet/provider`            | Shared contracts and operations, with protocol adapters through a separate export                                      | None                                                                                                 |
 | `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing                                                        | Provider contract, credentials, protocol adapters                                                    |
 | `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration                                                       | Provider contract, credentials, protocol adapters                                                    |
@@ -1001,11 +1001,11 @@ The loop's existing one-second fallback wake sends them after the window ends.
 
 The `@poppet/gateway` package owns validated incoming messages,
 authorization, conversation-to-session mapping, durable message acceptance, and
-reply delivery. `@poppet/channel-discord` owns Discord credentials, Gateway
+reply delivery. `@poppet/gateway-discord` owns Discord credentials, Gateway
 connections, event decoding, mentions, thread operations, formatting, and rate
 limits. External adapters implement the same small contract. The CLI owns
 adapter registration and live layer composition; neither the agent nor task
-scheduling imports concrete messaging adapters. `@poppet/channel-slack` owns Slack
+scheduling imports concrete messaging adapters. `@poppet/gateway-slack` owns Slack
 Socket Mode, Web API calls, file downloads, reactions, setup, and credentials.
 
 The shared contract carries the adapter and bot account identity, external
