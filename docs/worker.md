@@ -254,8 +254,8 @@ once. After sleep or a restart, a recurring task runs its most recent missed tim
 once if that time is within the catch-up window (`tasks.catchUpMinutes`, default
 60), and records earlier missed times as skipped. Missed times older than the
 window are all skipped. Setting the window to `0` restores the earlier policy:
-restarts skip missed recurring work, and a delayed timer runs the earliest due
-time. Summaries older than 24 hours expire. Failed or
+restarts skip missed recurring work, and a delayed timer runs the most recent due
+time only if it is less than a minute old, recording earlier times as skipped. Summaries older than 24 hours expire. Failed or
 interrupted requests are never automatically replayed.
 
 ## Manual validation

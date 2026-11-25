@@ -151,7 +151,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
               try: () =>
                 job.schedule.type === "cron"
                   ? dueOccurrences(job.schedule, first, now, job.endAt, catchUpMs)
-                  : { latest: first, nextAt: null, following: null },
+                  : { latest: first, nextAt: null },
               catch: () => new TaskError({ message: "Invalid or unadvanceable task schedule." }),
             }).pipe(Effect.result);
 
@@ -161,7 +161,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
               continue;
             }
 
-            const { latest, nextAt, following } = schedule.success;
+            const { latest, nextAt } = schedule.success;
             const busy = yield* hasActive(job.id);
 
             if (busy && job.schedule.type === "once") {
@@ -169,32 +169,21 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
             }
 
             const stale =
-              job.schedule.type === "cron" && catchUpMs === 0 && now - job.nextAt >= 60_000;
+              catchUpMs > 0 ? now - latest > catchUpMs : startup || now - latest >= 60_000;
 
-            const skip = job.schedule.type === "cron" && (startup || busy || stale);
             const missed = startup ? "downtime" : "worker-delayed";
 
-            if (job.schedule.type === "cron" && !busy && catchUpMs > 0) {
-              if (now - latest > catchUpMs) {
-                yield* recordSkip(job, job.nextAt, missed);
-              } else {
-                yield* queue(job, latest);
-
-                if (latest > job.nextAt) {
-                  yield* recordSkip(job, job.nextAt, missed, latest - 1);
-                }
-              }
-            } else if (skip) {
+            if (job.schedule.type === "cron" && (busy || stale)) {
               yield* recordSkip(
                 job,
                 job.nextAt,
-                startup ? "downtime" : busy ? "previous-occurrence-active" : "worker-delayed",
+                busy && !startup ? "previous-occurrence-active" : missed,
               );
             } else {
-              yield* queue(job, job.nextAt);
+              yield* queue(job, latest);
 
-              if (following !== null && following <= now) {
-                yield* recordSkip(job, following, "worker-delayed");
+              if (latest > job.nextAt) {
+                yield* recordSkip(job, job.nextAt, missed, latest - 1);
               }
             }
 
