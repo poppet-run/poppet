@@ -3,7 +3,7 @@ import { Context, Effect, Exit, Layer, Redacted, Schema } from "effect";
 import { ConnectionError, issuer, requestFailure } from "#src/connection";
 import type { Identity } from "#src/connection";
 import { discoverIssuer } from "#src/oauth/discovery";
-import { networkError, request } from "#src/oauth/http";
+import { networkError, readJson, request } from "#src/oauth/http";
 import type { HttpFetch } from "#src/oauth/http";
 import { identityVerifier } from "#src/oauth/identity";
 import { TokenReply } from "#src/oauth/tokens";
@@ -67,15 +67,14 @@ export const makeOAuthClient = (http: HttpFetch = fetch, expectedIssuer = issuer
           );
         }
 
-        return yield* Effect.tryPromise({ try: () => response.json(), catch: networkError }).pipe(
-          Effect.flatMap(Schema.decodeUnknownEffect(TokenReply)),
-          Effect.mapError(
-            () =>
-              new ConnectionError({
-                reason: "identity",
-                message: "OpenAI returned an invalid token response.",
-              }),
-          ),
+        return yield* readJson(
+          response,
+          TokenReply,
+          () =>
+            new ConnectionError({
+              reason: "identity",
+              message: "OpenAI returned an invalid token response.",
+            }),
         );
       }).pipe(
         Effect.scoped,

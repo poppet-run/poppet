@@ -1,5 +1,5 @@
 import type { HttpFetch } from "@poppet/provider";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import { ConnectionError } from "#src/connection";
 
@@ -32,4 +32,18 @@ export const request = (http: HttpFetch, url: string, init?: RequestInit) =>
       duration: "20 seconds",
       orElse: () => Effect.fail(networkError()),
     }),
+  );
+
+export const readJson = <S extends Schema.Top>(
+  response: Response,
+  schema: S,
+  invalid: () => ConnectionError,
+) =>
+  Effect.tryPromise({
+    try: () => response.json(),
+    catch: (cause) => (cause instanceof SyntaxError ? invalid() : networkError()),
+  }).pipe(
+    Effect.flatMap((body) =>
+      Schema.decodeUnknownEffect(schema)(body).pipe(Effect.mapError(invalid)),
+    ),
   );

@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 
 import { ConnectionError, requestFailure } from "#src/connection";
-import { networkError, request } from "#src/oauth/http";
+import { networkError, readJson, request } from "#src/oauth/http";
 import type { HttpFetch } from "#src/oauth/http";
 
 export const Discovery = Schema.Struct({
@@ -22,18 +22,14 @@ export const discoverIssuer = (http: HttpFetch, expectedIssuer: string) =>
       return yield* Effect.fail(requestFailure(response.status));
     }
 
-    const metadata = yield* Effect.tryPromise({
-      try: () => response.json(),
-      catch: networkError,
-    }).pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(Discovery)),
-      Effect.mapError(
-        () =>
-          new ConnectionError({
-            reason: "identity",
-            message: "OpenAI's identity discovery document was invalid.",
-          }),
-      ),
+    const metadata = yield* readJson(
+      response,
+      Discovery,
+      () =>
+        new ConnectionError({
+          reason: "identity",
+          message: "OpenAI's identity discovery document was invalid.",
+        }),
     );
 
     if (

@@ -179,4 +179,48 @@ describe("client.ts", () => {
       expect(signals[0]?.aborted).toBe(true);
     },
   );
+
+  test.each([
+    ["discovery", "drops", "temporary"],
+    ["discovery", "is malformed", "identity"],
+    ["token", "drops", "temporary"],
+    ["token", "is malformed", "identity"],
+  ] as const)("when a %s body %s, reports the %s reason", async (operation, mode, reason) => {
+    const issuer = "https://oauth.invalid";
+
+    const body = () =>
+      mode === "drops"
+        ? new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode("{"));
+              controller.error(new Error("Connection reset"));
+            },
+          })
+        : "{";
+
+    const http: HttpFetch = async (input) =>
+      operation === "token" && input.toString().endsWith("openid-configuration")
+        ? Response.json({
+            issuer,
+            authorization_endpoint: `${issuer}/authorize`,
+            token_endpoint: `${issuer}/token`,
+            revocation_endpoint: `${issuer}/revoke`,
+            jwks_uri: `${issuer}/keys`,
+          })
+        : new Response(body());
+
+    const failure = await Effect.runPromise(
+      Effect.gen(function* () {
+        const client = yield* makeOAuthClient(http, issuer);
+
+        return yield* Effect.flip(
+          operation === "discovery"
+            ? client.authorizationEndpoint.pipe(Effect.asVoid)
+            : client.exchange(new URLSearchParams()).pipe(Effect.asVoid),
+        );
+      }),
+    );
+
+    expect(failure.reason).toBe(reason);
+  });
 });
