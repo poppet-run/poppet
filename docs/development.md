@@ -20,7 +20,7 @@ The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
 `@poppet/store`, `@poppet/agent`, `@poppet/io`, `@poppet/mcp`,
 `@poppet/memory`, `@poppet/tasks`, `@poppet/web-search`,
 `@poppet/platform`, `@poppet/worker`, `@poppet/gateway`,
-`@poppet/channel-discord`, `@poppet/channel-slack`, `@poppet/channel-telegram`, and
+`@poppet/gateway-discord`, `@poppet/gateway-slack`, `@poppet/gateway-telegram`, and
 `@poppet/web`.
 Skills live inside `@poppet/agent`.
 `bun run format` formats files with Oxfmt.
@@ -159,8 +159,9 @@ apps/
       worker-background.ts Stable installed-service entry point, output capture, and shutdown forwarding
 packages/
   gateway/                @poppet/gateway, shared acceptance, approvals, and delivery
-  channel-discord/         @poppet/channel-discord, Discord adapter and setup
-  channel-slack/           @poppet/channel-slack, Slack Socket Mode adapter and setup
+  gateway-discord/        @poppet/gateway-discord, Discord adapter and setup
+  gateway-slack/          @poppet/gateway-slack, Slack Socket Mode adapter and setup
+  gateway-telegram/       @poppet/gateway-telegram, Telegram Bot API adapter and setup
   agent/                  @poppet/agent
     src/service.ts        Persisted chat runner, deadlines, run finalization
     src/conversation.ts   Sequential model/tool loop and run budgets

@@ -101,9 +101,9 @@ export default defineConfig({
                   "Use the shared provider interface. Concrete providers may only be imported by the registration list.",
               },
               {
-                group: ["@poppet/channel-*", "@poppet/channel-*/**"],
+                group: ["@poppet/gateway-*", "@poppet/gateway-*/**"],
                 message:
-                  "Use the shared channel interface. Concrete channels may only be imported by the registration list.",
+                  "Use the shared gateway interface. Concrete gateways may only be imported by the registration list.",
               },
             ],
           },

@@ -2,12 +2,12 @@ import { lstat, realpath } from "node:fs/promises";
 import { dirname, join, relative, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { discord } from "@poppet/channel-discord/registration";
-import { slack } from "@poppet/channel-slack/registration";
-import { telegram } from "@poppet/channel-telegram/registration";
 import { ConfigSourceLive, dataDirectory, gatewayPackages } from "@poppet/config";
 import { ChannelError } from "@poppet/gateway";
 import type { ChannelRegistration } from "@poppet/gateway";
+import { discord } from "@poppet/gateway-discord/registration";
+import { slack } from "@poppet/gateway-slack/registration";
+import { telegram } from "@poppet/gateway-telegram/registration";
 import { Effect, Predicate, Schema } from "effect";
 
 import { validateChannels } from "#src/commands/gateway/channels";
