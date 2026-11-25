@@ -3,25 +3,25 @@ import { dirname, join, relative, isAbsolute } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ConfigSourceLive, dataDirectory, gatewayPackages } from "@poppet/config";
-import { ChannelError } from "@poppet/gateway";
-import type { ChannelRegistration } from "@poppet/gateway";
+import { GatewayError } from "@poppet/gateway";
+import type { GatewayRegistration } from "@poppet/gateway";
 import { discord } from "@poppet/gateway-discord/registration";
 import { slack } from "@poppet/gateway-slack/registration";
 import { telegram } from "@poppet/gateway-telegram/registration";
 import { Effect, Predicate, Schema } from "effect";
 
-import { validateChannels } from "#src/commands/gateway/channels";
+import { validateGateways } from "#src/commands/gateway/gateways";
 
-export const channels: ReadonlyArray<ChannelRegistration> = [discord, slack, telegram];
+export const gateways: ReadonlyArray<GatewayRegistration> = [discord, slack, telegram];
 
 const Registration = Schema.Struct({
   id: Schema.NonEmptyString,
   name: Schema.NonEmptyString,
   setupHelp: Schema.NonEmptyString,
-  setup: Schema.declare((value): value is ChannelRegistration["setup"] =>
+  setup: Schema.declare((value): value is GatewayRegistration["setup"] =>
     Predicate.isFunction(value),
   ),
-  load: Schema.declare((value): value is ChannelRegistration["load"] => Effect.isEffect(value)),
+  load: Schema.declare((value): value is GatewayRegistration["load"] => Effect.isEffect(value)),
 });
 
 const packageEntry =
@@ -73,10 +73,10 @@ const gatewayModule = async (directory: string, entry: string) => {
   return pathToFileURL(path).href;
 };
 
-export const loadRegisteredChannels = Effect.gen(function* () {
+export const loadRegisteredGateways = Effect.gen(function* () {
   const directory = yield* dataDirectory;
   const entries = yield* gatewayPackages;
-  const registered = [...channels];
+  const registered = [...gateways];
 
   for (const entry of entries) {
     const registration = yield* Effect.tryPromise({
@@ -90,9 +90,9 @@ export const loadRegisteredChannels = Effect.gen(function* () {
         return loaded;
       },
       catch: () =>
-        new ChannelError({
+        new GatewayError({
           reason: "configuration",
-          message: `Cannot load gateway package ${entry}. Install it in ${join(directory, "gateways")} and export a default ChannelRegistration.`,
+          message: `Cannot load gateway package ${entry}. Install it in ${join(directory, "gateways")} and export a default GatewayRegistration.`,
         }),
     });
 
@@ -100,9 +100,9 @@ export const loadRegisteredChannels = Effect.gen(function* () {
   }
 
   yield* Effect.try({
-    try: () => validateChannels(registered),
+    try: () => validateGateways(registered),
     catch: (cause) =>
-      new ChannelError({
+      new GatewayError({
         reason: "configuration",
         message: cause instanceof Error ? cause.message : "Invalid gateway registrations.",
       }),

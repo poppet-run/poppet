@@ -2,7 +2,7 @@ import { describe, expect, spyOn, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import { setImmediate } from "node:timers/promises";
 
-import { MessagingChannel } from "@poppet/gateway";
+import { GatewayAdapter } from "@poppet/gateway";
 import { SocketModeClient } from "@slack/socket-mode";
 import { ErrorCode, WebClient } from "@slack/web-api";
 import { Deferred, Effect, Fiber, Redacted, Schema } from "effect";
@@ -12,10 +12,10 @@ import {
   allowedSlackChannel,
   escapeSlackText,
   incomingMessage,
-  slackChannelLayer,
+  slackAdapterLayer,
   slackFailure,
   slackSocketSession,
-} from "#src/channel";
+} from "#src/adapter";
 
 const settings = {
   ownerId: "U123",
@@ -156,7 +156,7 @@ test("when a Slack socket closes, reports it offline and releases its connection
   expect(changes).toEqual([true, false]);
 });
 
-describe("slackChannelLayer", () => {
+describe("slackAdapterLayer", () => {
   test("when Slack acknowledges a later event, clears the earlier acknowledgement error", async () => {
     const started = Promise.withResolvers<SocketModeClient>();
 
@@ -182,7 +182,7 @@ describe("slackChannelLayer", () => {
     try {
       await Effect.runPromise(
         Effect.gen(function* () {
-          const channel = yield* MessagingChannel;
+          const channel = yield* GatewayAdapter;
           const socket = yield* Effect.promise(() => started.promise);
           const input = { type: "events_api", body: { team_id: settings.teamId, event } };
 
@@ -201,7 +201,7 @@ describe("slackChannelLayer", () => {
           socket.emit("slack_event", { ...input, ack: async () => undefined });
           yield* Effect.promise(() => setImmediate());
           expect(yield* channel.status).toHaveProperty("error", null);
-        }).pipe(Effect.provide(slackChannelLayer(settings))),
+        }).pipe(Effect.provide(slackAdapterLayer(settings))),
       );
     } finally {
       disconnect.mockRestore();

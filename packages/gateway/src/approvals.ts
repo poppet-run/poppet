@@ -6,12 +6,7 @@ import { StoreError } from "@poppet/store";
 import type { ToolApproval } from "@poppet/store";
 import { Cause, Clock, Deferred, Effect, Exit } from "effect";
 
-import type {
-  ApprovalAction,
-  ApprovalState,
-  IncomingMessage,
-  MessagingChannel,
-} from "#src/channel";
+import type { ApprovalAction, ApprovalState, GatewayAdapter, IncomingMessage } from "#src/adapter";
 import { authorized } from "#src/context";
 import { chunks } from "#src/replies";
 
@@ -28,7 +23,7 @@ interface PendingApproval {
 const missing =
   "No matching pending approval in this conversation. It may have expired; request the operation again.";
 
-export const actionApprovals = (channel: MessagingChannel["Service"]) => {
+export const actionApprovals = (adapter: GatewayAdapter["Service"]) => {
   const pending = new Map<string, PendingApproval>();
 
   const request = (
@@ -55,11 +50,11 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
       let expired = false;
 
       return yield* Effect.gen(function* () {
-        if (!authorized(channel.policy, message)) {
+        if (!authorized(adapter.policy, message)) {
           return false;
         }
 
-        yield* channel.checkAccess(message, conversation);
+        yield* adapter.checkAccess(message, conversation);
 
         const invocation =
           approval.kind === "mcp"
@@ -82,7 +77,7 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
         const headingParts = [
           approval.kind === "mcp" ? "MCP action approval required" : "Bash approval required",
           ...fields.flatMap(([label, value]) =>
-            chunks(escapedApprovalJSON(value), channel.textLimit - label.length - 4).map(
+            chunks(escapedApprovalJSON(value), adapter.textLimit - label.length - 4).map(
               (part) => `${label}: \`${part}\``,
             ),
           ),
@@ -94,11 +89,11 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
         const controls = `Reply \`/approve ${id}\` or \`/deny ${id}\`. Expires in two minutes; permits one execution only.`;
 
         const parts =
-          `${details}\n${controls}`.length <= channel.textLimit
+          `${details}\n${controls}`.length <= adapter.textLimit
             ? [`${details}\n${controls}`]
             : [
-                ...(heading.length <= channel.textLimit ? [heading] : headingParts),
-                ...chunks(invocation, channel.textLimit - 2).map((part) => `\`${part}\``),
+                ...(heading.length <= adapter.textLimit ? [heading] : headingParts),
+                ...chunks(invocation, adapter.textLimit - 2).map((part) => `\`${part}\``),
                 controls,
               ];
 
@@ -106,9 +101,9 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
           const nonce = createHash("sha256").update(`${id}-${index}`).digest("hex").slice(0, 24);
           const last = index === parts.length - 1;
 
-          const sent = yield* last && channel.approvals
-            ? channel.approvals.send(conversation, part, nonce, id)
-            : channel.send(conversation, part, nonce);
+          const sent = yield* last && adapter.approvals
+            ? adapter.approvals.send(conversation, part, nonce, id)
+            : adapter.send(conversation, part, nonce);
 
           if (last) {
             entry.promptId = sent;
@@ -132,10 +127,10 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
         }
 
         if (answer.decision === "approved") {
-          yield* channel.checkAccess(message, conversation);
+          yield* adapter.checkAccess(message, conversation);
         }
 
-        return answer.decision === "approved" && authorized(channel.policy, message);
+        return answer.decision === "approved" && authorized(adapter.policy, message);
       }).pipe(
         Effect.mapError((error) =>
           error instanceof StoreError
@@ -151,7 +146,7 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
             pending.delete(id);
             yield* Deferred.succeed(entry.ready, undefined);
 
-            if (entry.promptId === null || !channel.approvals) {
+            if (entry.promptId === null || !adapter.approvals) {
               return;
             }
 
@@ -165,7 +160,7 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
                   ? "expired"
                   : "unavailable";
 
-            yield* channel.approvals.update(conversation, entry.promptId, id, state).pipe(
+            yield* adapter.approvals.update(conversation, entry.promptId, id, state).pipe(
               Effect.timeout("5 seconds"),
               Effect.catch(() => Effect.void),
             );
@@ -185,7 +180,7 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
       pending.delete(id);
       yield* Deferred.succeed(entry.decision, {
         decision: approved ? "approved" : "denied",
-        adapter: channel.id,
+        adapter: adapter.id,
         senderId: source.senderId,
         at: now,
       } satisfies ToolApproval);
@@ -201,7 +196,7 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
 
   const answer = (conversation: string, source: IncomingMessage) =>
     Effect.gen(function* () {
-      if (!authorized(channel.policy, source)) {
+      if (!authorized(adapter.policy, source)) {
         return "Only the configured owner can answer this approval.";
       }
 
@@ -227,7 +222,7 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
     Effect.gen(function* () {
       const { source, requestId } = action;
 
-      if (!authorized(channel.policy, source)) {
+      if (!authorized(adapter.policy, source)) {
         return "Only the configured owner can answer this approval.";
       }
 
@@ -247,17 +242,17 @@ export const actionApprovals = (channel: MessagingChannel["Service"]) => {
         return missing;
       }
 
-      yield* channel.checkAccess(source, entry.conversation);
+      yield* adapter.checkAccess(source, entry.conversation);
 
       return yield* settle(requestId, entry, source, action.decision === "approve");
     }).pipe(
-      Effect.catchTag("ChannelError", () =>
+      Effect.catchTag("GatewayError", () =>
         Effect.succeed(
           "Approval could not be confirmed. Check access and try again before it expires.",
         ),
       ),
       Effect.flatMap(action.reply),
-      Effect.catchTag("ChannelError", () => Effect.void),
+      Effect.catchTag("GatewayError", () => Effect.void),
     );
 
   return { request, answer, answerAction };

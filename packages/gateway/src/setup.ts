@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 
 import { Effect } from "effect";
 
-import { ChannelError } from "#src/channel";
+import { GatewayError } from "#src/adapter";
 
 export const parseSetupFlags = (
   args: ReadonlyArray<string>,
@@ -41,5 +41,5 @@ export const parseSetupFlags = (
       return values;
     },
     catch: () =>
-      new ChannelError({ reason: "configuration", message: `Use gateway ${adapter} ${help}.` }),
+      new GatewayError({ reason: "configuration", message: `Use gateway ${adapter} ${help}.` }),
   });

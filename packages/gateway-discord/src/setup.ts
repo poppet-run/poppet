@@ -1,6 +1,6 @@
 import { DiscordConfiguration, readConfigFile } from "@poppet/config";
 import { promptSecret } from "@poppet/credentials/input";
-import { ChannelEnvironment, ChannelError } from "@poppet/gateway";
+import { GatewayEnvironment, GatewayError } from "@poppet/gateway";
 import { Console, Effect, Schema } from "effect";
 import { Prompt } from "effect/cli";
 
@@ -21,13 +21,13 @@ export const promptDiscordSetup = Effect.gen(function* () {
     return null;
   }
 
-  const { dataDirectory } = yield* ChannelEnvironment;
+  const { dataDirectory } = yield* GatewayEnvironment;
   const saved = yield* loadDiscordSettings(dataDirectory);
 
   const { file } = yield* readConfigFile(dataDirectory).pipe(
     Effect.mapError(
       () =>
-        new ChannelError({
+        new GatewayError({
           reason: "configuration",
           message: "Cannot read Discord configuration from config.json.",
         }),

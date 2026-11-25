@@ -1,4 +1,4 @@
-import { ChannelError } from "@poppet/gateway";
+import { GatewayError } from "@poppet/gateway";
 import type { ApprovalAction, ApprovalState } from "@poppet/gateway";
 import {
   ActionRowBuilder,
@@ -146,7 +146,7 @@ export const approvalActions = (
               Effect.tryPromise({
                 try: () => reply(text),
                 catch: () =>
-                  new ChannelError({
+                  new GatewayError({
                     reason: "unavailable",
                     message: "Discord approval reply failed.",
                   }),

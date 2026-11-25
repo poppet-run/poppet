@@ -6,14 +6,14 @@ import { acquireOwnerLock } from "@poppet/credentials/lock";
 import { protectedFiles } from "@poppet/credentials/records";
 import { Effect, Layer, Schema } from "effect";
 
-import { ChannelError } from "#src/channel";
-import type { MessagingChannel } from "#src/channel";
-import { ChannelEnvironment } from "#src/registration";
+import { GatewayError } from "#src/adapter";
+import type { GatewayAdapter } from "#src/adapter";
+import { GatewayEnvironment } from "#src/registration";
 
 const settingsError = () =>
-  new ChannelError({
+  new GatewayError({
     reason: "configuration",
-    message: "Cannot read or write protected channel settings.",
+    message: "Cannot read or write protected gateway settings.",
   });
 
 const filesFor = (dataDirectory: string, adapter: string) =>
@@ -25,10 +25,10 @@ const filesFor = (dataDirectory: string, adapter: string) =>
     return protectedFiles(join(dataDirectory, "channels"), settingsError, 16_384);
   });
 
-export const loadChannelSettings = (dataDirectory: string, adapter: string) =>
+export const loadGatewaySettings = (dataDirectory: string, adapter: string) =>
   filesFor(dataDirectory, adapter).pipe(Effect.flatMap((files) => files.read(adapter)));
 
-export const saveChannelSettings = (dataDirectory: string, adapter: string, contents: string) =>
+export const saveGatewaySettings = (dataDirectory: string, adapter: string, contents: string) =>
   Effect.scoped(
     Effect.gen(function* () {
       if (Buffer.byteLength(contents) > 16_384) {
@@ -42,7 +42,7 @@ export const saveChannelSettings = (dataDirectory: string, adapter: string, cont
     }),
   ).pipe(Effect.uninterruptible);
 
-export const channelSettings = <S extends Schema.Top>(
+export const gatewaySettings = <S extends Schema.Top>(
   adapter: string,
   label: string,
   schema: S,
@@ -50,14 +50,14 @@ export const channelSettings = <S extends Schema.Top>(
   const SavedSettings = Schema.fromJsonString(schema);
 
   const failure = () =>
-    new ChannelError({
+    new GatewayError({
       reason: "configuration",
       message: `Cannot read or write protected ${label} settings. Run gateway ${adapter} setup again.`,
     });
 
   const load = (dataDirectory: string) =>
     Effect.gen(function* () {
-      const contents = yield* loadChannelSettings(dataDirectory, adapter);
+      const contents = yield* loadGatewaySettings(dataDirectory, adapter);
 
       if (contents === null) {
         return null;
@@ -74,10 +74,10 @@ export const channelSettings = <S extends Schema.Top>(
       createLayer: (
         settings: S["Type"],
         dataDirectory: string,
-      ) => Promise<Layer.Layer<MessagingChannel, ChannelError>>,
+      ) => Promise<Layer.Layer<GatewayAdapter, GatewayError>>,
     ) =>
       Effect.gen(function* () {
-        const { dataDirectory } = yield* ChannelEnvironment;
+        const { dataDirectory } = yield* GatewayEnvironment;
         const settings = yield* load(dataDirectory);
 
         if (settings === null) {
@@ -88,22 +88,22 @@ export const channelSettings = <S extends Schema.Top>(
           Effect.tryPromise({
             try: () => createLayer(settings, dataDirectory),
             catch: () =>
-              new ChannelError({
+              new GatewayError({
                 reason: "configuration",
-                message: `Cannot load ${label} channel adapter.`,
+                message: `Cannot load ${label} gateway adapter.`,
               }),
           }),
         );
       }),
     save: (dataDirectory: string, settings: S["Type"]) =>
       Schema.encodeEffect(SavedSettings)(settings).pipe(
-        Effect.flatMap((contents) => saveChannelSettings(dataDirectory, adapter, contents)),
+        Effect.flatMap((contents) => saveGatewaySettings(dataDirectory, adapter, contents)),
         Effect.mapError(failure),
       ),
   };
 };
 
-export const configuredChannelSettings = <
+export const configuredGatewaySettings = <
   K extends "discord" | "slack",
   P extends Schema.Top & { readonly Type: object },
   C extends Schema.Top & { readonly Type: object },
@@ -113,10 +113,10 @@ export const configuredChannelSettings = <
   policySchema: P,
   credentialSchema: C,
 ) => {
-  const credentials = channelSettings(adapter, label, credentialSchema);
+  const credentials = gatewaySettings(adapter, label, credentialSchema);
 
   const failure = () =>
-    new ChannelError({
+    new GatewayError({
       reason: "configuration",
       message: `Cannot load ${label} configuration or credentials. Check config.json and run gateway ${adapter} setup again.`,
     });

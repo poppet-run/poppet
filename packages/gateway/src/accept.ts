@@ -1,8 +1,8 @@
 import type { StoreError } from "@poppet/store";
 import { Effect, Fiber, Result, Schema } from "effect";
 
+import { GatewayError, IncomingMessage } from "#src/adapter";
 import type { ActionApprovals } from "#src/approvals";
-import { ChannelError, IncomingMessage } from "#src/channel";
 import { authorized, finish, mark, wake } from "#src/context";
 import type { GatewayContext, RunningRequest } from "#src/context";
 import type { Inbox } from "#src/repository";
@@ -12,7 +12,7 @@ export interface Controls {
   readonly approvals: ActionApprovals;
   readonly running: RunningRequest;
   readonly scheduleControl?: (
-    effect: Effect.Effect<void, ChannelError | StoreError>,
+    effect: Effect.Effect<void, GatewayError | StoreError>,
   ) => Effect.Effect<void>;
 }
 
@@ -25,10 +25,10 @@ const controlReply = (
   session: string,
 ) =>
   Effect.gen(function* () {
-    const { channel, repo, store } = context;
+    const { adapter, repo, store } = context;
 
     if (isApprovalReply(message.text)) {
-      yield* channel.checkAccess(message, conversation);
+      yield* adapter.checkAccess(message, conversation);
 
       return yield* controls.approvals.answer(conversation, message);
     }
@@ -38,7 +38,7 @@ const controlReply = (
 
       yield* claims.withPermit(
         Effect.gen(function* () {
-          yield* repo.cancel(channel.id, entry.account, message.scopeId, conversation);
+          yield* repo.cancel(adapter.id, entry.account, message.scopeId, conversation);
 
           for (const request of requests.values()) {
             if (
@@ -83,7 +83,7 @@ const handleControl = (
     ).pipe(Effect.result);
 
     if (Result.isFailure(outcome)) {
-      if (outcome.failure instanceof ChannelError) {
+      if (outcome.failure instanceof GatewayError) {
         yield* finish(context, entry.id, outcome.failure.message, "failed");
       }
 
@@ -98,17 +98,17 @@ const handleControl = (
 
 export const accept = (context: GatewayContext, controls: Controls, input: IncomingMessage) =>
   Effect.gen(function* () {
-    const { channel, repo } = context;
-    const account = yield* channel.accountId;
+    const { adapter, repo } = context;
+    const account = yield* adapter.accountId;
 
     const message = yield* Schema.decodeUnknownEffect(IncomingMessage)(input).pipe(
       Effect.mapError(
-        () => new ChannelError({ reason: "configuration", message: "Invalid incoming message." }),
+        () => new GatewayError({ reason: "configuration", message: "Invalid incoming message." }),
       ),
     );
 
     if (
-      !authorized(channel.policy, message) ||
+      !authorized(adapter.policy, message) ||
       (!message.text.trim() && (message.attachments ?? []).length === 0)
     ) {
       return;
@@ -119,13 +119,13 @@ export const accept = (context: GatewayContext, controls: Controls, input: Incom
     const session =
       conversation === null
         ? null
-        : yield* repo.binding(channel.id, account, message.scopeId, conversation);
+        : yield* repo.binding(adapter.id, account, message.scopeId, conversation);
 
     if (session === null && !message.mentioned) {
       return;
     }
 
-    const entry = yield* repo.accept(channel.id, account, message);
+    const entry = yield* repo.accept(adapter.id, account, message);
 
     if (entry === null) {
       return;

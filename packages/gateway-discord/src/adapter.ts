@@ -1,4 +1,4 @@
-import { ChannelError, MessagingChannel } from "@poppet/gateway";
+import { GatewayAdapter, GatewayError } from "@poppet/gateway";
 import type { IncomingMessage } from "@poppet/gateway";
 import {
   ChannelType,
@@ -19,9 +19,9 @@ import { downloadAttachment, incomingAttachments } from "#src/attachments";
 import type { DiscordSettings } from "#src/settings";
 
 export const discordFailure = (cause: unknown, sending = false) =>
-  cause instanceof ChannelError
+  cause instanceof GatewayError
     ? cause
-    : new ChannelError({
+    : new GatewayError({
         reason:
           cause instanceof RateLimitError
             ? "unavailable"
@@ -52,7 +52,7 @@ const threadName = (title: string) => {
   return name || "New conversation";
 };
 
-export const discordChannelLayer = (
+export const discordAdapterLayer = (
   settings: DiscordSettings,
   createClient = () =>
     new Client({
@@ -71,7 +71,7 @@ export const discordChannelLayer = (
     }),
 ) =>
   Layer.effect(
-    MessagingChannel,
+    GatewayAdapter,
     Effect.gen(function* () {
       const messages = yield* Queue.make<IncomingMessage>({ capacity: 64, strategy: "dropping" });
       const nameChanges = yield* Queue.make<string>({ capacity: 64, strategy: "dropping" });
@@ -84,7 +84,7 @@ export const discordChannelLayer = (
 
       const identity = yield* Deferred.make<string>();
 
-      const reportError = (error: ChannelError) =>
+      const reportError = (error: GatewayError) =>
         Effect.sync(() => {
           connectionError = error.message;
         });
@@ -99,7 +99,7 @@ export const discordChannelLayer = (
 
       const requireReady = () => {
         if (!client.isReady()) {
-          throw new ChannelError({
+          throw new GatewayError({
             reason: "unavailable",
             message: "Discord is disconnected.",
           });
@@ -243,7 +243,7 @@ export const discordChannelLayer = (
                     : PermissionFlagsBits.SendMessages,
                 ])
             ) {
-              throw new ChannelError({
+              throw new GatewayError({
                 reason: "permission",
                 message: "Discord channel access is missing or the thread is locked.",
               });
@@ -277,7 +277,7 @@ export const discordChannelLayer = (
                   PermissionFlagsBits.CreatePublicThreads,
                 ])
             ) {
-              throw new ChannelError({
+              throw new GatewayError({
                 reason: "permission",
                 message: "Discord needs permission to create and read threads.",
               });
@@ -289,7 +289,7 @@ export const discordChannelLayer = (
             });
 
             if (source.author.id !== settings.ownerId || source.webhookId !== null) {
-              throw new ChannelError({
+              throw new GatewayError({
                 reason: "permission",
                 message: "Cannot create a thread for this message.",
               });
@@ -300,7 +300,7 @@ export const discordChannelLayer = (
               : await source.startThread({ name: threadName(title), autoArchiveDuration: 1440 });
 
             if (!thread?.isThread()) {
-              throw new ChannelError({
+              throw new GatewayError({
                 reason: "unavailable",
                 message: "Cannot find the Discord thread.",
               });
@@ -325,7 +325,7 @@ export const discordChannelLayer = (
             const target = await guildChannel(conversationId);
 
             if (target === null) {
-              throw new ChannelError({
+              throw new GatewayError({
                 reason: "permission",
                 message: "Discord text channel or thread is unavailable.",
               });
@@ -370,7 +370,7 @@ export const discordChannelLayer = (
           Effect.tryPromise({
             try: async () => {
               if (!/^[0-9]{1,20}$/.test(conversationId)) {
-                throw new ChannelError({
+                throw new GatewayError({
                   reason: "configuration",
                   message: "Choose a numeric Discord channel or thread ID of at most 20 digits.",
                 });
@@ -383,7 +383,7 @@ export const discordChannelLayer = (
                 target === null ? null : target.isThread() ? target.parentId : target.id;
 
               if (!parentId) {
-                throw new ChannelError({
+                throw new GatewayError({
                   reason: "permission",
                   message:
                     "Choose an existing text channel or thread in the configured Discord server.",
@@ -402,7 +402,7 @@ export const discordChannelLayer = (
               const channel = await guildChannel(message.conversationId ?? message.parentId);
 
               if (channel === null) {
-                throw new ChannelError({
+                throw new GatewayError({
                   reason: "permission",
                   message: "Cannot mark this message.",
                 });
@@ -414,7 +414,7 @@ export const discordChannelLayer = (
               });
 
               if (source.author.id !== settings.ownerId || source.webhookId !== null) {
-                throw new ChannelError({
+                throw new GatewayError({
                   reason: "permission",
                   message: "Cannot mark this message.",
                 });
@@ -458,7 +458,7 @@ export const discordChannelLayer = (
                     const thread = await client.channels.fetch(id, { force: true });
 
                     if (!thread?.isThread()) {
-                      throw new ChannelError({
+                      throw new GatewayError({
                         reason: "permission",
                         message: "Discord thread no longer exists.",
                       });
@@ -479,7 +479,7 @@ export const discordChannelLayer = (
                     const thread = await client.channels.fetch(id, { force: true });
 
                     if (!thread?.isThread() || thread.ownerId !== botId || thread.locked) {
-                      throw new ChannelError({
+                      throw new GatewayError({
                         reason: "permission",
                         message: "Cannot rename this Discord thread.",
                       });
@@ -507,7 +507,7 @@ export const discordChannelLayer = (
                 const target = await guildChannel(conversationId);
 
                 if (target === null) {
-                  throw new ChannelError({
+                  throw new GatewayError({
                     reason: "permission",
                     message: "Approval conversation is unavailable.",
                   });
@@ -516,7 +516,7 @@ export const discordChannelLayer = (
                 const prompt = await target.messages.fetch({ message: messageId, force: true });
 
                 if (prompt.author.id !== botId || prompt.webhookId !== null) {
-                  throw new ChannelError({
+                  throw new GatewayError({
                     reason: "permission",
                     message: "Cannot update this approval message.",
                   });
@@ -530,6 +530,6 @@ export const discordChannelLayer = (
               catch: (cause) => discordFailure(cause, true),
             }),
         },
-      } satisfies MessagingChannel["Service"];
+      } satisfies GatewayAdapter["Service"];
     }),
   );

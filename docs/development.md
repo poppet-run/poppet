@@ -146,7 +146,7 @@ apps/
       commands/           Shared command context, flags, and single-file commands
         chat/             Chat command, streaming output, and interactive prompt
         doctor/           Read-only checks, report rendering, and worker observations
-        gateway/          Gateway command, channel setup, and registrations
+        gateway/          Gateway command, adapter setup, and registrations
         mcp/              MCP command, setup, and agent tool wiring
         memory/           Memory command and operations
         setup/            Interactive setup command
@@ -291,9 +291,9 @@ for the contract and integration steps.
 including ChatGPT. Wire protocol names are internal and omitted from those descriptions.
 Existing credential files and conversation records keep their formats.
 
-## Adding a channel
+## Adding a gateway
 
-Discord, Slack, and Telegram are bundled channels. External packages implement `ChannelRegistration`
+Discord, Slack, and Telegram are bundled gateways. External packages implement `GatewayRegistration`
 from `@poppet/gateway` and export it as the default export of a lightweight entry point.
 Install the package in `<POPPET_DATA_DIR>/gateways`, then list its entry point in
 `config.json`, for example:
@@ -324,17 +324,17 @@ shared dependencies. The loader does not provide dependency isolation.
 The registration supplies its ID, display name, setup usage, setup operation, and
 lazy configuration loader. The CLI generates setup help and dispatches
 `gateway <id> setup ...` through that registration.
-Lint restricts concrete channel imports to registration modules.
+Lint restricts concrete gateway imports to registration modules.
 
 The optional `promptSetup` operation collects interactive choices and returns a
 save effect, or `null` when skipped. The host runs that effect after collecting
 the remaining choices. `poppet setup` uses the bundled Discord and Slack
 registrations and does not load external adapters.
 
-The host supplies `ChannelEnvironment` with the data directory and `ChannelInput`
+The host supplies `GatewayEnvironment` with the data directory and `GatewayInput`
 with bounded, redacted secret input. The package owns argument validation,
 credential storage, setup messages, and connection construction. `load` returns
-`null` when unconfigured or a scoped `MessagingChannel` layer when configured;
+`null` when unconfigured or a scoped `GatewayAdapter` layer when configured;
 loading settings must not connect to the platform. Use a lightweight registration
 entry point and import heavy SDK code only when its layer is built.
 
@@ -359,11 +359,11 @@ with a reply. Without `download`, a message with files gets a reply that the
 channel cannot receive them. The agent identifies file types and applies limits
 for every channel. A platform that delivers file bytes inline with the message,
 with nothing to fetch later, is not yet supported.
-Shared `loadChannelSettings` and `saveChannelSettings` preserve
+Shared `loadGatewaySettings` and `saveGatewaySettings` preserve
 bounded reads, ownership checks, atomic replacement, and protected file modes
 while adapters own their schemas.
 
-See [messaging package boundaries](architecture.md#package-boundaries) for the channel contract.
+See [messaging package boundaries](architecture.md#package-boundaries) for the gateway contract.
 
 ## Validation
 

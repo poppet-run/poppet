@@ -1,4 +1,4 @@
-import { channelSettings } from "@poppet/gateway";
+import { gatewaySettings } from "@poppet/gateway";
 import { Schema } from "effect";
 
 const UserId = Schema.String.check(Schema.isPattern(/^[1-9][0-9]{0,15}$/));
@@ -35,4 +35,4 @@ export const TelegramSettings = Schema.Struct({
 
 export type TelegramSettings = typeof TelegramSettings.Type;
 
-export const telegramSettings = channelSettings("telegram", "Telegram", TelegramSettings);
+export const telegramSettings = gatewaySettings("telegram", "Telegram", TelegramSettings);

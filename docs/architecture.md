@@ -1016,19 +1016,19 @@ independent of inference providers, so a channel can use any configured provider
 that supports the selected model. Call the typed agent interface directly
 and consume completed runs rather than parsing CLI stdout or stderr.
 
-`ChannelRegistration` in `@poppet/gateway` defines identity, setup help, setup,
+`GatewayRegistration` in `@poppet/gateway` defines identity, setup help, setup,
 and lazy loading. The CLI registry is `apps/cli/src/commands/gateway/registry.ts`; it is the
-only CLI module importing a concrete channel package. The generic host generates
-help, dispatches setup, and composes each configured channel with its own gateway
+only CLI module importing a concrete gateway package. The generic host generates
+help, dispatches setup, and composes each configured gateway with its own gateway
 instance. Gateways share the store, repository, and agent permit. A fresh gateway
 layer per registration keeps message streams, authorization, and sessions isolated.
 
-The host provides only `ChannelEnvironment.dataDirectory` and bounded secret input
-through `ChannelInput`. Adapters own argument schemas, credential handling,
+The host provides only `GatewayEnvironment.dataDirectory` and bounded secret input
+through `GatewayInput`. Adapters own argument schemas, credential handling,
 setup messages, optional interactive `promptSetup`, and platform loading. Configuration
 inspection returns either no configured layer or a layer that connects only when built. Discord and Slack expose
 lightweight registration entries and load their SDKs lazily. Telegram calls the Bot API
-with `fetch` and loads its channel module lazily.
+with `fetch` and loads its adapter module lazily.
 Existing setup commands and settings files are unchanged.
 
 `worker status` reports messaging connection state and configuration errors in a `channels`
@@ -1177,9 +1177,9 @@ slash commands. Live Discord checks remain manual.
 
 ### External adapters
 
-The CLI loads default `ChannelRegistration` exports listed in `gatewayPackages`
+The CLI loads default `GatewayRegistration` exports listed in `gatewayPackages`
 from `<POPPET_DATA_DIR>/gateways`. Discord, Slack, and Telegram remain bundled. See
-[adding a channel](development.md#adding-a-channel) for setup and compatibility.
+[adding a gateway](development.md#adding-a-gateway) for setup and compatibility.
 
 ## Dependencies
 

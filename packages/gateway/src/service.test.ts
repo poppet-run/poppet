@@ -34,8 +34,8 @@ import {
 import { SqlClient } from "effect/sql";
 import { TestClock } from "effect/testing";
 
-import { ChannelError, MessagingChannel } from "#src/channel";
-import type { ApprovalAction, ApprovalState, IncomingMessage } from "#src/channel";
+import { GatewayError, GatewayAdapter } from "#src/adapter";
+import type { ApprovalAction, ApprovalState, IncomingMessage } from "#src/adapter";
 import { deliverNext } from "#src/delivery";
 import { chunks } from "#src/replies";
 import { GatewayRepository, GatewayRepositoryLive, TaskDeliveriesLive } from "#src/repository";
@@ -74,7 +74,7 @@ const response = (text = "Answer") =>
   });
 
 const fixture = async (
-  overrides: Partial<MessagingChannel["Service"]> = {},
+  overrides: Partial<GatewayAdapter["Service"]> = {},
   stream: ModelOperations["stream"] = () => response(),
   tools = false,
   policy: Partial<ChatPolicy> = {},
@@ -88,7 +88,7 @@ const fixture = async (
   const sent: Array<{ destination: string; text: string; nonce: string }> = [];
   const marks: Array<{ messageId: string; state: string }> = [];
 
-  const channel = Layer.succeed(MessagingChannel, {
+  const channel = Layer.succeed(GatewayAdapter, {
     id: "discord",
     accountId: Effect.succeed("bot"),
     policy: { ownerId: "owner", scopeId: "guild" },
@@ -169,7 +169,7 @@ const fixture = async (
         A,
         E,
         | Gateway
-        | MessagingChannel
+        | GatewayAdapter
         | Store
         | SqlClient.SqlClient
         | GatewayRepository
@@ -379,7 +379,7 @@ describe.concurrent("Gateway", () => {
           checkAccess: (input) =>
             Effect.suspend(() => {
               if (revoked) {
-                return Effect.fail(new ChannelError({ reason: "permission", message: "Revoked" }));
+                return Effect.fail(new GatewayError({ reason: "permission", message: "Revoked" }));
               }
 
               if (
@@ -401,7 +401,7 @@ describe.concurrent("Gateway", () => {
 
                 if (action === "update-failed") {
                   return yield* Effect.fail(
-                    new ChannelError({ reason: "unavailable", message: "Lost update" }),
+                    new GatewayError({ reason: "unavailable", message: "Lost update" }),
                   );
                 }
               }),
@@ -923,7 +923,7 @@ describe.concurrent("Gateway", () => {
         destination: (id) =>
           id === "foreign-channel"
             ? Effect.fail(
-                new ChannelError({
+                new GatewayError({
                   reason: "permission",
                   message: "Outside the configured server",
                 }),
@@ -931,7 +931,7 @@ describe.concurrent("Gateway", () => {
             : Effect.succeed("parent"),
         checkAccess: () =>
           denied
-            ? Effect.fail(new ChannelError({ reason: "permission", message: "Access revoked" }))
+            ? Effect.fail(new GatewayError({ reason: "permission", message: "Access revoked" }))
             : Effect.void,
       },
       () => {
@@ -1309,7 +1309,7 @@ describe.concurrent("Gateway", () => {
           destinations.push(destination);
 
           return ++attempts === 1
-            ? Effect.fail(new ChannelError({ reason, message: "Send failed", retryAfterMs: 1000 }))
+            ? Effect.fail(new GatewayError({ reason, message: "Send failed", retryAfterMs: 1000 }))
             : Effect.succeed("sent");
         },
       });
@@ -1361,17 +1361,17 @@ describe.concurrent("Gateway", () => {
       await state.run(
         Effect.gen(function* () {
           const repo = yield* GatewayRepository;
-          const channel = yield* MessagingChannel;
+          const adapter = yield* GatewayAdapter;
           const clock = yield* Clock.Clock;
           const store = yield* Store;
           const recording = yield* Deferred.make<void>();
           const resume = yield* Deferred.make<void>();
 
-          const entry = (yield* repo.accept(channel.id, "bot", message("first", "thread")))!;
+          const entry = (yield* repo.accept(adapter.id, "bot", message("first", "thread")))!;
           yield* repo.complete(entry.id, ["Reply"]);
 
           const fiber = yield* deliverNext({
-            channel,
+            adapter,
             clock,
             store,
             quietHours: null,
@@ -1740,7 +1740,7 @@ describe.concurrent("Gateway", () => {
       const state = await fixture({
         send: () =>
           ++sends === 1
-            ? Effect.fail(new ChannelError({ reason, message: "Send failed" }))
+            ? Effect.fail(new GatewayError({ reason, message: "Send failed" }))
             : Effect.succeed("sent"),
       });
 
@@ -1774,7 +1774,7 @@ describe.concurrent("Gateway", () => {
       checkAccess: () =>
         allowed
           ? Effect.void
-          : Effect.fail(new ChannelError({ reason: "permission", message: "Thread deleted" })),
+          : Effect.fail(new GatewayError({ reason: "permission", message: "Thread deleted" })),
     });
 
     try {
@@ -1806,7 +1806,7 @@ describe.concurrent("Gateway", () => {
       destination: () => Effect.succeed(parent),
       checkAccess: () =>
         parent === "unauthorized"
-          ? Effect.fail(new ChannelError({ reason: "permission", message: "Access revoked" }))
+          ? Effect.fail(new GatewayError({ reason: "permission", message: "Access revoked" }))
           : Effect.void,
     });
 
@@ -1858,7 +1858,7 @@ describe.concurrent("Gateway", () => {
 
   test("when reactions fail, continues model work and reply delivery without repetition", async () => {
     const state = await fixture({
-      mark: () => Effect.fail(new ChannelError({ reason: "permission", message: "Cannot react" })),
+      mark: () => Effect.fail(new GatewayError({ reason: "permission", message: "Cannot react" })),
     });
 
     try {
@@ -1965,7 +1965,7 @@ describe.concurrent("Gateway", () => {
       {
         download: () =>
           Effect.fail(
-            new ChannelError({
+            new GatewayError({
               reason: "permission",
               message: "the file is not hosted by Discord.",
             }),
@@ -2015,7 +2015,7 @@ describe.concurrent("Gateway", () => {
         download: () => {
           attempts++;
 
-          return Effect.fail(new ChannelError({ reason, message: "Download failed." }));
+          return Effect.fail(new GatewayError({ reason, message: "Download failed." }));
         },
       });
 
@@ -2345,7 +2345,7 @@ describe.concurrent("Gateway", () => {
         conversation: () =>
           ++attempts === 1
             ? Effect.fail(
-                new ChannelError({ reason: "uncertain", message: "Lost creation acknowledgement" }),
+                new GatewayError({ reason: "uncertain", message: "Lost creation acknowledgement" }),
               )
             : Effect.succeed({ id: "recovered-thread", managedName: null }),
         current: () => Effect.die("Unexpected name lookup"),
@@ -2382,7 +2382,7 @@ describe.concurrent("Gateway", () => {
         send: () =>
           ++attempts === 1
             ? Effect.fail(
-                new ChannelError({
+                new GatewayError({
                   reason,
                   message: "Injected send failure",
                   retryAfterMs: 60_000,
@@ -2437,7 +2437,7 @@ describe.concurrent("Gateway", () => {
       {
         send: () =>
           ++attempts === 2
-            ? Effect.fail(new ChannelError({ reason: "uncertain", message: "Lost reply" }))
+            ? Effect.fail(new GatewayError({ reason: "uncertain", message: "Lost reply" }))
             : Effect.succeed("sent"),
       },
       () => response(text),
@@ -2658,7 +2658,7 @@ describe("conversationNaming", () => {
       const renames: Array<string> = [];
       let titleRequests = 0;
 
-      const naming: MessagingChannel["Service"]["naming"] = {
+      const naming: GatewayAdapter["Service"]["naming"] = {
         sanitize: (title) => title,
         changes: Stream.never,
         conversation: (input, title) =>
@@ -2677,7 +2677,7 @@ describe("conversationNaming", () => {
 
             if (mode === "permission" || mode === "rate-limit") {
               return Effect.fail(
-                new ChannelError({
+                new GatewayError({
                   reason: mode === "permission" ? "permission" : "unavailable",
                   message: "Cannot rename",
                   retryAfterMs: 60_000,
@@ -2688,7 +2688,7 @@ describe("conversationNaming", () => {
             current = title;
 
             return mode === "uncertain"
-              ? Effect.fail(new ChannelError({ reason: "uncertain", message: "Lost reply" }))
+              ? Effect.fail(new GatewayError({ reason: "uncertain", message: "Lost reply" }))
               : Effect.succeed(current);
           }),
       };
@@ -3219,7 +3219,7 @@ describe.concurrent("Gateway concurrent requests", () => {
     const state = await fixture({
       checkAccess: (incoming) =>
         failApprove && incoming.text.startsWith("/approve")
-          ? Effect.fail(new ChannelError({ reason: "permission", message: "Thread access lost." }))
+          ? Effect.fail(new GatewayError({ reason: "permission", message: "Thread access lost." }))
           : Effect.void,
     });
 

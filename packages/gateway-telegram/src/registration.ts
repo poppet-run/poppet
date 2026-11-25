@@ -1,5 +1,5 @@
-import { ChannelEnvironment, ChannelError, parseSetupFlags } from "@poppet/gateway";
-import type { ChannelRegistration } from "@poppet/gateway";
+import { GatewayEnvironment, GatewayError, parseSetupFlags } from "@poppet/gateway";
+import type { GatewayRegistration } from "@poppet/gateway";
 import { Effect, Schema } from "effect";
 
 import { TelegramSettings, telegramSettings } from "#src/settings";
@@ -38,7 +38,7 @@ export const telegram = {
         ["home-conversation-id"],
       );
 
-      const environment = yield* ChannelEnvironment;
+      const environment = yield* GatewayEnvironment;
 
       const settings = yield* Schema.decodeUnknownEffect(TelegramSettings)({
         ownerId: values["owner-id"],
@@ -48,7 +48,7 @@ export const telegram = {
       }).pipe(
         Effect.mapError(
           () =>
-            new ChannelError({
+            new GatewayError({
               reason: "configuration",
               message:
                 "Use numeric Telegram IDs, the owner's ID as a private chat ID, a home conversation in that chat, and a bot token from BotFather.",
@@ -61,8 +61,8 @@ export const telegram = {
       return "Telegram settings saved. Restart the worker to apply them. Only the configured owner can invoke Poppet; chat members can read its replies.";
     }),
   load: telegramSettings.loader((settings) =>
-    import("#src/channel").then(({ telegramChannelLayer }) => telegramChannelLayer(settings)),
+    import("#src/adapter").then(({ telegramAdapterLayer }) => telegramAdapterLayer(settings)),
   ),
-} satisfies ChannelRegistration;
+} satisfies GatewayRegistration;
 
 export default telegram;

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { BunServices } from "@effect/platform-bun";
-import { ChannelEnvironment, ChannelInput } from "@poppet/gateway";
+import { GatewayEnvironment, GatewayInput } from "@poppet/gateway";
 import { CredentialInput, Provider, ProviderConnection, invalidRequest } from "@poppet/provider";
 import type { ProviderRegistration } from "@poppet/provider";
 import { serveWorker, workerSocketPath } from "@poppet/worker";
@@ -13,7 +13,7 @@ import type { Cause } from "effect";
 
 import { readChatLine } from "#src/commands/chat/prompt";
 import { createCLIContext } from "#src/commands/context";
-import { channels } from "#src/commands/gateway/registry";
+import { gateways } from "#src/commands/gateway/registry";
 import { runSetup } from "#src/commands/setup/command";
 import type { manageWorker } from "#src/commands/worker/service";
 
@@ -120,7 +120,7 @@ const fixture = async (includeSlack = false) => {
     [registration("first-provider"), registration("saved-provider")],
     () => Effect.void,
     worker,
-    includeSlack ? channels : channels.filter((channel) => channel.id === "discord"),
+    includeSlack ? gateways : gateways.filter((gateway) => gateway.id === "discord"),
     readChatLine,
     () => Effect.void,
   );
@@ -244,7 +244,7 @@ describe("setup", () => {
     const f = await fixture();
     f.state.connected = true;
     await Effect.runPromise(
-      channels[0]!
+      gateways[0]!
         .setup([
           "setup",
           "--owner-id",
@@ -257,8 +257,8 @@ describe("setup", () => {
           "saved-secret",
         ])
         .pipe(
-          Effect.provideService(ChannelEnvironment, { dataDirectory: f.directory }),
-          Effect.provideService(ChannelInput, {
+          Effect.provideService(GatewayEnvironment, { dataDirectory: f.directory }),
+          Effect.provideService(GatewayInput, {
             readSecret: Effect.die("Setup must not read stdin"),
           }),
         ),

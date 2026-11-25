@@ -1,7 +1,7 @@
 import type { Effect, Stream } from "effect";
 import { Context, Data, Schema } from "effect";
 
-export class ChannelError extends Data.TaggedError("ChannelError")<{
+export class GatewayError extends Data.TaggedError("GatewayError")<{
   readonly reason: "unavailable" | "permission" | "uncertain" | "configuration" | "overloaded";
   readonly message: string;
   readonly retryAfterMs?: number;
@@ -31,7 +31,7 @@ export const IncomingMessage = Schema.Struct({
 
 export type IncomingMessage = typeof IncomingMessage.Type;
 
-export interface ChannelPolicy {
+export interface GatewayPolicy {
   readonly ownerId: string;
   readonly scopeId: string;
 }
@@ -42,50 +42,50 @@ export interface ApprovalAction {
   readonly requestId: string;
   readonly decision: "approve" | "deny";
   readonly source: IncomingMessage;
-  readonly reply: (text: string) => Effect.Effect<void, ChannelError>;
+  readonly reply: (text: string) => Effect.Effect<void, GatewayError>;
 }
 
-export class MessagingChannel extends Context.Service<
-  MessagingChannel,
+export class GatewayAdapter extends Context.Service<
+  GatewayAdapter,
   {
     readonly id: string;
-    readonly accountId: Effect.Effect<string, ChannelError>;
-    readonly policy: ChannelPolicy;
+    readonly accountId: Effect.Effect<string, GatewayError>;
+    readonly policy: GatewayPolicy;
     readonly homeConversationId?: string;
-    readonly messages: Stream.Stream<IncomingMessage, ChannelError>;
+    readonly messages: Stream.Stream<IncomingMessage, GatewayError>;
     readonly checkAccess: (
       message: IncomingMessage,
       conversationId: string,
-    ) => Effect.Effect<void, ChannelError>;
-    readonly destination: (conversationId: string) => Effect.Effect<string, ChannelError>;
-    readonly typing: (conversationId: string) => Effect.Effect<void, ChannelError>;
+    ) => Effect.Effect<void, GatewayError>;
+    readonly destination: (conversationId: string) => Effect.Effect<string, GatewayError>;
+    readonly typing: (conversationId: string) => Effect.Effect<void, GatewayError>;
     readonly mark: (
       message: IncomingMessage,
       state: "working" | "completed" | "stopped",
-    ) => Effect.Effect<void, ChannelError>;
+    ) => Effect.Effect<void, GatewayError>;
     readonly download?: (
       attachment: IncomingAttachment,
       maxBytes: number,
-    ) => Effect.Effect<Uint8Array, ChannelError>;
+    ) => Effect.Effect<Uint8Array, GatewayError>;
     readonly send: (
       conversationId: string,
       text: string,
       nonce: string,
-    ) => Effect.Effect<string, ChannelError>;
+    ) => Effect.Effect<string, GatewayError>;
     readonly approvals?: {
-      readonly actions: Stream.Stream<ApprovalAction, ChannelError>;
+      readonly actions: Stream.Stream<ApprovalAction, GatewayError>;
       readonly send: (
         conversationId: string,
         text: string,
         nonce: string,
         requestId: string,
-      ) => Effect.Effect<string, ChannelError>;
+      ) => Effect.Effect<string, GatewayError>;
       readonly update: (
         conversationId: string,
         messageId: string,
         requestId: string,
         state: ApprovalState,
-      ) => Effect.Effect<void, ChannelError>;
+      ) => Effect.Effect<void, GatewayError>;
     };
     readonly status: Effect.Effect<Schema.JsonObject>;
     readonly textLimit: number;
@@ -96,19 +96,19 @@ export class MessagingChannel extends Context.Service<
         title: string,
       ) => Effect.Effect<
         { readonly id: string; readonly managedName: string | null },
-        ChannelError
+        GatewayError
       >;
       readonly current: (
         message: IncomingMessage,
         id: string,
-      ) => Effect.Effect<string, ChannelError>;
+      ) => Effect.Effect<string, GatewayError>;
       readonly rename: (
         message: IncomingMessage,
         id: string,
         expected: string,
         title: string,
-      ) => Effect.Effect<string | null, ChannelError>;
+      ) => Effect.Effect<string | null, GatewayError>;
       readonly changes: Stream.Stream<string>;
     };
   }
->()("poppet/MessagingChannel") {}
+>()("poppet/GatewayAdapter") {}

@@ -1,7 +1,7 @@
 import { SkillName } from "@poppet/store";
 import { Effect, Schema } from "effect";
 
-import { ChannelError } from "#src/channel";
+import { GatewayError } from "#src/adapter";
 
 export const messagingRequest = (text: string, attached = false) =>
   Effect.gen(function* () {
@@ -23,7 +23,7 @@ export const messagingRequest = (text: string, attached = false) =>
 
     if (prompt.startsWith("--") || (!prompt && !attached)) {
       return yield* Effect.fail(
-        new ChannelError({
+        new GatewayError({
           reason: "configuration",
           message: "Use /new [--skill <name>] <message> to start a fresh session.",
         }),

@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { AgentError } from "@poppet/agent";
 import { StoreError } from "@poppet/store";
 
-import { ChannelError } from "#src/channel";
+import { GatewayError } from "#src/adapter";
 import { failureDecision } from "#src/failure";
 
 const generic =
@@ -11,9 +11,9 @@ const generic =
 
 describe("failureDecision", () => {
   test.each(["unavailable", "uncertain"] as const)(
-    "when a channel is %s, retries for its matching backoff window",
+    "when a gateway is %s, retries for its matching backoff window",
     (reason) => {
-      const error = new ChannelError({ reason, message: "Down" });
+      const error = new GatewayError({ reason, message: "Down" });
 
       expect(failureDecision(error, 0)).toEqual({ retryAfterMs: 1000, reply: generic });
       const limit = reason === "unavailable" ? 6 : 3;
@@ -22,16 +22,16 @@ describe("failureDecision", () => {
     },
   );
 
-  test("when a channel asks to wait longer, retries after its delay", () => {
-    const error = new ChannelError({ reason: "unavailable", message: "Slow", retryAfterMs: 9000 });
+  test("when a gateway asks to wait longer, retries after its delay", () => {
+    const error = new GatewayError({ reason: "unavailable", message: "Slow", retryAfterMs: 9000 });
 
     expect(failureDecision(error, 1).retryAfterMs).toBe(9000);
   });
 
   test.each(["permission", "configuration", "overloaded"] as const)(
-    "when a channel reports %s, fails with the generic reply",
+    "when a gateway reports %s, fails with the generic reply",
     (reason) => {
-      expect(failureDecision(new ChannelError({ reason, message: "No" }), 0)).toEqual({
+      expect(failureDecision(new GatewayError({ reason, message: "No" }), 0)).toEqual({
         retryAfterMs: null,
         reply: generic,
       });

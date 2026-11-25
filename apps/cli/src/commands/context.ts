@@ -1,12 +1,12 @@
 import { AppConfig } from "@poppet/config";
-import type { ChannelRegistration } from "@poppet/gateway";
+import type { GatewayRegistration } from "@poppet/gateway";
 import type { ProviderRegistration } from "@poppet/provider";
 import { workerSocketPath } from "@poppet/worker";
 import { Effect, Layer } from "effect";
 
 import type { ChatSubmission, ChatWriter, ChatReasoningWriter } from "#src/commands/chat/chat";
 import type { readChatLine } from "#src/commands/chat/prompt";
-import { MessagingWorkerLive, validateChannels } from "#src/commands/gateway/channels";
+import { MessagingWorkerLive, validateGateways } from "#src/commands/gateway/gateways";
 import { runWorker } from "#src/commands/worker/host";
 import {
   remoteWorkerCommand,
@@ -21,16 +21,16 @@ export const createCLIContext = (
   registered: ReadonlyArray<ProviderRegistration>,
   write: ChatWriter,
   worker: typeof manageWorker,
-  registeredChannels: ReadonlyArray<ChannelRegistration>,
+  registeredGateways: ReadonlyArray<GatewayRegistration>,
   readLine: typeof readChatLine,
   writeThinking: ChatWriter,
 ) => {
   const runtime = runtimeLayers(registered);
-  validateChannels(registeredChannels);
+  validateGateways(registeredGateways);
 
   const startWorker = () => {
     const requests = WorkerRequestsLive.pipe(
-      Layer.provideMerge(MessagingWorkerLive(registeredChannels)),
+      Layer.provideMerge(MessagingWorkerLive(registeredGateways)),
       Layer.provideMerge(runtime.tasks),
       Layer.provideMerge(runtime.chat),
     );
@@ -75,7 +75,7 @@ export const createCLIContext = (
 
   return {
     registered,
-    channels: registeredChannels,
+    gateways: registeredGateways,
     runtime,
     write,
     writeThinking,

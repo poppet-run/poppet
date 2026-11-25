@@ -1,14 +1,14 @@
 import { Effect } from "effect";
 
-import { ChannelError } from "#src/channel";
-import type { IncomingAttachment } from "#src/channel";
+import { GatewayError } from "#src/adapter";
+import type { IncomingAttachment } from "#src/adapter";
 
 export type AttachmentFetch = (input: URL, init: RequestInit) => Promise<Response>;
 
-const refused = (message: string) => new ChannelError({ reason: "permission", message });
+const refused = (message: string) => new GatewayError({ reason: "permission", message });
 
 const unavailable = () =>
-  new ChannelError({
+  new GatewayError({
     reason: "unavailable",
     message: "The server did not return the attachment. Try sending it again.",
   });
@@ -93,5 +93,5 @@ export const boundedAttachment =
 
         return Buffer.concat(chunks);
       },
-      catch: (cause) => (cause instanceof ChannelError ? cause : unavailable()),
+      catch: (cause) => (cause instanceof GatewayError ? cause : unavailable()),
     });

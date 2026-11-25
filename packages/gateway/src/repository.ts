@@ -13,7 +13,7 @@ import { DeliveryState, TaskDeliveries, TaskError, taskSchema } from "@poppet/ta
 import { Array, Clock, Context, Effect, Layer, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 
-import { IncomingMessage, ChannelError } from "#src/channel";
+import { GatewayError, IncomingMessage } from "#src/adapter";
 import { gatewaySchema } from "#src/migrations";
 import { isControl } from "#src/request";
 
@@ -63,7 +63,7 @@ const Binding = Schema.Struct({
 });
 
 const gatewayFailure = (cause: unknown) =>
-  cause instanceof ChannelError
+  cause instanceof GatewayError
     ? cause
     : new StoreError({ reason: "storage", message: "Cannot read or write messaging records." });
 
@@ -289,7 +289,7 @@ const repository = Effect.gen(function* () {
           const control = isControl(message.text);
 
           if ((queued?.count ?? 0) >= 64 && !control) {
-            return yield* new ChannelError({
+            return yield* new GatewayError({
               reason: "overloaded",
               message: "Messaging queue is full. Try again later.",
             });

@@ -1,4 +1,4 @@
-import type { ChannelRegistration } from "@poppet/gateway";
+import type { GatewayRegistration } from "@poppet/gateway";
 
 interface TextCommand {
   readonly positionals: number;
@@ -25,7 +25,7 @@ const textCommands = new Map<string, TextCommand>([
 
 export const commandArgs = (
   args: ReadonlyArray<string>,
-  channels: ReadonlyArray<ChannelRegistration>,
+  gateways: ReadonlyArray<GatewayRegistration>,
 ): ReadonlyArray<string> => {
   if (args.length === 0) {
     return ["--help"];
@@ -33,7 +33,7 @@ export const commandArgs = (
 
   let offset = 2;
 
-  if (args[0] === "gateway" && channels.some((entry) => entry.id === args[1])) {
+  if (args[0] === "gateway" && gateways.some((entry) => entry.id === args[1])) {
     if (args.includes("--help") || args.includes("-h")) {
       return args;
     }
