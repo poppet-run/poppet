@@ -749,12 +749,17 @@ export class ChatTerminal {
     this.queue = [];
     this.active = undefined;
     this.attachments = [];
-    this.output.write(`${escape}<u${escape}?2004l${escape}0m${escape}?25h${escape}?1049l`);
-    this.output.write(
-      this.sessionId === undefined
-        ? "Chat closed. No session was created.\n"
-        : `Resume this session with:\n  poppet chat ${this.sessionId}\n`,
-    );
+
+    try {
+      this.output.write(`${escape}<u${escape}?2004l${escape}0m${escape}?25h${escape}?1049l`);
+      this.output.write(
+        this.sessionId === undefined
+          ? "Chat closed. No session was created.\n"
+          : `Resume this session with:\n  poppet chat ${this.sessionId}\n`,
+      );
+    } catch {
+      // The PTY may have hung up before the terminal closes.
+    }
   }
 }
 
@@ -782,7 +787,6 @@ export const openChatTerminal = Effect.gen(function* () {
       process.stdin.off("error", failure);
       process.stdin.off("end", stop);
       process.stdout.off("resize", terminal.repaint);
-      process.stdout.off("error", failure);
 
       try {
         process.stdin.setRawMode(wasRaw);
@@ -795,6 +799,8 @@ export const openChatTerminal = Effect.gen(function* () {
       }
 
       terminal.close();
+      // Write errors from close arrive on a later tick.
+      setImmediate(() => process.stdout.off("error", failure));
     }),
   );
 
