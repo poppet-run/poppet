@@ -38,10 +38,11 @@ const controlReply = (
 
       yield* claims.withPermit(
         Effect.gen(function* () {
-          yield* repo.cancel(adapter.id, entry.account, message.scopeId, conversation);
+          yield* repo.cancel(adapter.id, entry.account, message.scopeId, conversation, entry.id);
 
           for (const request of requests.values()) {
             if (
+              request.entry.id < entry.id &&
               request.entry.account === entry.account &&
               request.entry.message.scopeId === message.scopeId &&
               request.entry.conversationId === conversation

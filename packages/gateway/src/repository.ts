@@ -392,10 +392,12 @@ const repository = Effect.gen(function* () {
     state: operation((id: number, state: InboxState) =>
       sql`UPDATE gateway_inbox SET state = ${state} WHERE id = ${id}`.pipe(Effect.asVoid),
     ),
-    cancel: operation((adapter: string, account: string, scope: string, conversation: string) =>
-      sql`UPDATE gateway_inbox SET state = 'cancelled' WHERE adapter = ${adapter}
-        AND account = ${account} AND json_extract(payload, '$.scopeId') = ${scope}
-        AND conversation_id = ${conversation} AND state = 'queued'`.pipe(Effect.asVoid),
+    cancel: operation(
+      (adapter: string, account: string, scope: string, conversation: string, before: number) =>
+        sql`UPDATE gateway_inbox SET state = 'cancelled' WHERE adapter = ${adapter}
+          AND account = ${account} AND json_extract(payload, '$.scopeId') = ${scope}
+          AND conversation_id = ${conversation} AND state = 'queued'
+          AND id < ${before}`.pipe(Effect.asVoid),
     ),
     complete: operation(
       (
