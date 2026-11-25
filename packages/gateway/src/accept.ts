@@ -131,13 +131,11 @@ export const accept = (context: GatewayContext, controls: Controls, input: Incom
       return;
     }
 
-    yield* wake(context.wakes.inbox);
-
     if (!isControl(message.text)) {
+      yield* wake(context.wakes.inbox);
+
       return;
     }
-
-    yield* repo.state(entry.id, "cancelled");
 
     if (conversation === null || session === null) {
       return;
