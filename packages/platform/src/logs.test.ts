@@ -26,6 +26,21 @@ describe("readWorkerLogs", () => {
     }
   });
 
+  test("when the budget is used up before an empty rotated file, still detects older logs", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-worker-logs-"));
+    const log = join(directory, "worker.log");
+    const recent = "y".repeat(65_536 - "first\n".length - 1);
+
+    try {
+      await writeFile(log, `first\n${recent}\n`);
+      await writeFile(`${log}.1`, "");
+      await writeFile(`${log}.2`, "older\n");
+      expect(await readWorkerLogs(log)).toBe(recent);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("when preparing a worker log that is hardlinked, rejects it", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-worker-log-prepare-"));
     const logs = join(directory, "logs");
