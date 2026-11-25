@@ -8,7 +8,7 @@ import { readProtectedFile, writeFileAtomic } from "@poppet/io";
 import { MCPServers, mcpFileValue } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Layer, Schedule, Schema } from "effect";
 
-import { QuietHours, TimeZone } from "#src/quiet-hours";
+import { QuietHoursSetting, TimeZone } from "#src/quiet-hours";
 
 export const ConfigText = Schema.NonEmptyString.check(Schema.isTrimmed());
 
@@ -42,7 +42,7 @@ const FileSettings = Schema.Struct({
   tasks: Schema.optionalKey(
     Schema.Struct({
       catchUpMinutes: Schema.optionalKey(Schema.Int),
-      quietHours: Schema.optionalKey(QuietHours),
+      quietHours: Schema.optionalKey(QuietHoursSetting),
     }),
   ),
   chat: Schema.optionalKey(
@@ -54,7 +54,15 @@ const FileSettings = Schema.Struct({
       maxConcurrentRequests: Schema.optionalKey(Schema.Int),
     }),
   ),
-});
+}).check(
+  Schema.makeFilter(
+    (file) =>
+      file.tasks?.quietHours === undefined ||
+      file.tasks.quietHours.timeZone !== undefined ||
+      file.timeZone !== undefined ||
+      "Set tasks.quietHours.timeZone or the top-level timeZone.",
+  ),
+);
 
 export class ConfigIdentity extends Context.Service<ConfigIdentity, string>()(
   "poppet/ConfigIdentity",
@@ -116,7 +124,9 @@ export const loadConfigSource = Effect.gen(function* () {
       file.gatewayPackages === undefined ? undefined : JSON.stringify(file.gatewayPackages),
     catchUpMinutes: file.tasks?.catchUpMinutes,
     quietHours:
-      file.tasks?.quietHours === undefined ? undefined : JSON.stringify(file.tasks.quietHours),
+      file.tasks?.quietHours === undefined
+        ? undefined
+        : JSON.stringify({ timeZone: file.timeZone, ...file.tasks.quietHours }),
     logReasoning: file.chat?.logReasoning,
     logTimings: file.chat?.logTimings,
     outputTokens: file.chat?.outputTokens,

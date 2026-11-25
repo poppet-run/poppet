@@ -206,6 +206,29 @@ describe("loadConfigSource", () => {
     }
   });
 
+  test("when quiet hours omit timeZone, uses the top-level timeZone", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-quiet-hours-zone-"));
+
+    try {
+      await writeFile(
+        join(directory, "config.json"),
+        JSON.stringify({
+          timeZone: "Europe/Paris",
+          tasks: { quietHours: { start: "22:00", end: "07:30" } },
+        }),
+      );
+      const loaded = await Effect.runPromise(load({ POPPET_DATA_DIR: directory }));
+
+      expect(await Effect.runPromise(quietHours.pipe(Effect.provide(loaded.context)))).toEqual({
+        start: "22:00",
+        end: "07:30",
+        timeZone: "Europe/Paris",
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   test("authorization configuration rejects symlinks and files writable by other users", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-config-permissions-"));
 
