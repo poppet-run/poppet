@@ -154,7 +154,7 @@ Only `POPPET_DATA_DIR` and credential overrides configure Poppet through the
 environment. Keep ordinary settings in `config.json` so terminal and
 background-worker behavior agree.
 
-Bash / POSIX sh:
+Bash / Zsh / POSIX sh:
 
 ```sh
 export POPPET_DATA_DIR="$HOME/.local/share/poppet"

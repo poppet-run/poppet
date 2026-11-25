@@ -13,7 +13,7 @@ and prints its path, schema version, and session/message/run counts. It requires
 no login or selected model. Help, configuration, and auth commands do not open
 this database. To experiment in a separate directory:
 
-Bash / POSIX sh:
+Bash / Zsh / POSIX sh:
 
 ```sh
 export POPPET_DATA_DIR=/tmp/poppet-storage-test

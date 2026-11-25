@@ -263,7 +263,7 @@ interrupted requests are never automatically replayed.
 To manually test background execution, first save your provider and model in
 `config.json`:
 
-Bash / POSIX sh:
+Bash / Zsh / POSIX sh:
 
 ```sh
 when=$(date -u -v+1M +%Y-%m-%dT%H:%M:%SZ)
@@ -271,7 +271,7 @@ poppet tasks add background-summary --at "$when" "Read project.md and summarize 
 poppet worker install
 poppet worker status
 # After the scheduled time, inspect the task ID returned by tasks add:
-poppet tasks show <task-id>
+poppet tasks show '<task-id>'
 poppet worker logs
 ```
 
@@ -283,7 +283,7 @@ poppet tasks add background-summary --at $when "Read project.md and summarize it
 poppet worker install
 poppet worker status
 # After the scheduled time, inspect the task ID returned by tasks add:
-poppet tasks show <task-id>
+poppet tasks show '<task-id>'
 poppet worker logs
 ```
 

@@ -10,6 +10,15 @@ saves their history, so closing a page or signing out does not cancel a reply.
 
 From the repository root:
 
+Bash / Zsh:
+
+```sh
+bun install
+bun run build:web
+```
+
+fish:
+
 ```fish
 bun install
 bun run build:web
@@ -35,6 +44,14 @@ Create `web.json` with these fields:
 Use a random access key, separate from provider credentials. Generate one locally
 and save it in your password manager:
 
+Bash / Zsh:
+
+```sh
+openssl rand -hex 32
+```
+
+fish:
+
 ```fish
 openssl rand -hex 32
 ```
@@ -42,9 +59,22 @@ openssl rand -hex 32
 Hash the key without putting it in shell history. Paste the resulting digest, without
 its label, into `accessKeyHash`:
 
+Bash / Zsh:
+
+```sh
+printf 'Access key: ' >&2
+IFS= read -rs poppet_web_key
+printf '\n' >&2
+printf '%s' "$poppet_web_key" | openssl dgst -sha256
+unset poppet_web_key
+chmod 600 ~/.config/poppet/web.json
+```
+
+fish:
+
 ```fish
 read --silent --prompt-str 'Access key: ' poppet_web_key
-printf '%s' $poppet_web_key | openssl dgst -sha256
+printf '%s' "$poppet_web_key" | openssl dgst -sha256
 set --erase poppet_web_key
 chmod 600 ~/.config/poppet/web.json
 ```
@@ -55,6 +85,14 @@ and set its mode to `0600`. Replace the example hash before
 starting the worker.
 
 Start or restart the worker from this checkout:
+
+Bash / Zsh:
+
+```sh
+bun apps/cli/src/main.ts worker run
+```
+
+fish:
 
 ```fish
 bun apps/cli/src/main.ts worker run
