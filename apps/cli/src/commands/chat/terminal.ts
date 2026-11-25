@@ -637,9 +637,11 @@ export class ChatTerminal {
       ];
 
       // oxlint-disable-next-line no-control-regex
-      const control = /^\u001b(?:\[[0-9;?]*[ -/]*[@-~]|O[A-Z])/.exec(this.pending)?.[0];
+      const control = /^\u001b(?:\[[0-?]*[ -/]*[@-~]|O[A-Z])/.exec(this.pending)?.[0];
 
-      if (!control && (this.pending.startsWith(escape) || this.pending === "\u001bO")) {
+      // Wait only for a sequence that can still complete; otherwise consume the stray escape.
+      // oxlint-disable-next-line no-control-regex
+      if (!control && (/^\u001b\[[0-?]*[ -/]*$/.test(this.pending) || this.pending === "\u001bO")) {
         break;
       }
 

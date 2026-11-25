@@ -316,6 +316,21 @@ describe("ChatTerminal", () => {
     },
   );
 
+  test.each(["\u001b[\r", "\u001b[\u007f", "\u001b[99:67;5u", "\u001b[<5u"])(
+    "when %j arrives as an interrupted or extended escape sequence, still handles later keys",
+    (sequence) => {
+      const { terminal, exits } = fixture();
+
+      try {
+        terminal.input(sequence);
+        terminal.input("\u0003");
+        expect(exits()).toBe(1);
+      } finally {
+        terminal.close();
+      }
+    },
+  );
+
   test("loads earlier messages into the scrollable conversation without starting a turn", () => {
     const { terminal, screen } = fixture();
 
