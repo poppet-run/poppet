@@ -8,11 +8,13 @@ import type { Credentials, Identity } from "#src/connection";
 import { OAuthClient } from "#src/oauth/client";
 import { refreshBody } from "#src/oauth/tokens";
 
+type AccessToken = Effect.Effect<Redacted.Redacted<string>, ConnectionError>;
+
 export const accessTokenWorkflow = Effect.gen(function* () {
   const store = yield* CredentialStore;
   const oauth = yield* OAuthClient;
 
-  return Effect.gen(function* () {
+  const accessToken: AccessToken = Effect.gen(function* () {
     const connection = yield* store.read;
 
     if (connection === null) {
@@ -149,6 +151,14 @@ export const accessTokenWorkflow = Effect.gen(function* () {
 
     const replacement = yield* renew;
 
+    // A saved renewal can outlive its access token, so refresh it again once promoted.
+    if (
+      pendingRefresh !== undefined &&
+      (replacement.expiresAt ?? 0) <= (yield* DateTime.nowAsDate).getTime() + 60_000
+    ) {
+      return yield* accessToken;
+    }
+
     if (!replacement.scopes.includes(planScope)) {
       return yield* Effect.fail(
         new ConnectionError({
@@ -165,4 +175,6 @@ export const accessTokenWorkflow = Effect.gen(function* () {
 
     return replacement.accessToken;
   });
+
+  return accessToken;
 });
