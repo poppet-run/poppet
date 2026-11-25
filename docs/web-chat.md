@@ -64,7 +64,10 @@ If an installed worker already owns this data directory, stop it first. Make sur
 launch command points at this checkout.
 The worker prints the public web address when the listener starts.
 Rebuild the app and restart the worker after frontend changes. The worker loads
-assets into memory at startup.
+assets into memory at startup. The build also writes Brotli (`.br`) and gzip (`.gz`)
+copies of each asset, and the worker serves the copy the browser accepts. Bundled scripts and styles have content-hashed
+names, so browsers cache them for a year; `index.html` and the API are never cached.
+The proxy does not need to compress responses.
 
 `build:web` runs the [Tailwind CLI](https://tailwindcss.com/docs/installation/tailwind-cli)
 before bundling the page with Bun. Edit utility classes in `apps/web/src/components`

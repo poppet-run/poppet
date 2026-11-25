@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,7 +25,8 @@ import { Deferred, Effect, Layer, ManagedRuntime, Schema, Stream } from "effect"
 import { SqlClient } from "effect/sql";
 
 import { WebChat, WebChatLive } from "#src/commands/web-chat/chat";
-import { webHandler, WebSettings } from "#src/commands/web-chat/server";
+import { loadWebAssets, webHandler, WebSettings } from "#src/commands/web-chat/server";
+import type { WebAsset } from "#src/commands/web-chat/server";
 
 const accessKey = "test-only-web-chat-key-with-at-least-32-characters";
 
@@ -49,8 +50,16 @@ const storeLayer = (directory: string) => {
 
 const fixture = async (
   directory: string,
-  assets: ReadonlyMap<string, Blob> = new Map([
-    ["/index.html", new Blob(["<h1>Poppet</h1>"], { type: "text/html" })],
+  assets: ReadonlyMap<string, WebAsset> = new Map([
+    [
+      "/index.html",
+      {
+        type: "text/html",
+        body: new TextEncoder().encode("<h1>Poppet</h1>"),
+        encoded: new Map(),
+        immutable: false,
+      },
+    ],
   ]),
 ) => {
   const release = Deferred.makeUnsafe<void>();
@@ -311,13 +320,9 @@ describe("web chat", () => {
   });
 
   test("conversation deep links load the production scripts and styles", async () => {
-    const web = fileURLToPath(new URL("../../../../web/", import.meta.url));
-
-    const assets = new Map<string, Blob>();
-
-    for (const name of await readdir(join(web, "dist"))) {
-      assets.set(`/${name}`, Bun.file(join(web, "dist", name)));
-    }
+    const assets = await loadWebAssets(
+      fileURLToPath(new URL("../../../../web/dist/", import.meta.url)),
+    );
 
     const directory = await mkdtemp(join(tmpdir(), "poppet-web-assets-"));
     const app = await fixture(directory, assets);
@@ -345,9 +350,82 @@ describe("web chat", () => {
       );
 
       expect([...assets.keys()].toSorted()).toEqual(["/index.html", ...paths].toSorted());
+      expect([...assets.values()].map((asset) => [...asset.encoded.keys()].toSorted())).toEqual(
+        [...assets.keys()].map(() => ["br", "gzip"]),
+      );
     } finally {
       await app.runtime.dispose();
       await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("serves the compressed copy a browser accepts and caches only hashed files", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-web-encoding-"));
+    const dist = await mkdtemp(join(tmpdir(), "poppet-web-dist-"));
+
+    await Promise.all(
+      Object.entries({
+        "index.html": "<h1>Poppet</h1>",
+        "index.html.br": "page-br",
+        "index-abcd1234.js": "console.log('poppet');",
+        "index-abcd1234.js.br": "script-br",
+        "index-abcd1234.js.gz": "script-gz",
+      }).map(([name, text]) => writeFile(join(dist, name), text)),
+    );
+
+    const app = await fixture(directory, await loadWebAssets(dist));
+
+    const get = async (path: string, acceptEncoding?: string) => {
+      const response = await app.handler(
+        new Request(`${settings.origin}${path}`, {
+          headers: {
+            host: new URL(settings.origin).host,
+            ...(acceptEncoding !== undefined && { "accept-encoding": acceptEncoding }),
+          },
+        }),
+      );
+
+      return {
+        status: response.status,
+        body: await response.text(),
+        encoding: response.headers.get("content-encoding"),
+        cache: response.headers.get("cache-control"),
+        vary: response.headers.get("vary"),
+      };
+    };
+
+    try {
+      expect(await get("/index-abcd1234.js", "gzip, deflate, br, zstd")).toEqual({
+        status: 200,
+        body: "script-br",
+        encoding: "br",
+        cache: "public, max-age=31536000, immutable",
+        vary: "accept-encoding",
+      });
+      expect(await get("/index-abcd1234.js", "br;q=0, gzip")).toMatchObject({
+        body: "script-gz",
+        encoding: "gzip",
+      });
+      expect(await get("/index-abcd1234.js")).toMatchObject({
+        body: "console.log('poppet');",
+        encoding: null,
+      });
+      expect(await get("/chat/example", "gzip")).toMatchObject({
+        body: "<h1>Poppet</h1>",
+        encoding: null,
+        cache: "no-store",
+      });
+      expect(await get("/chat/example", "br")).toMatchObject({
+        body: "page-br",
+        encoding: "br",
+        cache: "no-store",
+      });
+      expect((await get("/index-abcd1234.js.br")).status).toBe(404);
+      expect((await get("/api/sessions")).cache).toBe("no-store");
+    } finally {
+      await app.runtime.dispose();
+      await rm(directory, { recursive: true, force: true });
+      await rm(dist, { recursive: true, force: true });
     }
   });
 
