@@ -89,43 +89,52 @@ const pinnedRequest = (url: URL, address: string, init: RequestInit, signal: Abo
       checkServerIdentity: (_name, certificate) => checkServerIdentity(hostname, certificate),
     });
 
-    pending.once("error", reject);
+    pending.on("error", reject);
     pending.once("upgrade", (_response, socket) => {
       socket.destroy();
       reject(new Error("OAuth endpoints cannot upgrade connections."));
     });
     pending.once("response", (incoming) => {
-      const status = incoming.statusCode ?? 500;
-      const responseHeaders = new Headers();
+      incoming.on("error", reject);
 
-      for (const [header, values] of Object.entries(incoming.headersDistinct)) {
-        for (const value of values ?? []) {
-          responseHeaders.append(header, value);
+      try {
+        const status = incoming.statusCode ?? 500;
+        const responseHeaders = new Headers();
+
+        for (const [header, values] of Object.entries(incoming.headersDistinct)) {
+          for (const value of values ?? []) {
+            responseHeaders.append(header, value);
+          }
         }
-      }
 
-      if (status === 204 || status === 205 || status === 304 || init.method === "HEAD") {
-        incoming.resume();
-        resolve(new Response(null, { status, headers: responseHeaders }));
-      } else {
-        const chunks: AsyncIterator<Uint8Array> = incoming[Symbol.asyncIterator]();
+        if (status === 204 || status === 205 || status === 304 || init.method === "HEAD") {
+          incoming.resume();
+          resolve(new Response(null, { status, headers: responseHeaders }));
+        } else {
+          const chunks: AsyncIterator<Uint8Array> = incoming[Symbol.asyncIterator]();
 
-        const stream = new ReadableStream<Uint8Array>({
-          async pull(controller) {
-            const chunk = await chunks.next();
+          const stream = new ReadableStream<Uint8Array>({
+            async pull(controller) {
+              const chunk = await chunks.next();
 
-            if (chunk.done) {
-              controller.close();
-            } else {
-              controller.enqueue(chunk.value);
-            }
-          },
-          cancel() {
-            incoming.destroy();
-          },
-        });
+              if (chunk.done) {
+                controller.close();
+              } else {
+                controller.enqueue(chunk.value);
+              }
+            },
+            cancel() {
+              incoming.destroy();
+              pending.destroy();
+            },
+          });
 
-        resolve(new Response(stream, { status, headers: responseHeaders }));
+          resolve(new Response(stream, { status, headers: responseHeaders }));
+        }
+      } catch (cause) {
+        incoming.destroy();
+        pending.destroy();
+        reject(cause);
       }
     });
     pending.end(content);
