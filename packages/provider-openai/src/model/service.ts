@@ -88,8 +88,6 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
               });
             }
 
-            catalogCache.entry = null;
-
             return yield* measureTiming(
               "model-catalog",
               Effect.gen(function* () {

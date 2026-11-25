@@ -127,8 +127,6 @@ export const createCatalogCache = <A extends { readonly id: string }>(ttlMs = 60
             });
           }
 
-          active.entry = null;
-
           return yield* measureTiming(
             "model-catalog",
             Effect.gen(function* () {

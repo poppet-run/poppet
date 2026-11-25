@@ -723,7 +723,7 @@ describe("makeOpenRouterProvider", () => {
     },
   );
 
-  test("when resolving models repeatedly, caches catalog lookups for 60 seconds and does not cache errors", async () => {
+  test("when resolving models repeatedly, caches catalog lookups for 60 seconds, does not cache errors, and keeps the catalog when a refresh fails", async () => {
     let reads = 0;
     let fail = true;
 
@@ -760,6 +760,11 @@ describe("makeOpenRouterProvider", () => {
 
         yield* provider.models;
         expect(reads).toBe(4);
+
+        fail = true;
+        expect(yield* provider.models.pipe(Effect.isFailure)).toBe(true);
+        yield* provider.resolve("vendor/model");
+        expect(reads).toBe(5);
       }).pipe(Effect.provide(TestClock.layer())),
     );
   });
