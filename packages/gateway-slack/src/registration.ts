@@ -53,7 +53,7 @@ export const slack = {
           () =>
             new GatewayError({
               reason: "configuration",
-              message: "Use valid Slack IDs and a nonempty bot token without whitespace.",
+              message: "Use valid Slack IDs and nonempty bot and app tokens without whitespace.",
             }),
         ),
       );
