@@ -505,6 +505,15 @@ describe("ChatTerminal", () => {
       basicColor.terminal.close();
     }
   });
+  test("when the terminal has hung up, closes without throwing", () => {
+    const { terminal, output } = fixture();
+
+    output.write = () => {
+      throw Object.assign(new Error("write EIO"), { code: "EIO" });
+    };
+
+    expect(() => terminal.close()).not.toThrow();
+  });
 });
 
 test.each(["cancel", "exit", "eof", "empty", "raw mode restore error"])(
