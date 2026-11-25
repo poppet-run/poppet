@@ -24,39 +24,39 @@ const ReasoningDetail = Schema.StructWithRest(
 
 type ReasoningDetail = typeof ReasoningDetail.Type;
 
+const present = (value: ReasoningDetail[string] | undefined) =>
+  value !== null && value !== undefined && value !== "";
+
 const mergeDetail = (details: Array<ReasoningDetail>, fragment: ReasoningDetail) => {
   const fields = ["index", "id", "format"] as const;
 
-  let index = details.findIndex(
-    (detail) =>
-      detail.type === fragment.type &&
-      fields.every((field) => (detail[field] ?? null) === (fragment[field] ?? null)),
-  );
+  // A fragment without an index or ID cannot be tied to an earlier block, and a block's
+  // data is never replaced, so either case starts a separate block.
+  const candidate = (detail: ReasoningDetail) =>
+    detail.type === fragment.type && !(present(detail.data) && present(fragment.data));
 
-  if (
-    index < 0 &&
-    ((fragment.index !== null && fragment.index !== undefined) ||
-      (fragment.id !== null && fragment.id !== undefined))
-  ) {
+  let index = -1;
+
+  if (present(fragment.index) || present(fragment.id)) {
+    index = details.findIndex(
+      (detail) =>
+        candidate(detail) &&
+        fields.every((field) => (detail[field] ?? null) === (fragment[field] ?? null)),
+    );
+
     const matches = details.flatMap((detail, position) =>
-      detail.type === fragment.type &&
-      ((fragment.index !== null &&
-        fragment.index !== undefined &&
-        fragment.index === detail.index) ||
-        (fragment.id !== null && fragment.id !== undefined && fragment.id === detail.id)) &&
+      candidate(detail) &&
+      ((present(fragment.index) && fragment.index === detail.index) ||
+        (present(fragment.id) && fragment.id === detail.id)) &&
       fields.every(
         (field) =>
-          detail[field] === null ||
-          detail[field] === undefined ||
-          fragment[field] === null ||
-          fragment[field] === undefined ||
-          detail[field] === fragment[field],
+          !present(detail[field]) || !present(fragment[field]) || detail[field] === fragment[field],
       )
         ? [position]
         : [],
     );
 
-    if (matches.length === 1 && matches[0] !== undefined) {
+    if (index < 0 && matches.length === 1 && matches[0] !== undefined) {
       index = matches[0];
     }
   }
@@ -69,17 +69,11 @@ const mergeDetail = (details: Array<ReasoningDetail>, fragment: ReasoningDetail)
     return;
   }
 
-  const present = Object.fromEntries(
-    Object.entries(fragment).filter(([, value]) => value !== null),
-  );
-
   details[index] = {
     ...previous,
-    ...present,
-    ...(fragment.text !== null &&
-      fragment.text !== undefined && { text: (previous.text ?? "") + fragment.text }),
-    ...(fragment.summary !== null &&
-      fragment.summary !== undefined && { summary: (previous.summary ?? "") + fragment.summary }),
+    ...Object.fromEntries(Object.entries(fragment).filter(([, value]) => present(value))),
+    ...(present(fragment.text) && { text: (previous.text ?? "") + fragment.text }),
+    ...(present(fragment.summary) && { summary: (previous.summary ?? "") + fragment.summary }),
   };
 };
 
