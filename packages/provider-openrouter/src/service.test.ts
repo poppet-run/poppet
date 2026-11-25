@@ -332,6 +332,56 @@ describe("makeOpenRouterProvider", () => {
     },
   );
 
+  test("when reasoning blocks lack an index and ID or later fragments carry empty fields, keeps each block intact", async () => {
+    const indexless = [
+      { type: "reasoning.encrypted", data: "first" },
+      { type: "reasoning.encrypted", data: "second" },
+      { type: "reasoning.text", text: "one", signature: "sig-1" },
+      { type: "reasoning.text", text: "two", signature: "sig-2" },
+    ];
+
+    const signed = { type: "reasoning.text", text: "keyed", signature: "sig-3", index: 3 };
+
+    const harness = fixture(undefined, () =>
+      sse(
+        [
+          indexless,
+          [
+            signed,
+            { type: "reasoning.encrypted", data: "", index: null },
+            { type: "reasoning.text", text: "", signature: "", index: 3 },
+          ],
+        ].map((reasoning_details, position) => ({
+          choices: [
+            {
+              index: 0,
+              delta: { reasoning_details, ...(position === 1 && { content: "Answer" }) },
+              finish_reason: position === 1 ? "stop" : null,
+            },
+          ],
+        })),
+      ),
+    );
+
+    const model = await Effect.runPromise(harness.provider.resolve("vendor/model"));
+    const events = await Effect.runPromise(Stream.runCollect(model.stream(request)));
+
+    expect(events.at(-1)).toMatchObject({
+      type: "completed",
+      response: {
+        continuation: {
+          data: {
+            reasoningDetails: [
+              ...indexless,
+              signed,
+              { type: "reasoning.encrypted", data: "", index: null },
+            ],
+          },
+        },
+      },
+    });
+  });
+
   test("when tools round-trip with partial reasoning fragments, preserves signed blocks and explicit routing", async () => {
     const harness = fixture();
     const model = await Effect.runPromise(harness.provider.resolve("vendor/model"));
