@@ -39,8 +39,9 @@ export const openWorkerLog = (directory: string) => {
     }
 
     validate();
-    closeSync(handle);
+    const previous = handle;
     handle = -1;
+    closeSync(previous);
 
     for (let index = paths.length - 1; index >= 0; index--) {
       const file = paths[index];
@@ -97,11 +98,12 @@ export const openWorkerLog = (directory: string) => {
       }
     },
     close: () => {
-      if (handle !== -1) {
-        closeSync(handle);
-      }
-
+      const previous = handle;
       handle = -1;
+
+      if (previous !== -1) {
+        closeSync(previous);
+      }
     },
   };
 };
