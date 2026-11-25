@@ -157,6 +157,64 @@ test("when a Slack socket closes, reports it offline and releases its connection
 });
 
 describe("slackAdapterLayer", () => {
+  test("when an approval click is rejected, acknowledges it before the ephemeral reply finishes", async () => {
+    const started = Promise.withResolvers<SocketModeClient>();
+    const replying = Promise.withResolvers<void>();
+    const acked = Promise.withResolvers<void>();
+
+    const api = spyOn(WebClient.prototype, "apiCall").mockImplementation(async (method) => {
+      if (method === "auth.test") {
+        return { ok: true, team_id: settings.teamId, user_id: "U999" };
+      }
+
+      if (method === "chat.postEphemeral") {
+        replying.resolve();
+
+        return new Promise(() => {});
+      }
+
+      throw new Error("Unexpected Slack request");
+    });
+
+    const start = spyOn(SocketModeClient.prototype, "start").mockImplementation(async function (
+      this: SocketModeClient,
+    ) {
+      this.emit("connected");
+      started.resolve(this);
+
+      return { ok: true };
+    });
+
+    const disconnect = spyOn(SocketModeClient.prototype, "disconnect").mockResolvedValue();
+
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          yield* GatewayAdapter;
+          const socket = yield* Effect.promise(() => started.promise);
+
+          socket.emit("slack_event", {
+            type: "interactive",
+            body: {
+              type: "block_actions",
+              team: { id: settings.teamId },
+              user: { id: "U456" },
+              channel: { id: "C123" },
+              message: { ts: "123.456", user: "U999" },
+              actions: [{ action_id: `poppet:approval:approve:${crypto.randomUUID()}` }],
+            },
+            ack: async () => acked.resolve(),
+          });
+          yield* Effect.promise(() => Promise.all([replying.promise, acked.promise]));
+        }).pipe(Effect.provide(slackAdapterLayer(settings))),
+      );
+    } finally {
+      disconnect.mockRestore();
+      start.mockRestore();
+      api.mockRestore();
+    }
+  });
+
   test("when Slack acknowledges a later event, clears the earlier acknowledgement error", async () => {
     const started = Promise.withResolvers<SocketModeClient>();
 

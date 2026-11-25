@@ -223,7 +223,7 @@ export const slackAdapterLayer = (settings: SlackSettings) =>
           const action = Schema.decodeUnknownExit(ActionBody)(body);
 
           if (Exit.isSuccess(action)) {
-            await approvalAction(action.value).catch(() => {
+            void approvalAction(action.value).catch(() => {
               error = "Slack approval interaction failed.";
             });
           }
