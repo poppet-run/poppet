@@ -8,6 +8,49 @@ import { Effect, Fiber } from "effect";
 import { manageWorker, workerPaths } from "#src/macos";
 
 describe("manageWorker", () => {
+  test("when a status check is interrupted, aborts the running launchctl", async () => {
+    const home = await mkdtemp(join(tmpdir(), "poppet-launchd-interrupt-"));
+    const started = Promise.withResolvers<void>();
+    const aborted = Promise.withResolvers<void>();
+
+    const launch = {
+      dataDirectory: join(home, "data"),
+      executable: "/custom/poppet",
+      arguments: ["worker", "run"],
+      workingDirectory: home,
+      environment: new Map<string, string>(),
+    };
+
+    const launchctl = (_args: ReadonlyArray<string>, signal?: AbortSignal) =>
+      new Promise<number>((resolve) => {
+        signal?.addEventListener(
+          "abort",
+          () => {
+            aborted.resolve();
+            resolve(137);
+          },
+          { once: true },
+        );
+        started.resolve();
+      });
+
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const fiber = yield* manageWorker("status", launch, home, launchctl).pipe(
+            Effect.forkChild,
+          );
+
+          yield* Effect.promise(() => started.promise);
+          yield* Fiber.interrupt(fiber);
+          yield* Effect.promise(() => aborted.promise);
+        }),
+      );
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   test("restart requires installation, reloads running or stopped services, and stops on failure", async () => {
     const home = await mkdtemp(join(tmpdir(), "poppet-launchd-restart-"));
 

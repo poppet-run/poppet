@@ -70,13 +70,16 @@ export const workerPlist = (launch: WorkerLaunch, home: string) => {
 `;
 };
 
-export const runLaunchctl = async (args: ReadonlyArray<string>) => {
+export type Launchctl = (args: ReadonlyArray<string>, signal?: AbortSignal) => Promise<number>;
+
+export const runLaunchctl: Launchctl = async (args, signal) => {
   const subprocess = Bun.spawn(["/bin/launchctl", ...args], {
     stdin: "ignore",
     stdout: "ignore",
     stderr: "ignore",
     timeout: 35_000,
     killSignal: "SIGKILL",
+    ...(signal && { signal }),
   });
 
   return await subprocess.exited;
@@ -86,10 +89,10 @@ export const manageWorker = (
   action: WorkerAction,
   launch: WorkerLaunch,
   home: string,
-  launchctl: (args: ReadonlyArray<string>) => Promise<number> = runLaunchctl,
+  launchctl: Launchctl = runLaunchctl,
 ) => {
   const operation = Effect.tryPromise({
-    try: async () => {
+    try: async (signal) => {
       const paths = workerPaths(launch, home);
 
       if (action === "logs") {
@@ -99,7 +102,7 @@ export const manageWorker = (
       const domain = `gui/${process.getuid?.()}`;
       const target = `${domain}/${paths.label}`;
       const installed = (await regularFileInfo(paths.plist)) !== null;
-      const inspection = await launchctl(["print", target]);
+      const inspection = await launchctl(["print", target], signal);
 
       if (inspection !== 0 && inspection !== 113) {
         throw new WorkerError({
@@ -172,7 +175,7 @@ export const manageWorker = (
         const deadline = performance.now() + 35_000;
 
         while (true) {
-          const removal = await launchctl(["print", target]);
+          const removal = await launchctl(["print", target], signal);
 
           if (removal === 113) {
             break;
