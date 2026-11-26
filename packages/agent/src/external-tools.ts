@@ -217,9 +217,9 @@ export const externalAgentTool = (entry: ExternalTool): AgentTool => ({
   contextOnly: false,
   availableWhenScheduled: true,
   failures: entry.review === undefined ? externalFailures : reviewedFailures,
+  reviewed: entry.review !== undefined,
   external: {
     serverId: entry.serverId,
     toolName: entry.toolName,
-    reviewed: entry.review !== undefined,
   },
 });

@@ -43,9 +43,11 @@ destructive operations, elevation, unknown scripts, credential access, data
 transfer, and attempts to disable review or stop Poppet. Review cannot cover
 scripts or files that change between review and execution.
 
-The journal records dispatch only after review and any owner approval. Cancelling
-while either is pending records an interruption before dispatch. A fatal review
-failure also saves its reason in the transcript.
+The journal saves the reviewer's decision in the call's `review`, or
+`unavailable` when the review fails, and records dispatch only after review and
+any owner approval. Cancelling while either is pending records an interruption
+before dispatch. A fatal review failure also saves its reason in the transcript.
+`chat show` and `tasks show` list saved reviews under "Reviewed calls".
 
 ## Execution
 
@@ -108,7 +110,8 @@ capability renders native controls and updates the prompt once settled:
 - Updating the prompt message is best effort. A failed update cannot reopen a
   settled request.
 
-For MCP actions, the journal records the owner's answer before dispatch.
+The journal records the owner's answer before dispatch. A call whose approval
+was not saved does not run.
 
 ## Scheduled runs
 

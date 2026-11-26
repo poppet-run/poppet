@@ -111,8 +111,8 @@ export const toolCallOperations = (sql: SqlClient.SqlClient, records: StoreRecor
         Effect.gen(function* () {
           const { call } = yield* activeTool(runId, callId);
 
-          if (call.status !== "pending" || call.serverId === null) {
-            return yield* conflict("Only a pending MCP call can record review.");
+          if (call.status !== "pending" || call.review === null) {
+            return yield* conflict("Only a pending reviewed call can record review.");
           }
 
           const decoded = yield* decodeInput(ToolReview, review, { onExcessProperty: "error" });

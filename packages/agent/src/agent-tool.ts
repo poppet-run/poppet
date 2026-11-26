@@ -69,10 +69,11 @@ export interface AgentTool {
   readonly failures: FailurePolicy;
   readonly uninterruptible?: boolean;
   readonly recordsOwnResult?: boolean;
+  // Each call is reviewed before dispatch, and the journal keeps the decision.
+  readonly reviewed?: boolean;
   readonly external?: {
     readonly serverId: string;
     readonly toolName: string;
-    readonly reviewed: boolean;
   };
 }
 
