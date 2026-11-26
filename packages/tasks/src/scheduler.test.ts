@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { Skills } from "@poppet/agent";
-import { Agent, Pages, SkillsLive } from "@poppet/agent";
+import type { Bash as BashService, Skills } from "@poppet/agent";
+import { Agent, Bash, Pages, SkillsLive } from "@poppet/agent";
 import { agentHarness, testModel } from "@poppet/agent/test";
 import { AppConfig } from "@poppet/config";
 import { LogfmtLoggerLive } from "@poppet/io";
@@ -11,8 +11,20 @@ import { Memory } from "@poppet/memory";
 import { ProviderError } from "@poppet/provider";
 import type { ModelOperations, ModelRequest, Output } from "@poppet/provider";
 import { SessionReadResult, Store } from "@poppet/store";
+import type { DeliveryDestination } from "@poppet/store";
 import { serveWorker, workerSocketPath } from "@poppet/worker";
-import { Clock, Console, Deferred, Effect, Fiber, Layer, Match, Schema, Stream } from "effect";
+import {
+  Clock,
+  ConfigProvider,
+  Console,
+  Deferred,
+  Effect,
+  Fiber,
+  Layer,
+  Match,
+  Schema,
+  Stream,
+} from "effect";
 import { SqlClient } from "effect/sql";
 import { TestClock } from "effect/testing";
 
@@ -58,6 +70,7 @@ const final = () => response([{ type: "text", text: "Acorn summary" }]);
 const fixture = async (
   stream: ModelOperations["stream"],
   pages: Pages["Service"] = { fetch: () => Effect.die("Unexpected page fetch") },
+  bash?: BashService["Service"],
 ) => {
   const harness = await agentHarness();
   const { directory, config, store, settings } = harness;
@@ -79,6 +92,7 @@ const fixture = async (
     () => Effect.succeed(model),
     ChatTasksLive.pipe(Layer.provide([tasks, store, skills, settings])),
     Layer.succeed(Pages, pages),
+    ...(bash ? [Layer.succeed(Bash, bash)] : []),
   );
 
   const layer = Layer.mergeAll(agent, tasks, skills);
@@ -1669,6 +1683,271 @@ describe.concurrent("executeOccurrence", () => {
           expect(reconcileAttempts).toBeGreaterThanOrEqual(2);
           yield* Fiber.interrupt(loop);
         }).pipe(Effect.provide(TestClock.layer())),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when a task has approvals wait, parks the run, caps expiry at the next cron slot, and resumes after the owner decides", async () => {
+    let executed = 0;
+
+    const destination: DeliveryDestination = {
+      adapter: "discord",
+      account: "bot",
+      ownerId: "owner",
+      scopeId: "guild",
+      parentId: "channel",
+      conversationId: "thread",
+    };
+
+    const state = await fixture(
+      (request) => {
+        if (request.settings.toolChoice === "none") {
+          return response([
+            { type: "text", text: '{"decision":"needs_approval","reason":"Restart service"}' },
+          ]);
+        }
+
+        if (request.messages.at(-1)?.role === "tool") {
+          return response([{ type: "text", text: "Service restarted" }]);
+        }
+
+        return response([
+          {
+            type: "tool-call",
+            namespace: "poppet_system",
+            name: "bash",
+            callId: "bash-1",
+            arguments: JSON.stringify({
+              command: "restart-service",
+              cwd: "/tmp",
+              timeoutSeconds: 5,
+            }),
+          },
+        ]);
+      },
+      undefined,
+      {
+        run: () =>
+          Effect.sync(() => {
+            executed++;
+
+            return { stdout: "ok", stderr: "", exitCode: 0, truncated: false };
+          }),
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          // 12:00:00Z, cron every 10 minutes -> next slot at 12:10:00Z (10m < 1h default approvalSeconds).
+          const start = Date.parse("2099-10-15T12:00:00Z");
+          yield* TestClock.setTime(start);
+          const repo = yield* TaskRepository;
+          const store = yield* Store;
+
+          const created = yield* repo.add(
+            {
+              ...state.task,
+              schedule: { type: "cron", expression: "*/10 * * * *", timezone: "UTC" },
+            },
+            start - 1000,
+            null,
+            destination,
+            null,
+            "wait",
+          );
+
+          const worker = yield* makeTaskWorker;
+          const loop = yield* worker.run.pipe(Effect.forkChild);
+
+          // Wait for the occurrence to run and park.
+          for (let attempt = 0; attempt < 20; attempt++) {
+            yield* TestClock.adjust("100 millis");
+            const [current] = yield* repo.occurrences(created.id);
+
+            if (current?.runId && (yield* store.latestApproval(current.runId)) !== null) {
+              break;
+            }
+          }
+
+          const [waiting] = yield* repo.occurrences(created.id);
+          expect(waiting?.status).toBe("running");
+          expect(waiting?.runId).not.toBeNull();
+          expect(executed).toBe(0);
+
+          const approval = yield* store.latestApproval(waiting!.runId!);
+          expect(approval?.state).toBe("pending");
+          expect(approval?.expiresAt).toBe(Date.parse("2099-10-15T12:10:00Z"));
+          expect(approval?.requester).toMatchObject({
+            surface: "scheduled",
+            occurrenceId: waiting!.id,
+            adapter: "discord",
+            conversationId: "thread",
+          });
+
+          // Recovery preserves the waiting occurrence.
+          yield* repo.recover(yield* Clock.currentTimeMillis);
+          expect((yield* repo.occurrence(waiting!.id)).status).toBe("running");
+
+          // Approve and let the worker tick resume the run.
+          yield* store.decideApproval(approval!.id, {
+            decision: "approved",
+            adapter: "discord",
+            senderId: "owner",
+            at: yield* Clock.currentTimeMillis,
+          });
+
+          for (let attempt = 0; attempt < 20; attempt++) {
+            yield* TestClock.adjust("1 second");
+
+            if ((yield* repo.occurrence(waiting!.id)).status === "completed") {
+              break;
+            }
+          }
+
+          const finished = yield* repo.occurrence(waiting!.id);
+          expect(finished.status).toBe("completed");
+          expect(executed).toBe(1);
+
+          const run = yield* store.run(waiting!.runId!);
+          expect(run?.status).toBe("completed");
+
+          yield* Fiber.interrupt(loop);
+        }).pipe(Effect.provide(TestClock.layer())),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when global tasks.approvals is wait, falls back to home, honours per-task fail override, and handles expiry and cancel", async () => {
+    const home: DeliveryDestination = {
+      adapter: "discord",
+      account: "bot",
+      ownerId: "owner",
+      scopeId: "guild",
+      parentId: "home",
+      conversationId: "home",
+    };
+
+    const state = await fixture(
+      (request) => {
+        if (request.settings.toolChoice === "none") {
+          return response([
+            { type: "text", text: '{"decision":"needs_approval","reason":"Restart service"}' },
+          ]);
+        }
+
+        return response([
+          {
+            type: "tool-call",
+            namespace: "poppet_system",
+            name: "bash",
+            callId: "bash-1",
+            arguments: JSON.stringify({
+              command: "restart-service",
+              cwd: "/tmp",
+              timeoutSeconds: 5,
+            }),
+          },
+        ]);
+      },
+      undefined,
+      {
+        run: () => Effect.succeed({ stdout: "ok", stderr: "", exitCode: 0, truncated: false }),
+      },
+    );
+
+    const withGlobalWait = ConfigProvider.layer(
+      ConfigProvider.fromUnknown({ taskApprovals: "wait", timeouts: { approvalSeconds: 10 } }),
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const start = Date.parse("2099-10-15T12:00:00Z");
+          yield* TestClock.setTime(start);
+          const repo = yield* TaskRepository;
+          const store = yield* Store;
+
+          // 1. Inherits global wait, uses home fallback, then expires.
+          const inherited = yield* repo.add(
+            { ...state.task, name: "Inherited", schedule: { type: "once", at: start } },
+            start - 1000,
+          );
+
+          // 2. Explicit per-task fail overrides global wait.
+          const overridden = yield* repo.add(
+            { ...state.task, name: "Overridden", schedule: { type: "once", at: start } },
+            start - 1000,
+            null,
+            home,
+            null,
+            "fail",
+          );
+
+          // 3. Inherits global wait, cancelled via worker handle.
+          const cancelled = yield* repo.add(
+            { ...state.task, name: "Cancelled", schedule: { type: "once", at: start } },
+            start - 1000,
+          );
+
+          const destinations = {
+            resolve: () => Effect.succeed(home),
+            home: Effect.succeed(home),
+          };
+
+          const worker = yield* makeTaskWorker.pipe(
+            Effect.provideService(TaskDestinations, destinations),
+          );
+
+          const loop = yield* worker.run.pipe(Effect.forkChild);
+
+          for (let attempt = 0; attempt < 20; attempt++) {
+            yield* TestClock.adjust("1 second");
+            const [a] = yield* repo.occurrences(inherited.id);
+            const [b] = yield* repo.occurrences(overridden.id);
+            const [c] = yield* repo.occurrences(cancelled.id);
+
+            if (
+              a?.runId &&
+              (yield* store.latestApproval(a.runId)) !== null &&
+              b?.status === "failed" &&
+              c?.runId &&
+              (yield* store.latestApproval(c.runId)) !== null
+            ) {
+              break;
+            }
+          }
+
+          const [occ1] = yield* repo.occurrences(inherited.id);
+          const [occ2] = yield* repo.occurrences(overridden.id);
+          const [occ3] = yield* repo.occurrences(cancelled.id);
+
+          expect(occ1?.status).toBe("running");
+          expect(occ2?.status).toBe("failed");
+          expect(occ3?.status).toBe("running");
+
+          const approval1 = yield* store.latestApproval(occ1!.runId!);
+          expect(approval1?.requester).toMatchObject({
+            surface: "scheduled",
+            conversationId: "home",
+          });
+
+          // Cancel the third task while waiting.
+          yield* worker.handle({ action: "cancel-task", id: cancelled.id });
+          expect((yield* repo.occurrence(occ3!.id)).status).toBe("cancelled");
+          expect((yield* store.latestApproval(occ3!.runId!))?.state).toBe("cancelled");
+
+          // Advance past the 10-second approval expiry so the first task fails cleanly.
+          yield* TestClock.adjust("12 seconds");
+          expect((yield* repo.occurrence(occ1!.id)).status).toBe("failed");
+          expect((yield* store.latestApproval(occ1!.runId!))?.state).toBe("expired");
+
+          yield* Fiber.interrupt(loop);
+        }).pipe(Effect.provide([TestClock.layer(), withGlobalWait])),
       );
     } finally {
       await state.close();

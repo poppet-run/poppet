@@ -58,6 +58,7 @@ logs/         worker.log and its archives
 | `mcpServers`                 | `[]`             | See [MCP](mcp.md#configuration).                                      |
 | `gatewayPackages`            | `[]`             | See [external adapters](gateways.md#external-adapters).               |
 | `tasks.catchUpMinutes`       | `60`             | 0 to 1440. See [the scheduler](tasks.md#scheduler).                   |
+| `tasks.approvals`            | `fail`           | `fail` or `wait`. Default approval policy for scheduled tasks.        |
 | `tasks.quietHours`           | Unset            | See [quiet hours](#quiet-hours).                                      |
 | `chat.outputTokens`          | `2048`           | 1 to 32768, capped by model metadata.                                 |
 | `chat.runDeadlineSeconds`    | `300`            | 30 to 3600.                                                           |

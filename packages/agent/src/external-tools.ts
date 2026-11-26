@@ -176,7 +176,7 @@ const prepareExternal = (entry: ExternalTool, call: ToolCall, context: ToolConte
               reason: result.reason,
             };
 
-            if (context.origin !== "scheduled" && context.approvalRequester !== null) {
+            if (context.approvalRequester !== null) {
               return yield* new ParkRequest({ approval });
             }
 

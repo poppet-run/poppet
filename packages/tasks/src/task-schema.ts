@@ -1,3 +1,4 @@
+import { TaskApprovalPolicy } from "@poppet/config";
 import { ProviderId } from "@poppet/provider";
 import { DeliveryDestination, Session, SkillName, SkillSnapshot } from "@poppet/store";
 import { Cron, Data, Schema } from "effect";
@@ -158,6 +159,7 @@ export const TaskPatch = Schema.Struct({
   prompt: Schema.optionalKey(NewTask.fields.prompt),
   schedule: Schema.optionalKey(Schedule),
   endAt: Schema.optionalKey(Schema.NullOr(Schema.Natural)),
+  approvals: Schema.optionalKey(Schema.NullOr(TaskApprovalPolicy)),
 }).check(Schema.makeFilter((patch) => Object.keys(patch).length > 0));
 
 export interface TaskTarget {
@@ -186,6 +188,7 @@ export const TaskCommand = Schema.Union([
     action: Schema.Literal("add"),
     task: NewTask,
     endAt: Schema.optionalKey(Schema.Natural),
+    approvals: Schema.optionalKey(TaskApprovalPolicy),
     skill: Schema.optionalKey(SkillName),
     delivery: Schema.optionalKey(
       Schema.Struct({
@@ -218,6 +221,7 @@ export const Task = Schema.Struct({
   id: Session.fields.id,
   nextAt: Schema.NullOr(Schema.Natural),
   endAt: Schema.NullOr(Schema.Natural),
+  approvals: Schema.NullOr(TaskApprovalPolicy),
   paused: Schema.Literals([0, 1]),
   createdAt: Schema.Natural,
 });

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { TaskNoteArguments, taskNoteBytes, taskNoteDefinition } from "@poppet/agent";
 import { taskCatchUpMinutes } from "@poppet/config";
+import type { TaskApprovalPolicy } from "@poppet/config";
 import { limit } from "@poppet/io";
 import type { SkillSnapshot } from "@poppet/store";
 import { DeliveryDestination, Run, decodeRow, decodeRows, migrate, reportAs } from "@poppet/store";
@@ -94,6 +95,10 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
         );
 
         for (const { id, runStatus, failureReason } of running) {
+          if (runStatus === "waiting" || runStatus === "running") {
+            continue;
+          }
+
           if (runStatus === "completed") {
             yield* finish(id, "completed", null, now);
           } else if (runStatus === "failed") {
@@ -213,6 +218,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
     skill: SkillSnapshot | null = null,
     destination: DeliveryDestination | null = null,
     endAt: number | null = null,
+    approvals: TaskApprovalPolicy | null = null,
   ) =>
     sql.withTransaction(
       Effect.gen(function* () {
@@ -251,6 +257,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
               ? valid.schedule.at
               : yield* nextTime(valid.schedule, now, endAt),
           endAt,
+          approvals,
           createdAt: now,
           skill: skill === null ? null : JSON.stringify(skill),
           destination: destination === null ? null : JSON.stringify(destination),
@@ -415,6 +422,11 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
 
         return yield* action === "cancel-task" ? cancel(item.id, now) : retry(item.id, now);
       }),
+    );
+
+  const running = () =>
+    sql`${occurrences} WHERE status = 'running' ORDER BY available_at, scheduled_at, id`.pipe(
+      decodeRows(Occurrence),
     );
 
   const claim = (now: number) =>
@@ -693,6 +705,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
     controlOccurrence: operation(controlOccurrence),
     cancel: operation(cancel),
     retry: operation(retry),
+    running: operation(running),
     claim: operation(claim),
     link: operation(link),
     finish: operation(finish),

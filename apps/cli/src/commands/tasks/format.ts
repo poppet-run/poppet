@@ -18,6 +18,7 @@ const TaskRow = Schema.Struct({
   paused: Schema.Literals([0, 1]),
   nextAt: Time,
   endAt: Schema.optionalKey(Time),
+  approvals: Schema.optionalKey(Schema.NullOr(Schema.Literals(["fail", "wait"]))),
   skill: Schema.NullOr(Schema.Struct({ name: Schema.String })),
   destination: Schema.NullOr(
     Schema.Struct({ adapter: Schema.String, conversationId: Schema.String }),
@@ -145,6 +146,7 @@ const taskFields = (task: TaskRow) =>
     ["Model", `${task.provider} ${task.model}`],
     task.skill === null ? null : ["Skill", task.skill.name],
     ["Delivery", destination(task)],
+    task.approvals === null || task.approvals === undefined ? null : ["Approvals", task.approvals],
   ]);
 
 const noteWriter = (note: typeof NoteRow.Type) =>

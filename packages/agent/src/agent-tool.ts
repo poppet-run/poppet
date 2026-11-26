@@ -29,6 +29,8 @@ export interface RunContext {
   readonly taskNote: { readonly text: string | null } | null;
   // When set, a call that needs the owner parks the run with this route instead of blocking.
   readonly approvalRequester: Schema.JsonObject | null;
+  // Optional upper bound on a parked approval's expiry timestamp (e.g., next scheduled slot).
+  readonly approvalExpiresAt: number | null;
   // When set, the run continues from this decided approval instead of starting a turn.
   readonly resume: Approval | null;
   readonly here: Effect.Effect<DeliveryDestination, AgentError> | null;

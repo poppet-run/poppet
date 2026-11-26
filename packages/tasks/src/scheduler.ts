@@ -1,9 +1,9 @@
 import { Agent, AgentError, Skills, sessionTitle } from "@poppet/agent";
-import { AppConfig } from "@poppet/config";
+import { AppConfig, taskApprovals } from "@poppet/config";
 import type { LogValue } from "@poppet/io";
 import { ProviderError } from "@poppet/provider";
 import { Store } from "@poppet/store";
-import type { StoreError } from "@poppet/store";
+import type { Approval, StoreError } from "@poppet/store";
 import {
   Cause,
   Clock,
@@ -19,8 +19,8 @@ import {
   Stream,
 } from "effect";
 
-import { executeTaskCommand, noAction } from "#src/commands";
-import { isTaskControl } from "#src/task-schema";
+import { TaskDestinations, executeTaskCommand, noAction } from "#src/commands";
+import { isTaskControl, nextSlot } from "#src/task-schema";
 import type { Occurrence, ProviderPause, TaskError, TaskCommand } from "#src/task-schema";
 import { TaskRepository } from "#src/task-store";
 import type { TaskStore } from "#src/task-store";
@@ -77,13 +77,64 @@ export const reconcileTasks = (repo: TaskStore, now: number, startup = false) =>
     yield* Effect.forEach(ended, logTaskEnd);
   });
 
-export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
+const approvalOptions = (repo: TaskStore, item: Occurrence) =>
+  Effect.gen(function* () {
+    const saved = yield* repo.task(item.jobId);
+
+    const policy =
+      saved.approvals ?? (yield* taskApprovals.pipe(Effect.orElseSucceed(() => "fail" as const)));
+
+    if (policy !== "wait") {
+      return {};
+    }
+
+    const destinations = Option.getOrNull(yield* Effect.serviceOption(TaskDestinations));
+
+    const destination =
+      item.destination ??
+      (destinations?.home === undefined
+        ? null
+        : yield* destinations.home.pipe(Effect.catch(() => Effect.succeed(null))));
+
+    if (destination === null) {
+      return {};
+    }
+
+    const nextDue =
+      saved.schedule.type === "cron"
+        ? yield* Effect.try(() => nextSlot(saved.schedule, item.scheduledAt, saved.endAt)).pipe(
+            Effect.orElseSucceed(() => null),
+          )
+        : null;
+
+    return {
+      approvalRequester: {
+        surface: "scheduled",
+        occurrenceId: item.id,
+        jobId: item.jobId,
+        adapter: destination.adapter,
+        account: destination.account,
+        ownerId: destination.ownerId,
+        scopeId: destination.scopeId,
+        parentId: destination.parentId,
+        conversationId: destination.conversationId,
+      },
+      ...(nextDue !== null && { approvalExpiresAt: nextDue }),
+    };
+  });
+
+export const executeOccurrence = (
+  repo: TaskStore,
+  item: Occurrence,
+  options: { readonly resume?: boolean } = {},
+) =>
   Effect.gen(function* () {
     const job = item.definition;
     const store = yield* Store;
     const agent = yield* Agent;
     const clock = yield* Clock.Clock;
     let modelFailure: AgentError | ProviderError | null = null;
+    let parked: Approval | null = null;
 
     const saveFailure = (error: AgentError | ProviderError) =>
       Effect.sync(() => {
@@ -91,6 +142,36 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
       });
 
     yield* Effect.gen(function* () {
+      const note = yield* repo.note(item.jobId);
+      const approval = yield* approvalOptions(repo, item);
+
+      const sendOptions = {
+        origin: "scheduled" as const,
+        taskNote: { text: note?.text ?? null },
+        ...approval,
+      };
+
+      if (options.resume) {
+        if (item.runId === null) {
+          return yield* Effect.die(new Error("A resumed occurrence has no run ID."));
+        }
+
+        yield* log("task occurrence resumed", {
+          ...occurrenceFields(item, job.name),
+          provider: job.provider,
+        });
+
+        yield* Stream.runForEach(agent.resume(item.runId, sendOptions), (event) =>
+          event.type === "waiting"
+            ? Effect.sync(() => {
+                parked = event.approval;
+              })
+            : Effect.void,
+        );
+
+        return;
+      }
+
       yield* log("task occurrence started", {
         ...occurrenceFields(item, job.name),
         provider: job.provider,
@@ -102,21 +183,33 @@ export const executeOccurrence = (repo: TaskStore, item: Occurrence) =>
         skill: job.skill,
       });
 
-      const note = yield* repo.note(item.jobId);
-
       yield* repo.link(item.id, session.id, null);
-      yield* Stream.runForEach(
-        agent.send(session.id, job.prompt, {
-          origin: "scheduled",
-          taskNote: { text: note?.text ?? null },
-        }),
-        (event) =>
-          event.type === "started" ? repo.link(item.id, session.id, event.run.id) : Effect.void,
-      );
+      yield* Stream.runForEach(agent.send(session.id, job.prompt, sendOptions), (event) => {
+        if (event.type === "started") {
+          return repo.link(item.id, session.id, event.run.id);
+        }
+
+        if (event.type === "waiting") {
+          return Effect.sync(() => {
+            parked = event.approval;
+          });
+        }
+
+        return Effect.void;
+      });
     }).pipe(
       Effect.catchTags({ AgentError: saveFailure, ProviderError: saveFailure }),
       Effect.onExit((exit) =>
         Effect.gen(function* () {
+          if (Exit.isSuccess(exit) && modelFailure === null && parked !== null) {
+            yield* log("task occurrence waiting for approval", {
+              ...occurrenceFields(item, job.name),
+              approval: parked.id,
+            });
+
+            return;
+          }
+
           const now = clock.currentTimeMillisUnsafe();
 
           const outcome = yield* Effect.gen(function* () {
@@ -217,6 +310,69 @@ export const makeTaskWorker = Effect.gen(function* () {
   let active: ActiveOccurrence | null = null;
   const startedAt = clock.currentTimeMillisUnsafe();
   const connections = Option.getOrNull(yield* Effect.serviceOption(WorkerConnections));
+  const destinations = Option.getOrNull(yield* Effect.serviceOption(TaskDestinations));
+
+  const endWaitingRun = (runId: string | null) =>
+    Effect.gen(function* () {
+      if (runId === null) {
+        return;
+      }
+
+      const run = yield* store.run(runId);
+
+      if (run?.status === "waiting" || run?.status === "running") {
+        yield* store.finishRun(runId, { status: "interrupted", reason: "cancelled" });
+      }
+    });
+
+  // Settles finished or expired waiting occurrences and returns the first decided one ready to resume.
+  const reconcileWaiting = (now: number) =>
+    Effect.gen(function* () {
+      yield* store.expireApprovals;
+      let ready: Occurrence | null = null;
+
+      for (const item of yield* repo.running()) {
+        if (active?.id === item.id) {
+          continue;
+        }
+
+        if (item.runId === null) {
+          yield* repo.finish(item.id, "interrupted", "owner-stopped", now);
+          continue;
+        }
+
+        const run = yield* store.run(item.runId);
+        const approval = yield* store.latestApproval(item.runId);
+
+        if (run === null) {
+          yield* repo.finish(item.id, "interrupted", "owner-stopped", now);
+        } else if (run.status === "waiting") {
+          continue;
+        } else if (
+          run.status === "running" &&
+          (approval?.state === "approved" || approval?.state === "denied")
+        ) {
+          ready ??= item;
+        } else if (run.status === "completed") {
+          yield* repo.finish(item.id, "completed", null, now);
+        } else if (run.status === "failed") {
+          const finished = yield* repo.finish(item.id, "failed", run.failureReason, now);
+          yield* log(
+            "task occurrence finished",
+            {
+              ...occurrenceFields(item, item.definition.name),
+              status: finished.occurrence.status,
+              reason: run.failureReason ?? undefined,
+            },
+            "error",
+          );
+        } else {
+          yield* repo.finish(item.id, "interrupted", run.failureReason ?? "owner-stopped", now);
+        }
+      }
+
+      return ready;
+    });
 
   yield* reconcileTasks(repo, clock.currentTimeMillisUnsafe(), true);
   const pauses = yield* repo.providers();
@@ -256,6 +412,11 @@ export const makeTaskWorker = Effect.gen(function* () {
           Effect.gen(function* () {
             if (active !== null) {
               yield* Fiber.interrupt(active.fiber);
+            }
+
+            for (const item of yield* repo.running()) {
+              yield* endWaitingRun(item.runId);
+              yield* repo.cancel(item.id, now);
             }
 
             const result = yield* executeTaskCommand(repo, store, command, now);
@@ -317,6 +478,10 @@ export const makeTaskWorker = Effect.gen(function* () {
           yield* Fiber.interrupt(active.fiber);
         }
 
+        if (cancelling) {
+          yield* endWaitingRun(item.runId);
+        }
+
         const job = yield* repo.task(item.jobId);
         yield* log(
           cancelling ? "task occurrence cancelled" : "task occurrence queued for retry",
@@ -343,14 +508,22 @@ export const makeTaskWorker = Effect.gen(function* () {
       yield* log("task worker started", {});
 
       const timer = Effect.gen(function* () {
-        yield* commands.withPermit(reconcileTasks(repo, clock.currentTimeMillisUnsafe())).pipe(
-          Effect.andThen(Queue.offer(wake, undefined)),
-          Effect.catch((error) =>
-            log("task timer failed", { error: error.message }, "error").pipe(
-              Effect.andThen(Effect.sleep("5 seconds")),
+        yield* commands
+          .withPermit(
+            Effect.gen(function* () {
+              const now = clock.currentTimeMillisUnsafe();
+              yield* reconcileWaiting(now);
+              yield* reconcileTasks(repo, now);
+            }),
+          )
+          .pipe(
+            Effect.andThen(Queue.offer(wake, undefined)),
+            Effect.catch((error) =>
+              log("task timer failed", { error: error.message }, "error").pipe(
+                Effect.andThen(Effect.sleep("5 seconds")),
+              ),
             ),
-          ),
-        );
+          );
         yield* Effect.sleep("1 second");
       }).pipe(Effect.forever);
 
@@ -361,7 +534,21 @@ export const makeTaskWorker = Effect.gen(function* () {
           .withPermit(
             Effect.uninterruptibleMask((restore) =>
               Effect.gen(function* () {
-                const next = yield* repo.claim(clock.currentTimeMillisUnsafe());
+                const now = clock.currentTimeMillisUnsafe();
+                const resumed = yield* reconcileWaiting(now);
+
+                if (resumed !== null) {
+                  const fiber = yield* restore(
+                    executeOccurrence(repo, resumed, { resume: true }),
+                  ).pipe(Effect.forkChild);
+
+                  const running = { id: resumed.id, fiber };
+                  active = running;
+
+                  return running;
+                }
+
+                const next = yield* repo.claim(now);
 
                 if (next === null) {
                   return null;
@@ -423,6 +610,9 @@ export const makeTaskWorker = Effect.gen(function* () {
     Effect.provideService(Agent, agent),
     Effect.provideService(Clock.Clock, clock),
     Effect.provideService(Console.Console, output),
+    destinations === null
+      ? (effect) => effect
+      : Effect.provideService(TaskDestinations, destinations),
   );
 
   return { run, handle };

@@ -54,6 +54,8 @@ export interface SendOptions {
   readonly origin?: RunContext["origin"];
   // Lets a call that needs the owner park the run with this route. Without it, the run stops.
   readonly approvalRequester?: Schema.JsonObject;
+  // Optional upper bound on a parked approval's expiry timestamp.
+  readonly approvalExpiresAt?: number;
   readonly runId?: string;
   readonly reasoningLog?: (line: string) => Effect.Effect<void>;
   readonly timingLog?: (line: string) => Effect.Effect<void>;
@@ -309,6 +311,7 @@ export const AgentLive = Layer.effect(
                   mentionedSkills,
                   taskNote: options.taskNote ?? null,
                   approvalRequester: options.approvalRequester ?? null,
+                  approvalExpiresAt: options.approvalExpiresAt ?? null,
                   resume,
                   here: options.here ?? null,
                   home: options.home ?? null,

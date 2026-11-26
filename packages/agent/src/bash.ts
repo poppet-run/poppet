@@ -156,7 +156,7 @@ const prepareBash = (
           if (review.decision === "needs_approval") {
             const approval = { kind: "bash" as const, ...request, reason: review.reason };
 
-            if (origin !== "scheduled" && requester !== null) {
+            if (requester !== null) {
               return yield* new ParkRequest({ approval });
             }
 

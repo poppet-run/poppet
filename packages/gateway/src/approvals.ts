@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { ActionApproval } from "@poppet/agent";
 import type { Approval } from "@poppet/store";
-import { Effect, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
 
 import type { ApprovalAction, ApprovalState, IncomingMessage } from "#src/adapter";
 import {
@@ -38,6 +38,16 @@ const ActionRequest = Schema.Union([
   }),
 ]);
 
+const ScheduledRequester = Schema.Struct({
+  surface: Schema.Literal("scheduled"),
+  adapter: Schema.String,
+  account: Schema.String,
+  ownerId: Schema.String,
+  scopeId: Schema.String,
+  parentId: Schema.String,
+  conversationId: Schema.String,
+});
+
 const ended = (state: ApprovalState) =>
   state === "approved" || state === "denied"
     ? `This approval was already answered: ${formatApprovalStatus(state)}.`
@@ -55,7 +65,15 @@ export const actionApprovals = (context: GatewayContext) => {
   const { adapter, repo, store, clock } = context;
 
   // Posts the prompt for a waiting run. Safe to repeat: the row and nonces stay the same.
-  const post = (entry: Inbox, conversation: string, approval: Approval) =>
+  const postPrompt = (
+    target: {
+      readonly account: string;
+      readonly conversationId: string;
+      readonly parentId: string;
+      readonly runId: string;
+    },
+    approval: Approval,
+  ) =>
     Effect.gen(function* () {
       const request: ActionApproval = yield* Schema.decodeUnknownEffect(ActionRequest)(
         approval.request,
@@ -64,10 +82,10 @@ export const actionApprovals = (context: GatewayContext) => {
       yield* repo.openApproval({
         id: approval.id,
         adapter: adapter.id,
-        account: entry.account,
-        conversationId: conversation,
-        parentId: entry.message.parentId,
-        runId: entry.runId,
+        account: target.account,
+        conversationId: target.conversationId,
+        parentId: target.parentId,
+        runId: target.runId,
         kind: approval.kind,
         expiresAt: approval.expiresAt,
       });
@@ -85,10 +103,10 @@ export const actionApprovals = (context: GatewayContext) => {
       let promptId: string | null = null;
 
       if (adapter.approvals) {
-        promptId = yield* adapter.approvals.send(conversation, prompt, nonce(0));
+        promptId = yield* adapter.approvals.send(target.conversationId, prompt, nonce(0));
       } else {
         for (const [index, part] of formatApprovalMessages(prompt, adapter.textLimit).entries()) {
-          promptId = yield* adapter.send(conversation, part, nonce(index));
+          promptId = yield* adapter.send(target.conversationId, part, nonce(index));
         }
       }
 
@@ -96,6 +114,17 @@ export const actionApprovals = (context: GatewayContext) => {
         yield* repo.promptedApproval(approval.id, promptId);
       }
     });
+
+  const post = (entry: Inbox, conversation: string, approval: Approval) =>
+    postPrompt(
+      {
+        account: entry.account,
+        conversationId: conversation,
+        parentId: entry.message.parentId,
+        runId: entry.runId,
+      },
+      approval,
+    );
 
   // Shows a settled approval on its prompt once. A failed update cannot reopen it.
   const render = (id: string, state: ApprovalState, senderId?: string) =>
@@ -195,6 +224,46 @@ export const actionApprovals = (context: GatewayContext) => {
 
         yield* finish(context, entry.id, text, "failed");
         yield* mark(context, entry.message, "stopped");
+      }
+    }
+
+    for (const id of yield* repo.scheduledApprovals(adapter.id, account)) {
+      const approval = yield* store.approval(id);
+
+      if (approval?.state !== "pending") {
+        continue;
+      }
+
+      const decoded = Schema.decodeUnknownOption(ScheduledRequester)(approval.requester);
+
+      if (Option.isNone(decoded)) {
+        continue;
+      }
+
+      const route = decoded.value;
+
+      if (route.ownerId !== adapter.policy.ownerId || route.scopeId !== adapter.policy.scopeId) {
+        continue;
+      }
+
+      const saved = yield* repo.approval(approval.id);
+
+      if (saved === null || saved.messageId === null) {
+        yield* postPrompt(
+          {
+            account,
+            conversationId: route.conversationId,
+            parentId: route.parentId,
+            runId: approval.runId,
+          },
+          approval,
+        ).pipe(
+          Effect.catchTag("GatewayError", (error) =>
+            Effect.logWarning("scheduled approval prompt post failed; will retry").pipe(
+              Effect.annotateLogs({ error: error.message }),
+            ),
+          ),
+        );
       }
     }
 

@@ -1,4 +1,5 @@
 import { AppConfig } from "@poppet/config";
+import type { TaskApprovalPolicy } from "@poppet/config";
 import { DeliveryDestination } from "@poppet/store";
 import {
   remoteTaskCommand,
@@ -84,6 +85,7 @@ export const prepareTask = (
   skill?: string,
   delivery?: { readonly adapter: string; readonly conversationId: string | null },
   endAt?: number,
+  approvals?: TaskApprovalPolicy,
 ) =>
   Effect.gen(function* () {
     yield* taskOperation(() => {
@@ -108,14 +110,13 @@ export const prepareTask = (
         provider: config.provider,
         model: config.model,
       },
+      ...(endAt !== undefined && { endAt }),
+      ...(approvals !== undefined && { approvals }),
+      ...(delivery !== undefined && { delivery }),
+      ...(skill !== undefined && { skill }),
     };
 
-    const bounded = endAt === undefined ? command : { ...command, endAt };
-    const selected = delivery === undefined ? bounded : { ...bounded, delivery };
-
-    return yield* Schema.decodeUnknownEffect(TaskCommand)(
-      skill === undefined ? selected : { ...selected, skill },
-    ).pipe(
+    return yield* Schema.decodeUnknownEffect(TaskCommand)(command).pipe(
       Effect.mapError(
         () =>
           new TaskError({

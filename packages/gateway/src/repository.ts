@@ -544,6 +544,17 @@ const repository = Effect.gen(function* () {
         decodeRows(SavedApproval),
       ),
     ),
+    scheduledApprovals: operation((adapter: string, account: string) =>
+      sql`SELECT id FROM approvals
+        WHERE state = 'pending'
+          AND json_extract(requester, '$.surface') = 'scheduled'
+          AND json_extract(requester, '$.adapter') = ${adapter}
+          AND json_extract(requester, '$.account') = ${account}
+        ORDER BY created_at, id`.pipe(
+        decodeRows(Schema.Struct({ id: Schema.String })),
+        Effect.map((rows) => rows.map((row) => row.id)),
+      ),
+    ),
     status: operation(() =>
       sql`SELECT
         (SELECT COUNT(*) FROM gateway_inbox WHERE state = 'queued') AS queued,
