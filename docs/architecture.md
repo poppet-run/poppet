@@ -103,50 +103,6 @@ for an auth or inference command. Its store layer opens SQLite for saved-data op
 Help, configuration, skill file inspection, and provider commands do not
 open the conversation database.
 
-## Explicit local skills
-
-`Skills` in the agent package loads one validated `SKILL.md` or lists local skill
-directories. The CLI composes `SkillsLive` with host configuration. When a host
-supplies `Skills` and the 8 KiB skill-index limit is nonzero, the conversation
-workflow builds a bounded index at run start and adds the read-only
-`poppet_skills.view_skill` tool, a context-only tool journalled like recall. It
-grants no additional tool permissions. `isManualOnly` recognizes a first line of
-`<!-- manual-only -->` without parsing metadata. The index, `view_skill`, and chat
-task creation refuse such a skill; owner selection through `Skills.load` is
-unaffected. Creation requests carry only the selected
-name; the process owning the store resolves it, including worker chat and task
-commands. Missing or invalid selections fail before creating a session or task.
-
-The gateway parses `/new --skill <name> <message>` and `/new <message>` after
-sender authorization. They use the durable request queue rather than the immediate
-status/cancel path. A valid command creates a fresh session with the worker's
-configured provider/model and optional skill snapshot, then atomically updates
-its conversation binding and inbox entry. Earlier sessions remain inspectable.
-The reserved inbox run ID makes new-session identity stable across a crash before
-binding, so recovery reuses a saved snapshot without rereading the file. Selection
-errors are delivered without changing the binding or invoking a model. The parsed
-prompt supplies inference and fallback titles; `/status` includes the skill name.
-Naming updates also check session identity so stale work cannot update a newer
-binding. Adapters and provider packages require no skill-specific changes.
-
-The shared store schema defines the bounded name/content snapshot and
-nullable snapshots on sessions and jobs. Task execution copies the saved
-snapshot into each occurrence session without filesystem access. The agent adds
-one saved snapshot to the run's instructions, below base rules, and the existing
-context budget accounts for its serialized bytes. The conversation loop owns batch validation, permissions, and budgets;
-`tool-execution.ts` owns tool dispatch, outcome classification, and journal writes. Provider packages need
-no skill-specific behavior. See [skills](skills.md).
-
-`Agent.send` is the one place a `$name` in a message is resolved, so every chat
-surface behaves alike. `skill-mentions.ts` finds standalone `$name` words outside
-code, keeps those matching a listed skill directory, and loads them before the run
-is queued. The snapshots are saved in the user message's optional `skills` field.
-The conversation loop renders that field into the message text for the current
-turn and for replayed history before context assembly, so the estimate counts the
-bytes sent, adapters never see the field, and later turns reuse the saved text.
-Page URL grants still read only the owner's original text. Scheduled runs skip
-resolution because an occurrence must not read skill files.
-
 ## Provider interface
 
 The shared interface defines normalized messages and provider continuation

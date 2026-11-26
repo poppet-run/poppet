@@ -128,7 +128,7 @@ Sessions and jobs have nullable JSON `skill` columns. Each selected
 skill saves its validated `name` and full `content` at creation. Records created
 without a selected skill have no snapshot. Task occurrences copy their task's
 snapshot into the new session; no later run rereads the skill file. A skill
-[named in a message](skills.md#name-a-skill-in-a-message) is saved in that user
+[named in a message](skills.md#mentions) is saved in that user
 message's JSON payload as `skills`, with the same `name` and `content` fields, and
 needs no migration. Search indexes only the message text. Inspection
 exposes snapshots without provider

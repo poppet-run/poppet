@@ -1,209 +1,113 @@
-# Local Markdown skills
+# Skills
 
-[Documentation index](README.md)
+[Engineering notes](README.md)
 
-A skill is an owner-reviewed procedure selected when creating a chat or scheduled
-task, or [named in a message](#name-a-skill-in-a-message) for one turn. It uses Poppet's existing tools and permissions. Create one file at
-`<POPPET_DATA_DIR>/skills/<name>/SKILL.md`, using UTF-8 Markdown of at most 8192
-bytes. Names contain 1–128 letters, digits, underscores, or hyphens.
+A skill is an owner-written Markdown procedure at
+`<POPPET_DATA_DIR>/skills/<name>/SKILL.md`. A run gets a skill in one of three
+ways: selected when a session or task is created, named with `$name` in a
+message, or read by the model from the skill index. A skill adds instructions
+and never adds permissions. The [user guide](https://poppet.run/docs/skills/)
+covers writing skills.
 
-For example, save this as `skills/weekly-review/SKILL.md` under your data directory:
+| Module                                 | Owns                                                    |
+| -------------------------------------- | ------------------------------------------------------- |
+| `packages/agent/src/skills.ts`         | `Skills`, `SkillsLive`, file validation, `isManualOnly` |
+| `packages/agent/src/skill-index.ts`    | The bounded skill index                                 |
+| `packages/agent/src/skill-tools.ts`    | `poppet_skills.view_skill`                              |
+| `packages/agent/src/skill-mentions.ts` | `$name` detection and loading                           |
+| `packages/agent/src/context-files.ts`  | Bounded file reads shared with project files            |
 
-```markdown
-# Weekly review
+## Files
 
-Search past conversations. Read relevant exchanges,
-then summarize progress, unresolved questions, and next actions. Cite session IDs.
-```
+- A name has 1 to 128 letters, digits, underscores, or hyphens. Names cannot be
+  paths.
+- `SKILL.md` is UTF-8 and at most 8192 bytes.
+- Reads reject symlinks, hard links, non-regular files, and invalid UTF-8.
+- A missing skills directory lists as empty.
+- A first line of exactly `<!-- manual-only -->` marks the skill manual-only.
+  `isManualOnly` checks only that line and parses no other metadata.
 
-Inspect and select it:
+Poppet does not parse YAML front matter, follow references, run scripts, or
+download skills, and no tool lets the agent write one. `skills list` and
+`skills show` need no model or credentials and do not open the database.
 
-```sh
-poppet skills list
-poppet skills show weekly-review
-poppet chat new --skill weekly-review "Review my Acorn project"
-poppet tasks add weekly-review --cron "0 9 * * 1" --tz Europe/London --skill weekly-review "Review my Acorn project"
-```
+The process that owns the store reads skill files. Creation requests through the
+worker carry only the skill name, and the worker resolves it from its own data
+directory with the same validation.
 
-Put `--skill` and other options before the message or prompt. Select at most one
-skill. `skills list` lists named directories and marks [manual-only](#manual-only-skills)
-ones; `skills show` reads and validates the selected
-file. A missing skills root lists as empty. Inspection needs no selected model
-or credentials and does not open the database. Symlinks, hard links, non-regular files,
-invalid UTF-8, and oversized content are rejected. Names cannot be paths.
+## Snapshots
 
-Poppet reads the skill when creating the session or task and saves its name and
-full text in SQLite. Continuing a chat, restarting the worker, or running a task
-occurrence uses that saved snapshot. Editing or deleting the original file affects
-only new sessions and tasks. Create a replacement session or task to refresh it.
-`chat show` and `tasks show` include the saved `skill` object with `name` and
-`content`; old records and ordinary sessions have `skill: null`.
+Selecting a skill saves its name and full text. The store schema defines the
+bounded snapshot and a nullable snapshot column on sessions and jobs. Every later
+turn, restart, and task occurrence uses the snapshot, so editing or deleting the
+file affects only new sessions and tasks. Task execution copies the job's
+snapshot into each occurrence session without touching the filesystem. A missing
+or invalid selection fails before the session or task is created.
 
-The process owning the store loads the file. Commands sent through a running worker
-use its data directory and the same validation as local commands. Skills join the
-run's instructions below the base rules and count toward the existing context
-budget. They cannot override explicit user requests or grant tool permissions.
-Scheduled runs cannot write memory. A skill cannot authorize memory
-changes; ordinary chat needs an explicit request in the current user message. Automatic session naming does not receive skills.
+The agent adds one snapshot to the instructions, below the base rules, and the
+context estimate counts its bytes. `chat show` and `tasks show` include `skill`
+with `name` and `content`, or `null`. Automatic session naming never sees skills.
 
-Skills are single files. Poppet does not parse YAML metadata, follow references,
-run scripts, download skills, or let the agent write them.
+## Skill index
 
-## Skills the model chooses
+When the host supplies `Skills` and the skill-index budget is nonzero, the
+conversation builds an index at run start and offers the read-only
+`poppet_skills.view_skill` tool.
 
-Tool-capable runs also receive an index of valid local skills: each name with a
-description taken from the first heading and the start of the first paragraph.
-Write those two parts so they say when the skill applies. Before multi-step work
-the model checks the index and calls `poppet_skills.view_skill` to read a
-matching skill. The result is saved in the tool journal, so continuing the
-session uses the text the model saw even if the file later changes.
+- The index lists at most 64 valid skills (`limits.skillIndexEntries`). Each entry is the name plus a
+  description from the first heading and the start of the first paragraph.
+- It leaves out invalid files and manual-only skills.
+- Each description is at most 240 bytes (`limits.skillDescriptionBytes`).
+- It fits the 8 KiB budget (`limits.skillIndexBytes`). A budget of 0 turns the
+  index and `view_skill` off. When it does not fit, it drops descriptions, then
+  names, and says it was truncated.
+- A skill selected for the session is marked as already supplied.
 
-The index is read once per run, considers at most 64 skills (`limits.skillIndexEntries`), omits invalid
-files and [manual-only skills](#manual-only-skills), and is bounded by the 8 KiB skill-index limit
-(`limits.skillIndexBytes`). When it does
-not fit, it lists names only, then fewer names, and says it was truncated. A skill selected with
-`--skill` stays in the instructions as before and is marked as already supplied.
+`view_skill` refuses manual-only skills. Its result goes into the tool journal,
+so a resumed session sees the text the model read even if the file changed.
+Viewing stays available in scheduled runs and after untrusted content, and grants
+nothing.
 
-Viewing is read-only and remains available in scheduled runs and after untrusted
-content enters a run. A viewed skill grants no permissions and cannot authorize
-memory or task changes.
+## Mentions
 
-## Manual-only skills
+`Agent.send` is the only place that resolves `$name`, so CLI chat, web chat, and
+gateways behave the same. `mentionedSkills` matches a standalone `$name` outside
+inline code and fenced code when a skill directory has exactly that name, case
+included. `${name}`, `\$name`, `a$name`, `$name/path`, `$name=1`, and `$name.sh`
+do not match. Trailing sentence punctuation is allowed. Everything else stays
+text, so `$HOME` is left alone unless a skill is called `HOME`.
 
-To keep a skill for yourself, make its first line exactly this comment:
+- A message can name at most four skills (`limits.skillMentions`).
+- Mentions load before the run is queued. An invalid named skill fails the
+  message before any run is saved.
+- The session's selected skill is not loaded again.
+- Manual-only skills can be named, because the owner named them.
+- Attachment text is not scanned.
+- Scheduled runs skip mentions, because an occurrence must not read skill files.
 
-```markdown
-<!-- manual-only -->
+The snapshots go in the user message's optional `skills` field. The conversation
+loop renders that field into the message text for the current turn and for
+replayed history before context assembly. The estimate therefore counts the
+bytes sent, adapters never see the field, and later turns reuse the saved text.
+Page URL grants still come only from the owner's original text.
 
-# Deploy site
+## Gateway sessions
 
-Run the release script on the host and verify the health check.
-```
+The gateway parses `/new --skill <name> <message>` and `/new <message>` after it
+authorizes the sender. Both go through the durable request queue, not the
+immediate `/status` and `/cancel` path, and run in conversation order.
 
-The model then cannot find or start it. The skill is left out of the index,
-`view_skill` refuses it, and chat task creation refuses to select it. Use this for
-procedures with side effects, such as ones that run host commands.
+A valid command creates a session with the worker's configured provider and
+model and the optional snapshot, then updates the conversation binding and the
+inbox entry in one transaction. The reserved inbox run ID keeps the new session's
+identity stable across a crash before binding, so recovery reuses the saved
+snapshot without reading the file again. Duplicate delivery cannot create a
+second session. A selection error gets a reply and leaves the binding unchanged.
 
-You can still select it with `--skill` for a chat or `tasks add`, and with
-`/new --skill` in messaging. The saved snapshot includes the marker line.
+The parsed prompt, without the command prefix, is what the model sees and what
+titles use. `/status` includes the skill name. Naming updates check the session
+identity, so stale work cannot rename a newer binding. Adapters need no
+skill-specific code.
 
-The marker must be the whole first line. The same text elsewhere in the file, or
-a misspelt marker, leaves the skill visible to the model. Check with
-`poppet skills list`, which prints `manual-only` after each marked skill.
-`skills list --json` still prints names only; `skills show <name> --json` includes
-`manualOnly`.
-
-## Name a skill in a message
-
-Write `$` followed by a skill's name to load that skill for one message:
-
-```text
-Run $weekly-review for the Acorn project
-```
-
-This works in `chat new`, `chat send`, `chat`, web chat, and messaging,
-including on models without tool support. Poppet reads the file when it accepts
-the message and saves the name and full text with that message. Later turns replay
-the saved text, so editing or deleting the file does not change what the session
-already saw. Naming the skill again in a later message reads the current file.
-`chat show` lists the skills under the message that named them.
-
-A name is recognized only when all of these hold:
-
-- It stands alone as a word. `${name}`, `\$name`, `a$name`, `$name/path`,
-  `$name=1`, and `$name.sh` are not names. Sentence punctuation after it is fine.
-- It is outside inline code and fenced code blocks.
-- A skill directory has exactly that name, matching case.
-
-Anything else stays ordinary text, so pasted shell variables such as `$HOME` are
-left alone unless you have a skill with that exact name. Quote such text as code
-to be certain.
-
-- A named skill whose file is invalid fails the message with an error, before
-  any run is saved. Fix the file, or write the name without `$`.
-- One message can name at most four skills (`limits.skillMentions`).
-- The skill a session was created with is not loaded again; its saved snapshot
-  still applies.
-- [Manual-only skills](#manual-only-skills) can be named, because you named them.
-- Scheduled task prompts are not expanded. Each occurrence would read the file
-  again, which would break the task's snapshot. Use `tasks add --skill`.
-- Text inside attachments is not scanned.
-
-Named skills count toward the context budget as part of their message, at most
-8192 bytes each. They follow the same rules as a selected skill: below the base
-rules, with no extra permissions, and URLs inside them cannot be fetched.
-
-## Draft a skill from a completed procedure
-
-After a procedure succeeds, ask Poppet in the same chat to turn it into reusable
-Markdown. For example:
-
-```text
-Turn the weekly review we just completed into a skill named weekly-review.
-Return only a draft in your reply; do not save anything. Include required inputs,
-steps using existing Poppet tools, pitfalls, and how to verify the result.
-Generalize private project details and omit credentials and unrelated facts.
-Identify any missing context or unverified steps rather than inventing them.
-```
-
-This is ordinary chat, including in authorized messaging conversations. There is
-no skill-creation tool, approval command, or automatic publication. Poppet returns
-text for the owner to review and revise before saving it manually.
-
-Review the draft against what actually worked. Keep the procedure self-contained,
-within the 8192-byte limit, and limited to tools and permissions Poppet already
-has. Replace account names, paths, and destinations with inputs where appropriate.
-Check for credentials and private information before placing it in the shared
-local skill library.
-
-The source is the conversation available to that model turn, which may omit older
-exchanges under the history/context budgets. Recalled conversations expose bounded
-user and final assistant text, not a complete execution trace. A successful model
-reply is not proof that an external action succeeded. If the source is incomplete,
-clarify the steps before saving. Keep the source session/run IDs in your own review
-notes if you need provenance; this flow adds no separate audit records.
-
-Save the reviewed Markdown with your editor at
-`<POPPET_DATA_DIR>/skills/<name>/SKILL.md`. Use a new name to preserve an existing
-skill. Run `poppet skills show <name>` to validate and inspect the saved file before
-selecting it explicitly for a new chat or task. Invalid files remain unusable until
-you correct them; Poppet does not repair or publish them automatically. Saving a
-file does not change the current session or any existing session/task snapshots.
-
-Validate a new procedure on a harmless input in a fresh chat first. Check actual
-results and tool receipts, then try it in a scheduled task only if it works with
-scheduled tool restrictions and unattended command review. Editing the file requires another new chat or
-task to test the revised snapshot.
-
-This flow changes only an owner-saved instruction file. It does not modify
-Poppet's code, base rules, configuration, or permissions. Skill hubs, downloads,
-reference bundles, script execution, and a publishing command are deferred.
-
-## Messaging sessions
-
-In an authorized Discord thread,
-send a text command with a prompt:
-
-```text
-/new --skill weekly-review Review my Acorn project
-```
-
-In a Discord parent channel, mention the bot before the command. It creates a
-thread as usual. The worker loads the local file using the same validation as the
-CLI, saves a snapshot, and starts a fresh session. Ordinary follow-ups continue
-that session and its saved skill across restart, even if the file changes or is
-deleted. `/status` includes the current skill name.
-
-Use `/new <message>` to start a fresh session without a skill. Both commands
-replace only the conversation's active session binding; previous sessions,
-history, and results remain available through `chat sessions` and `chat show`.
-The new session uses the worker's configured provider/model. Commands run in
-conversation order and do not cancel active work; use `/cancel` first if needed.
-Duplicate delivery of the same command cannot create another session or run.
-
-Missing prompts, invalid names, and unavailable or invalid skill files receive
-an error reply without inference or changing the active session. Use `skills list`
-and `skills show` locally to inspect available procedures. The command prefix is
-removed from the prompt sent to the model and from generated titles. Skills keep
-the existing prompt budgets and tool permissions. Scheduled-result delivery does
-not change the messaging session or its selected skill.
+Chat task creation through `poppet_tasks.manage_tasks` refuses manual-only skills.
+`tasks add --skill` and `/new --skill` accept them.
