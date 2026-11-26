@@ -47,7 +47,12 @@ export const storeRecords = (sql: SqlClient.SqlClient) => {
         : Effect.succeed(session),
     );
 
-  const runs = sql`SELECT runs.*, sessions.provider, sessions.model
+  // A running run with a pending approval reads as waiting.
+  const runs = sql`SELECT runs.id, runs.session_id, runs.created_at, runs.started_at,
+      runs.finished_at, runs.result, runs.failure_reason, sessions.provider, sessions.model,
+      CASE WHEN runs.status = 'running' AND EXISTS (SELECT 1 FROM approvals
+        WHERE approvals.run_id = runs.id AND approvals.state = 'pending')
+        THEN 'waiting' ELSE runs.status END AS status
       FROM runs JOIN sessions ON sessions.id = runs.session_id`;
 
   const findRun = (id: string) => sql`${runs} WHERE runs.id = ${id}`.pipe(decodeRow(RunRow));

@@ -8,6 +8,7 @@ import { AppConfig } from "@poppet/config";
 import type { Completion, Message, ProviderId } from "@poppet/provider";
 import { Effect, Fiber, Layer } from "effect";
 import { SqlClient } from "effect/sql";
+import { TestClock } from "effect/testing";
 
 import type { StoreDatabase } from "#src/database";
 import type { StoreError } from "#src/errors";
@@ -769,7 +770,7 @@ describe("Store", () => {
             { role: "assistant", output: response.output, continuation: response.continuation },
           ]);
           expect(yield* store.status).toMatchObject({
-            schemaVersion: 6,
+            schemaVersion: 7,
             sessions: 1,
             messages: 4,
             runs: 1,
@@ -1229,7 +1230,7 @@ describe("Store", () => {
       await expect(Effect.runPromise(borrowed.status)).rejects.toMatchObject({ reason: "storage" });
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
       expect(await fixtureStore.run(Store.use((store) => store.status))).toMatchObject({
-        schemaVersion: 6,
+        schemaVersion: 7,
       });
     } finally {
       await Effect.runPromise(Fiber.interrupt(owner));
@@ -1313,6 +1314,173 @@ describe("Store", () => {
       ).toEqual({
         latest: 99,
       });
+    } finally {
+      await fixtureStore.close();
+    }
+  });
+});
+
+const owner = { adapter: "discord", senderId: "owner", at: 0 } as const;
+
+// Leaves a run waiting on one Bash call, with a second call queued behind it.
+const waitingRun = (expiresAt = 120_000) =>
+  Effect.gen(function* () {
+    const store = yield* Store;
+    const session = yield* store.createSession("first-provider", "selected-model");
+    const run = yield* store.queueRun(session.id, [user]);
+    yield* store.startRun(run.id);
+    yield* store.recordToolCalls(
+      run.id,
+      {
+        ...responseFor("first-provider"),
+        finishReason: "tool-calls",
+        output: [
+          {
+            type: "tool-call",
+            callId: "restart",
+            name: "bash",
+            namespace: "poppet_host",
+            arguments: '{"command":"systemctl restart app","cwd":"/","timeoutSeconds":5}',
+          },
+          toolCall("after"),
+        ],
+      },
+      [{ callId: "restart", reviewed: true }],
+    );
+    yield* store.recordToolReview(run.id, "restart", {
+      decision: "needs_approval",
+      reason: "Restarts a service",
+    });
+
+    const approval = yield* store.parkRun(run.id, "restart", {
+      kind: "bash",
+      request: { command: "systemctl restart app", reason: "Restarts a service" },
+      requester: { surface: "gateway", conversationId: "thread" },
+      expiresAt,
+    });
+
+    return { session, run, approval };
+  });
+
+describe("approvals", () => {
+  test("when a run waits for approval, keeps its session busy and survives a new owner", async () => {
+    const fixtureStore = await fixture();
+
+    try {
+      const { session, run, approval } = await fixtureStore.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const waiting = yield* waitingRun();
+          expect(waiting.approval).toMatchObject({
+            state: "pending",
+            kind: "bash",
+            callId: "restart",
+          });
+          expect(waiting.approval.digest).toMatch(/^[a-f0-9]{64}$/);
+          expect(yield* store.run(waiting.run.id)).toMatchObject({ status: "waiting" });
+          yield* reject(store.queueRun(waiting.session.id, [user]), "conflict");
+          yield* reject(store.deleteSessions([waiting.session.id]), "conflict");
+          yield* reject(store.startToolCall(waiting.run.id, "restart"), "conflict");
+          yield* reject(
+            store.parkRun(waiting.run.id, "after", {
+              ...waiting.approval,
+              expiresAt: 120_000,
+            }),
+            "conflict",
+          );
+
+          return waiting;
+        }).pipe(Effect.provide(TestClock.layer())),
+      );
+
+      await fixtureStore.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          expect(yield* store.run(run.id)).toMatchObject({ status: "waiting" });
+          expect((yield* store.toolCalls(run.id)).map((call) => call.status)).toEqual([
+            "pending",
+            "pending",
+          ]);
+          expect(yield* store.approval(approval.id)).toEqual(approval);
+          expect(yield* store.pruneSessions(Number.MAX_SAFE_INTEGER, { dryRun: true })).toEqual([]);
+
+          yield* store.finishRun(run.id, { status: "interrupted", reason: "cancelled" });
+          expect(yield* store.approval(approval.id)).toMatchObject({ state: "cancelled" });
+          expect(yield* store.deleteSessions([session.id])).toHaveLength(1);
+        }),
+      );
+    } finally {
+      await fixtureStore.close();
+    }
+  });
+
+  test("when two answers race, settles the approval once and journals the first", async () => {
+    const fixtureStore = await fixture();
+
+    try {
+      await fixtureStore.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const { run, approval } = yield* waitingRun();
+
+          const [first, second] = yield* Effect.all(
+            [
+              store.decideApproval(approval.id, { ...owner, decision: "approved" }),
+              store.decideApproval(approval.id, { ...owner, decision: "denied" }),
+            ],
+            { concurrency: "unbounded" },
+          );
+
+          expect(first).toMatchObject({
+            state: "approved",
+            decidedBy: { ...owner, decision: "approved" },
+          });
+          expect(second).toBeNull();
+          expect(yield* store.run(run.id)).toMatchObject({ status: "running" });
+          expect((yield* store.toolCalls(run.id))[0]?.review).toEqual({
+            decision: "needs_approval",
+            reason: "Restarts a service",
+            approval: { ...owner, decision: "approved" },
+          });
+          yield* store.startToolCall(run.id, "restart");
+        }).pipe(Effect.provide(TestClock.layer())),
+      );
+    } finally {
+      await fixtureStore.close();
+    }
+  });
+
+  test("when an approval expires, refuses late answers and fails the run with the approval reason", async () => {
+    const fixtureStore = await fixture();
+
+    try {
+      await fixtureStore.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const { run, approval } = yield* waitingRun(60_000);
+          expect(yield* store.expireApprovals).toEqual([]);
+          yield* TestClock.adjust("1 minute");
+          expect(yield* store.decideApproval(approval.id, { ...owner, decision: "approved" })).toBe(
+            null,
+          );
+
+          const expired = yield* store.expireApprovals;
+          expect(expired.map((entry) => [entry.id, entry.state])).toEqual([
+            [approval.id, "expired"],
+          ]);
+          expect(yield* store.run(run.id)).toMatchObject({
+            status: "failed",
+            failureReason: "agent:command-approval-required",
+          });
+          expect(
+            (yield* store.toolCalls(run.id)).map((call) => [call.status, call.failureReason]),
+          ).toEqual([
+            ["interrupted", "agent:command-approval-required"],
+            ["interrupted", "agent:command-approval-required"],
+          ]);
+          expect(yield* store.expireApprovals).toEqual([]);
+        }).pipe(Effect.provide(TestClock.layer())),
+      );
     } finally {
       await fixtureStore.close();
     }

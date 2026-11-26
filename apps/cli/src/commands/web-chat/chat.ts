@@ -242,7 +242,12 @@ const makeWebChat = Effect.gen(function* () {
 
           const runs = yield* store.runs(session.id);
 
-          if (runs.some((run) => run.status === "pending" || run.status === "running")) {
+          if (
+            runs.some(
+              (run) =>
+                run.status === "pending" || run.status === "running" || run.status === "waiting",
+            )
+          ) {
             return yield* new WebChatError({
               status: 409,
               message: "This conversation already has a reply in progress.",

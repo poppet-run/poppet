@@ -123,6 +123,7 @@ export const SavedAttachment = Schema.Struct({
 export const RunStatus = Schema.Literals([
   "pending",
   "running",
+  "waiting",
   "completed",
   "failed",
   "interrupted",
@@ -162,6 +163,34 @@ export const ToolReview = Schema.Struct({
   target: Schema.optionalKey(Schema.NonEmptyString),
   effects: Schema.optionalKey(Schema.NonEmptyString),
   approval: Schema.optionalKey(ToolApproval),
+});
+
+export const ApprovalState = Schema.Literals([
+  "pending",
+  "approved",
+  "denied",
+  "expired",
+  "cancelled",
+  "superseded",
+]);
+
+export const NewApproval = Schema.Struct({
+  kind: Schema.Literals(["bash", "mcp"]),
+  request: Schema.Record(Schema.String, Schema.Json),
+  requester: Schema.Record(Schema.String, Schema.Json),
+  expiresAt: Schema.Natural,
+});
+
+export const Approval = Schema.Struct({
+  id: Id,
+  runId: Id,
+  callId: Schema.NonEmptyString,
+  ...NewApproval.fields,
+  digest: Schema.NonEmptyString,
+  state: ApprovalState,
+  createdAt: Schema.Natural,
+  decidedAt: Schema.NullOr(Schema.Natural),
+  decidedBy: Schema.NullOr(ToolApproval),
 });
 
 export const ToolCall = Schema.Struct({
@@ -213,6 +242,12 @@ export type ToolOutcome = typeof ToolOutcome.Type;
 export type ToolApproval = typeof ToolApproval.Type;
 
 export type ToolReview = typeof ToolReview.Type;
+
+export type ApprovalState = typeof ApprovalState.Type;
+
+export type NewApproval = typeof NewApproval.Type;
+
+export type Approval = typeof Approval.Type;
 
 export type Session = typeof Session.Type;
 
