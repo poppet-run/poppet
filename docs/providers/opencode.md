@@ -1,56 +1,40 @@
 # OpenCode
 
-[Documentation index](../README.md)
+[Engineering notes](../README.md)
 
-For OpenCode pay-as-you-go (`opencode`), discovery fetches the catalog from
-`https://opencode.ai/inference/openai/v1/models`. When an API key is configured,
-Poppet authenticates the request so OpenCode returns only the models enabled for
-that workspace (applying workspace model toggles, privacy, and region settings).
-Without a configured key, discovery falls back to the public OpenCode catalog. A
-connection drop while downloading the catalog is reported as a temporary failure.
-Log in with a hidden key prompt, then select a model:
+`@poppet/provider-opencode` registers two providers on one adapter: `opencode`
+for pay-as-you-go workspace credit and `opencode-go` for the Go subscription. The
+user guides cover [OpenCode Go](https://poppet.run/docs/providers/opencode-go/)
+setup. See [providers](../providers.md) for the shared contract.
 
-Save the provider and model in `config.json`:
+| Provider      | Catalog                                             | Key variable                 | Key file                |
+| ------------- | --------------------------------------------------- | ---------------------------- | ----------------------- |
+| `opencode`    | `https://opencode.ai/inference/openai/v1/models`    | `POPPET_OPENCODE_API_KEY`    | `auth/opencode.json`    |
+| `opencode-go` | `https://opencode.ai/inference/go/openai/v1/models` | `POPPET_OPENCODE_GO_API_KEY` | `auth/opencode-go.json` |
 
-```json
-{
-  "provider": "opencode",
-  "model": "claude-sonnet-5-5"
-}
-```
+## Discovery
 
-```sh
-poppet provider login opencode
-poppet provider models opencode
-```
+`service.ts` fetches the catalog. With a key, it authenticates the request so
+OpenCode returns only the models enabled for that workspace, and caches the
+result per provider and credential. Without a key, it reads the public catalog. A
+service account key needs the Models › Read permission for authenticated
+discovery. A dropped connection while downloading the catalog is a temporary
+failure.
 
-For OpenCode Go subscription billing, see [OpenCode Go](opencode-go.md).
+Descriptions take the display name, context window, output limit, tool and
+temperature support, and image input from the catalog. Discovery leaves out
+decision, embedding, image, realtime, and video models, and free-tier models that
+OpenCode limits to its own app.
 
-## Models
+## Requests
 
-Discovery lists paid chat models from the OpenCode catalog, using each model's
-reported display name, context window, output token limit, tool support, temperature
-support, and image-input modalities. Free-tier chat models (which OpenCode restricts
-to its own app), decision models, embedding models, and non-text models are excluded.
+A model whose recommended API is Responses goes to `/responses` through the
+Responses adapter. Every other chat model goes to `/chat/completions`, including
+Anthropic Messages and Gemini models that OpenCode Console translates on the
+server. Both send the Poppet user agent and a stable `x-opencode-session` header
+from `protocol.ts`. Inference loads the key only when it starts.
 
-Models whose recommended API is OpenAI Responses use `/responses`; Chat Completions
-models and models served through OpenCode Console's server-side protocol translation
-(such as Anthropic Messages and Gemini models) use `/chat/completions`. Both
-protocols send `poppet/0.0.0` and a stable `x-opencode-session` header for the
-exchange.
-
-Poppet uses the selected model without a separate workload setting.
-See the provider documentation for usage requirements and workspace model controls.
-[OpenCode Console models](https://opencode.ai/docs/console/models/)
-
-## Credentials
-
-See [API keys](../configuration.md#api-keys) for protected storage, environment
-overrides, masked terminal input, and logout. OpenCode uses `POPPET_OPENCODE_API_KEY`
-and `<POPPET_DATA_DIR>/auth/opencode.json`. Service account keys need the
-**Models › Read** permission for authenticated model discovery; personal API keys work
-without extra permissions.
-
-Use `chat new` to start a session; see [chat](../chat.md). Chat
-consumes provider usage. Local tests do not establish live account access; see
-[development and validation](../development.md#validation).
+Both providers save `reasoning_content` as continuation on Chat Completions.
+Responses continuation keeps validated output items, as for ChatGPT. See
+[OpenCode Console models](https://opencode.ai/docs/console/models/) and
+[OpenCode Go](https://opencode.ai/docs/console/go/).

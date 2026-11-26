@@ -300,7 +300,7 @@ remote access is checked when making model requests. `provider logout openrouter
 removes that provider's saved key. It leaves other providers connected and does
 not revoke the remote key or unset an environment override.
 
-See [OpenCode](providers/opencode.md), [OpenCode Go](providers/opencode-go.md), and [OpenRouter](providers/openrouter.md) for login and model-selection examples.
+See [OpenCode](providers/opencode.md), [OpenCode Go](providers/opencode.md), and [OpenRouter](providers/openrouter.md) for login and model-selection examples.
 
 ## Skill files
 

@@ -44,10 +44,12 @@ when behaviour changes, and the website page when users would notice.
 
 ## Providers
 
+- [Providers](providers.md): the model contract, adapter rules, registration, and
+  adding a provider.
 - [ChatGPT](providers/openai-chatgpt.md): OAuth sign-in, registration, credential
-  storage, and subscription inference.
-- [OpenCode](providers/opencode.md) and [OpenCode Go](providers/opencode-go.md):
-  catalogs and protocol routing.
+  storage, and Responses inference.
+- [OpenCode](providers/opencode.md): the `opencode` and `opencode-go` catalogs and
+  protocol routing.
 - [OpenRouter](providers/openrouter.md): catalog capabilities and routing rules.
 
 Planned work is tracked in [GitHub issues](https://github.com/poppet-run/poppet/issues).
