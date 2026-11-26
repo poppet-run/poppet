@@ -349,7 +349,7 @@ A scoped abort controller and an Effect clock enforce a 60-second absolute
 inference deadline. Consumer termination aborts the request before awaiting the
 iterator's cleanup, so a pending network read cannot block cancellation. SDK
 retries are disabled. Shared adapter tests use injected HTTP responses and a test
-clock; live provider checks are separate.
+clock.
 
 ## Conversation store
 
@@ -554,8 +554,7 @@ framework.
 Offline checks inject DNS/transport and static fixtures. Loopback integration
 checks use the production HTTP(S) client to prove literal-address connections,
 source Host/SNI and TLS identity, proxy isolation, wire/decompression limits, and
-cancellation. Fake-model and scheduler checks cover authorization, durable results,
-failure without replay, and unchanged restrictions on built-in writes and MCP tools.
+cancellation.
 
 ## Chat task management
 
@@ -614,11 +613,6 @@ Committed changes survive later inference failure, and uncertain storage outcome
 without automatic replay. List uses bounded ID-cursor queries; show limits recent
 occurrences and shortens prompts within the serialized tool budget. No model
 answers or unbounded occurrence history are returned by inspection.
-
-Automated checks cover tool-call recovery, atomic rollback, local/worker parity,
-destination revocation, scheduled rejection of every action, result limits, and
-an interactive pause while a scheduled occurrence waits for the agent. Live
-chat creation, pause/resume, and delivered occurrence checks remain separate.
 
 ## Task notes
 
@@ -1134,7 +1128,7 @@ restart; delivery of events lost before acceptance or after an unrecoverable
 disconnect is not guaranteed. `worker status` reports persisted pending, failed,
 and uncertain delivery counts even when the worker is stopped. Thread-scoped
 `@Poppet /status` and `@Poppet /cancel` are text controls rather than registered
-slash commands. Live Discord checks remain manual.
+slash commands.
 
 ### External adapters
 
@@ -1154,8 +1148,7 @@ Subscription verification adds OpenAI 7.32.0 for Responses streaming and jose
 6.2.12 for JWT/JWKS validation. The official sign-in devkit was not available as
 an installable package when this flow was added, so OAuth follows the documented
 public-client protocol directly. Scheduled tasks use Effect Cron for five-field
-expressions with explicit timezones. Tests cover DST, downtime, and durable
-occurrence transitions without another scheduling dependency.
+expressions with explicit timezones.
 
 References: [Effect installation](https://effect.website/docs/v4/getting-started/installation),
 [services](https://effect.website/docs/v4/requirements-management/services),

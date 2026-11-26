@@ -358,23 +358,3 @@ Tool-reported errors leave a failed durable call. Transport/protocol failures
 following dispatch leave an uncertain call, as does cancellation while a call is
 running. An uncertain call may have changed external state. Inspect that server's
 state before explicitly requesting another attempt, including after a restart.
-
-## Manual validation
-
-Automated tests use fixture stdio and in-process HTTP servers and injected models. With one trusted
-real server, inspect its allowed catalog, complete a real-model tool round trip
-from the CLI and an authorized messaging conversation, and inspect `chat show`.
-Then allow one reviewed read in `scheduledTools`, restart the worker, schedule
-that read, and inspect its result. Stop the worker and confirm its MCP PIDs have
-exited. These stdio checks passed on 2026-10-27.
-
-With one trusted remote server that accepts a bearer token, configure the
-token as a protected credential header, inspect its catalog from the worker, and
-complete a CLI tool round trip. This remote check passed on 2026-10-27.
-
-With one real OAuth server that supports dynamic registration, add it with
-`--auth oauth`, run `mcp login <id> --no-browser`, and sign in over SSH with a pasted callback, complete a CLI and
-a worker tool round trip, wait for or force token expiry and confirm the next
-call refreshes, then log out and confirm `mcp servers` shows `needs-login`.
-Fixture tests do not establish that a real authorization server interoperates;
-this check has not been run.

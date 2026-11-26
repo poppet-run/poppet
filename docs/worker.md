@@ -259,50 +259,6 @@ restarts skip missed recurring work, and a delayed timer runs the most recent du
 time only if it is less than a minute old, recording earlier times as skipped. Summaries older than 24 hours expire. Failed or
 interrupted requests are never automatically replayed.
 
-## Manual validation
-
-To manually test background execution, first save your provider and model in
-`config.json`:
-
-Bash / Zsh / POSIX sh:
-
-```sh
-when=$(date -u -v+1M +%Y-%m-%dT%H:%M:%SZ)
-poppet tasks add background-summary --at "$when" "Read project.md and summarize it"
-poppet worker install
-poppet worker status
-# After the scheduled time, inspect the task ID returned by tasks add:
-poppet tasks show '<task-id>'
-poppet worker logs
-```
-
-fish:
-
-```fish
-set when (date -u -v+1M +%Y-%m-%dT%H:%M:%SZ)
-poppet tasks add background-summary --at $when "Read project.md and summarize it"
-poppet worker install
-poppet worker status
-# After the scheduled time, inspect the task ID returned by tasks add:
-poppet tasks show '<task-id>'
-poppet worker logs
-```
-
-With GNU `date` on Linux, replace `-v+1M` with `-d '+1 min'`. Use `worker start`
-instead of `install` if it is already installed. Repeat with a
-sleep/wake cycle, then stop/start the worker and confirm a completed occurrence
-does not run again. Automated tests simulate clock jumps, crash recovery, and
-SIGTERM cleanup. Actual login startup, physical sleep/wake, and live provider
-execution remain manual checks. Other platforms can use `worker run` in the
-foreground; background installation supports macOS and Linux with systemd.
-
-Rotation tests exercise retention, restart, stdout/stderr capture, log inspection,
-and shutdown with isolated files and subprocesses. After reinstalling a real
-LaunchAgent or systemd unit, check `worker status` and `worker logs`, then
-stop/start it and confirm new log entries append. On Linux, also log out and back
-in, with and without lingering, and confirm a killed launcher restarts after 30
-seconds. Native launchd and systemd behavior remain manual checks.
-
 ## Optional naming work
 
 Chat rename commands use the same local-or-worker routing as chat inspection.

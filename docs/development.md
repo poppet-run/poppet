@@ -362,44 +362,120 @@ See [messaging package boundaries](architecture.md#package-boundaries) for the g
 
 ## Validation
 
-Local tests cover all providers' text and tool exchanges, reasoning
-continuation, output ordering, malformed and incomplete streams, cancellation,
-deadlines, error classification, and provider selection. These tests do not prove
-live account access. Live ChatGPT subscription inference and a tool round trip
-passed on 2026-10-13; Go and OpenRouter inference have not been verified against live accounts.
-
-The [storage guide](storage.md#permissions-and-recovery) describes local recovery checks.
-Live chat, ChatGPT token renewal, Discord and Slack setup and reconnection,
-web chat over HTTPS, macOS and Linux login startup, and physical sleep/wake
-remain separate manual checks. Follow the [Discord](gateways/discord.md),
-[Slack](gateways/slack.md), [web chat](web-chat.md#current-scope-and-verification),
-and [worker validation](worker.md#manual-validation) guides for those paths. Planned work is tracked in
+Automated tests use local fixtures and controlled providers. They do not contact a
+live account, a real messaging platform, or a real MCP server, and they do not
+exercise launchd, systemd, or physical sleep. Run the manual checks below for
+changes in those areas. Planned work is tracked in
 [GitHub issues](https://github.com/poppet-run/poppet/issues).
 
 ### Manual live test checklist
 
-Use small prompts and the same `POPPET_DATA_DIR` throughout. Select an
-assistant-capable provider and model for messaging and scheduled tasks.
+Use a disposable `POPPET_DATA_DIR`, small prompts, and an assistant-capable
+provider and model throughout.
 
-- [ ] Sign in to each provider you use, select a supported model, and start a
-      chat. Ask it to use a local read-only tool and expect inference and the tool round trip to succeed.
-- [ ] Run `poppet chat`. Send two messages, confirm context is
-      retained, then cancel a longer request with Ctrl-C. Start another chat and confirm
-      it works.
+Providers and chat:
+
+- [ ] Sign in to each provider you changed, select a model, and start a chat.
+      Ask for a local read-only tool and expect inference and the tool round trip
+      to succeed.
+- [ ] Run `poppet chat`. Send two messages and confirm the second answer uses the
+      first. Draft while a response streams, attach a file, resize the terminal,
+      and exit. Resume the printed session ID, interrupt one request with Ctrl-C,
+      and inspect it with `chat show`.
+- [ ] Send a screenshot and a log file in one message with `chat new --attach`
+      and in a Discord thread. Send an image over 5 MiB, and send an image to a
+      text-only model. Expect each refusal to name the file.
+- [ ] Ask the model to remember one fact, then replace it, then forget it. After
+      each step, inspect `memory list` and `chat show`, including from a fresh
+      chat.
 - [ ] For ChatGPT, repeat a request when the access token nears expiry. Expect
-      automatic renewal without signing in again.
-- [ ] Test Discord in an allowed thread. Check replies, `/status`, `/cancel`, and
-      rejection of another sender.
-- [ ] Restart the worker and send a follow-up. Expect the same session. Briefly
-      disconnect the network and restore it; check reconnection and absence of
-      duplicate replies.
-- [ ] Save provider/model settings in `config.json` and credentials in protected
-      storage. Stop foreground workers, then run `poppet worker install`, or
-      `poppet worker restart` for an
-      existing installation. Check `poppet worker status` and
-      `poppet worker logs`.
-- [ ] Log out of macOS and back in. Confirm the worker starts automatically,
-      responds to CLI commands, and receives messaging input.
-- [ ] Schedule a one-off task, sleep across its due time, then wake. Expect one
-      execution. Restart the worker and confirm it does not repeat; check that logs
-      append without exposing secrets.
+      renewal without signing in again.
+
+Host commands:
+
+- [ ] In Discord, ask for a harmless filesystem check and verify its Bash
+      receipt. Request an operation whose review asks for approval and deny it
+      with the button. Confirm no command ran and the buttons are disabled.
+- [ ] Repeat with **Approve once**, then check `/approve <id>` and `/deny <id>`
+      on new requests. Check that another account cannot answer, and that expiry
+      and `/cancel` disable the controls. Restart the worker and confirm an old
+      request stays unusable.
+- [ ] In Slack, repeat approval and denial with the text controls in the
+      original thread.
+- [ ] Schedule a command that needs approval. Expect a logged failure with no
+      execution and no approval prompt, the reason in `tasks show`, and a fixed
+      failure notice when the task has a messaging destination.
+
+Messaging gateways:
+
+- [ ] In an allowed Discord thread, check replies, `/status`, `/cancel`, and the
+      rejection of another sender. Mention the bot in a channel while another
+      thread's request runs, and confirm replies within one thread stay in order
+      and cancelling one thread leaves the other running.
+- [ ] In the private Discord test channel, check thread creation and renaming,
+      and rename a thread by hand while the bot renames it.
+- [ ] Start a messaging session with `/new --skill <name>` and send a follow-up.
+      Expect the skill to stay selected.
+- [ ] In Slack, check mentions and thread replies, owner rejection, attachments,
+      cancellation, scheduled results, and failure notices.
+- [ ] Restart the worker and send a follow-up. Expect the same session.
+      Disconnect the network briefly and confirm reconnection without duplicate
+      replies.
+
+MCP servers:
+
+- [ ] With one trusted stdio server, inspect its allowed catalog, complete a tool
+      round trip from the CLI and from an authorized messaging conversation, and
+      inspect `chat show`. Add one read to `scheduledTools`, restart the worker,
+      schedule that read, and inspect its result. Stop the worker and confirm the
+      server processes exited.
+- [ ] With one remote server that accepts a bearer token, configure the token as a
+      protected credential header, inspect its catalog from the worker, and
+      complete a CLI tool round trip.
+- [ ] With one OAuth server that supports dynamic registration, add it with
+      `--auth oauth`, run `mcp login <id> --no-browser` over SSH with a pasted
+      callback, and complete a CLI and a worker tool round trip. Wait for or force
+      token expiry and confirm the next call refreshes. Log out and confirm
+      `mcp servers` shows `needs-login`.
+
+Scheduled tasks and the worker:
+
+- [ ] Save the provider and model in `config.json`, then run `poppet worker
+      install`, or `poppet worker restart` for an existing installation. Check
+      `worker status` and `worker logs`.
+- [ ] Schedule a one-off task a minute ahead with `tasks add --at`. Sleep across
+      its due time, then wake. Expect one execution. Restart the worker and
+      confirm it does not run again, and that logs append without secrets.
+- [ ] Edit a task, skip its next run, run it now, and snooze a one-off across a
+      worker restart. Expect task IDs and history to stay, the cron cadence to
+      hold, and the snoozed run to happen once. Repeat the controls through CLI
+      chat and an authorized Discord thread, and check receipts and delivery.
+- [ ] Log out of macOS and back in. Confirm the worker starts, answers CLI
+      commands, and receives messaging input.
+- [ ] On Linux, log out and back in with and without lingering. Kill the launcher
+      and confirm systemd restarts it after 30 seconds.
+
+Web chat:
+
+- [ ] Sign in over HTTPS from a desktop and a phone. Send a message and compare
+      the reply on both.
+- [ ] Refresh or close a page mid-reply, then reopen the conversation on either
+      device. Draft while a reply streams, scroll up, and confirm new output does
+      not move the view.
+- [ ] Disconnect during submission, reconnect, and recover it. Confirm the
+      conversation has one input.
+- [ ] Stop a reply and inspect it with `chat show`. Restart the worker during
+      another reply and confirm it is interrupted and not retried.
+- [ ] Delete a conversation. Confirm it leaves the sidebar on both devices and
+      that the other device shows "Conversation not found." if it had it open.
+- [ ] Check the mobile keyboard, multiline input, the sidebar, long code blocks,
+      and sign-out.
+
+Doctor:
+
+- [ ] Run `poppet doctor` with the worker stopped, then with a worker running
+      from the same configuration. Check human and JSON output. Change one setting
+      while the worker runs and confirm doctor reports the mismatch. Break
+      `config.json` and confirm independent checks still appear. Compare files and
+      permissions before and after each run. Doctor must not launch tools, refresh
+      credentials, create files, or repair anything.

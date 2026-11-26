@@ -198,8 +198,3 @@ The marker records the current owner for diagnostics only.
 Never remove a `.lock.sqlite` file while Poppet is running. These small lock
 databases contain no credentials and remain after logout. On reopening, unfinished runs become interrupted
 with a `process-exit` reason. Poppet does not automatically replay them.
-
-Tests cover persistent tool exchanges for all providers, migration ordering and
-rollback, transaction rollback, invalid records, run transitions, competing
-owners, and scoped cleanup. Live ChatGPT token renewal
-remains a separate manual check.

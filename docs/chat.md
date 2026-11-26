@@ -145,15 +145,6 @@ the latest messages; Page Up scrolls to earlier ones. History loading uses the
 worker when available and does not call the provider or replay tools. Use
 `chat show` for run details and tool records.
 
-Automated checks cover local and worker turns, saved selection and skill snapshots,
-failed-first-turn recovery, cancellation, and ambiguous worker replies.
-Automated terminal checks cover multiline paste, draft preservation during streaming,
-input history, resizing, scrolling, and colour handling. A pseudo-terminal check
-covers cancellation during inference and restoration of raw mode, input listeners,
-and the normal screen. Live provider behavior remains a manual check: exchange two
-messages, draft while a response streams, attach a file, resize, exit, resume the
-printed session ID, then interrupt one request and inspect it with `chat show`.
-
 ## Select a skill
 
 ```sh
@@ -332,7 +323,8 @@ to the message itself; a message with files needs no text. See
 [Discord](gateways/discord.md#attachments).
 
 Images are PNG, JPEG, WebP, or GIF, identified by their bytes rather than their
-name, and need a model that accepts images. Text files are UTF-8 without NUL
+name, and need a model that accepts images. ChatGPT models report this through
+the catalog's `input_modalities`. Text files are UTF-8 without NUL
 bytes and need an allowed extension such as `.txt`, `.md`, `.log`, `.csv`,
 `.json`, `.yaml`, or a common source-code extension. PDFs and other files are
 refused. By default one message holds at most 4 files, each image at most 5 MiB and each
@@ -356,11 +348,6 @@ The model receives text files labelled as untrusted file content, and is told
 never to follow instructions found in attachments. Each attachment in a model request must have a unique content ID. A message with attachments
 withdraws task, memory, and MCP mutations for its run, as a fetched page does; ask
 for those changes in a follow-up message.
-
-Live checks passed on 2026-10-27: a screenshot and a log file in one message,
-through `chat new --attach` and in a Discord thread, an image over 5 MiB, and an
-image sent to a text-only model. The ChatGPT model catalog reports
-`input_modalities`, so its models that accept images can receive them.
 
 ## Read a supplied URL
 
@@ -452,6 +439,6 @@ withdrawn for the rest of that run. Reading tools remain.
 The model proposes withdrawn actions instead, and a new message from you can
 confirm them.
 Recorded usage sums all model turns when every turn reports usage, otherwise it
-is null. Live account chat remains a manual check and consumes provider usage.
+is null.
 
 See [worker](worker.md#interactive-commands) for chat while a worker is running.

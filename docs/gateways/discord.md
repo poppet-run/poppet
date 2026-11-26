@@ -135,19 +135,6 @@ posts one short [failure notice](../tasks.md#failure-notices) to the task's
 configured destination, without model output or error text.
 Successful cron results go to each task's configured destination.
 
-## Validation
-
-Automated tests use injected Discord events and API responses. Live bot setup,
-permissions, reconnection, and model inference still need manual validation.
-
-Parallel conversations passed a live check on 2026-10-27 with `openai-chatgpt`
-and the default three slots: a channel mention was answered while another
-thread's request ran, two simultaneous requests shared one ChatGPT account,
-replies within one thread stayed in order, and cancelling one thread left
-another running.
-
-See [worker documentation](../worker.md#foreground-worker) to run messaging with scheduling or install the login worker.
-
 ## Thread names
 
 New threads use a fallback derived from the initiating message. After the answer
@@ -169,8 +156,7 @@ disconnects, or deleted/locked threads leave chat results intact. A lost rename
 acknowledgement is checked against the current name, without resending the rename.
 Failures can stop synchronization while the local session title stays usable.
 Discord has no atomic compare-and-rename operation, so a user edit between the
-last fetch and update can still race the bot. Live creation, renaming, and that
-race require validation in the private test channel.
+last fetch and update can still race the bot.
 
 ## Schedule through chat
 
