@@ -1,44 +1,53 @@
-# Documentation
+# Engineering notes
 
 [Project README](../README.md)
 
-Start with [getting started](getting-started.md) to install dependencies, connect a provider, and send your first message.
+These pages are for people and agents changing Poppet. They record behaviour that
+must hold, where the code for it lives, and how to check a change. User guides
+are at [poppet.run/docs](https://poppet.run/docs/). Update the matching page here
+when behaviour changes, and the website page when users would notice.
 
-Shell commands work in Bash, Zsh, POSIX sh, and fish unless separate examples are shown.
-Replace angle-bracket placeholders such as `<task-id>` before running a command.
-Environment overrides last for the current shell scope. Use [configuration](configuration.md)
-for persistent settings.
+## Start here
 
-## Guides
+- [Development](development.md): setup, checks, test rules, migrations, lint, the
+  source layout, and the manual live-test checklist.
+- [Architecture](architecture.md): process model, Effect conventions, workspaces,
+  and the rules every subsystem follows.
 
-- [Configuration](configuration.md): one settings file, credentials, Discord and Slack settings, and run controls.
-- [Command line](cli.md): commands, provider selection, and verification.
-- [Doctor](doctor.md): read-only setup checks, worker observations, and actionable findings.
-- [Chat](chat.md): saved sessions, streaming answers, context, and cancellation.
-- [Web chat](web-chat.md): browser chat, remote access, and connection recovery.
-- [MCP tools](mcp.md): trusted local and HTTP servers, allowlists, inspection, and scheduled reads.
-- [Skills](skills.md): explicitly selected local procedures saved with chats and tasks.
-- [Memory](memory.md): an editable profile and explicitly saved facts shared across sessions.
-- [Storage](storage.md): the local database, permissions, ownership, and recovery.
-- [Scheduled tasks](tasks.md): one-off and recurring work, results, pauses, and retries.
-- [Worker](worker.md): foreground modes, macOS and Linux login startup, lifecycle, and logs.
+## Subsystems
+
+- [Chat](chat.md): agent runs, context assembly, budgets, built-in tools, attachments,
+  and failure handling.
+- [Host commands](commands.md): the Bash tool, action review, and owner approval.
+- [MCP](mcp.md): server configuration, allowlists, OAuth, reviewed actions, and
+  result bounds.
+- [Memory](memory.md): the profile, personality, saved facts, and the memory tool.
+- [Skills](skills.md): skill files, the skill index, snapshots, and `$name` mentions.
+- [Scheduled tasks](tasks.md): schedules, occurrences, controls, notes, delivery,
+  and recovery.
+- [Worker](worker.md): the worker host, socket transport, login services, and logs.
+- [Web chat](web-chat.md): the HTTP listener, submission receipts, event stream, and
+  frontend state.
+- [Doctor](doctor.md): read-only checks, the JSON contract, and exit codes.
+- [Storage](storage.md): SQLite ownership, per-package schemas, deletion, and the
+  search index.
+- [Configuration](configuration.md): `config.json` fields, environment variables,
+  and credential files.
+- [Command line](cli.md): command routing, output streams, and worker routing.
 
 ## Gateways
 
-- [Host commands](commands.md): reviewed Bash execution, Discord and Slack approval, and cron behavior.
-- [Discord](gateways/discord.md): bot setup, thread sessions, permissions, and delivery.
-- [Slack](gateways/slack.md): Socket Mode setup, thread sessions, permissions, and delivery.
-- [Telegram](gateways/telegram.md): bot setup, chats and forum topics, and delivery limits.
+- [Discord](gateways/discord.md): threads as sessions, approvals, attachments, and
+  thread naming.
+- [Slack](gateways/slack.md): Socket Mode, threads, and approvals.
+- [Telegram](gateways/telegram.md): long polling, chats, and forum topics.
 
 ## Providers
 
-- [ChatGPT](providers/openai-chatgpt.md): browser sign-in, subscription access, consent, and logout.
-- [OpenCode](providers/opencode.md): API-key setup for pay-as-you-go workspace models.
-- [OpenCode Go](providers/opencode-go.md): API-key setup and supported Go subscription models.
-- [OpenRouter](providers/openrouter.md): API-key setup, model discovery, and routing constraints.
+- [ChatGPT](providers/openai-chatgpt.md): OAuth sign-in, registration, credential
+  storage, and subscription inference.
+- [OpenCode](providers/opencode.md) and [OpenCode Go](providers/opencode-go.md):
+  catalogs and protocol routing.
+- [OpenRouter](providers/openrouter.md): catalog capabilities and routing rules.
 
-## Development
-
-- [Development](development.md): workspace layout, checks, tests, and adding providers or gateways.
-- [Architecture](architecture.md): service boundaries, Effect conventions, storage, and execution contracts.
-- [Planned work](https://github.com/poppet-run/poppet/issues): GitHub issues.
+Planned work is tracked in [GitHub issues](https://github.com/poppet-run/poppet/issues).

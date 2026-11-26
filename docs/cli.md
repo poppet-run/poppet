@@ -2,7 +2,7 @@
 
 [Documentation index](README.md)
 
-After [installing the command](getting-started.md#install-the-command), run `poppet` from any directory. Run
+After [linking the command](development.md#commands-and-tooling), run `poppet` from any directory. Run
 `poppet --help` for the current command syntax. Angle-bracket values below
 are placeholders; replace them before running a command. Quote prompts and values
 that contain spaces.
