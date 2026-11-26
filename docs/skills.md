@@ -207,6 +207,3 @@ and `skills show` locally to inspect available procedures. The command prefix is
 removed from the prompt sent to the model and from generated titles. Skills keep
 the existing prompt budgets and tool permissions. Scheduled-result delivery does
 not change the messaging session or its selected skill.
-
-Restart an existing worker after updating. Live selection and follow-up behavior
-on each messaging platform remain manual validation.

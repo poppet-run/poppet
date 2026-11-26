@@ -74,12 +74,6 @@ tool, even when a task or selected skill asks for changes. The shared
 it belongs to one task, only that task's scheduled runs see it, and saving it
 never changes facts.
 
-Automated checks cover local/worker chat, mutation provenance, restart, argument
-validation, byte limits, protected scheduled runs, cancellation, and storage/journal
-failures. Live model intent handling and the three memory actions remain manual
-checks. Ask for one fact to be remembered, continue and replace it, then forget it;
-inspect `memory list` and `chat show` after each step, including from a fresh chat.
-
 ## Fact history
 
 Every change is kept. Each fact records its origin: `cli` for commands, or `turn`

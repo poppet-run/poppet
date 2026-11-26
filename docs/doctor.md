@@ -98,12 +98,3 @@ Exit `0` means no actionable problem was found. Exit `1` means actionable warnin
 or errors were found. Exit `2` takes precedence when required inspection is
 incomplete. Skipped optional checks do not change the exit code. Scripts should
 use `version`, `id`, `status`, and `incomplete`, not parse message text.
-
-## Manual validation
-
-Use a disposable data directory. Run doctor with the worker stopped, then with a
-worker running from the same configuration. Check human and JSON output. Change
-one config setting while the worker runs and confirm the mismatch is reported.
-Then try malformed config and confirm independent checks still appear. Compare
-files and permissions before and after each invocation. Doctor itself should not
-launch tools, refresh credentials, create files, or perform repairs.

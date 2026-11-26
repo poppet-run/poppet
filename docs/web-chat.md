@@ -201,29 +201,12 @@ The event stream checks for changes twice per second. When something changes, it
 sends the full conversation snapshot. Reconnecting therefore needs no replay of
 earlier text updates. The page reopens the stream after a proxy error.
 
-## Current scope and verification
+## Current scope
 
 Attachments, message queues, search, renaming, model and skill selection, reasoning
 display, copy buttons, and run details are not available yet. Use `poppet chat show`
 to inspect saved runs. A message can still
 [name a skill](skills.md#name-a-skill-in-a-message) with `$name`. Web chat uses the first message as the conversation title.
-
-`bun run check` includes the production web build, typechecking, lint,
-formatting, backend lifecycle tests, and DOM tests for submission recovery and
-Markdown sanitization. These tests use a controlled test provider. They do not
-contact a live account.
-
-Manual checks:
-
-1. Sign in over HTTPS from a desktop and a phone. Send a message and compare the reply.
-2. Refresh or close a page mid-reply, then reopen the same conversation on either device.
-3. Draft while a reply streams, scroll up, and confirm new output does not pull you down.
-4. Disconnect during submission, reconnect, and recover it. Confirm there is one input.
-5. Stop a reply and inspect it with `poppet chat show`. Restart the worker during another
-   reply and confirm it is interrupted without being retried.
-6. Delete a conversation, confirm it leaves the sidebar on both devices, and that the
-   other device shows "Conversation not found." if it had it open.
-7. Check the mobile keyboard, multiline input, sidebar, long code blocks, and sign-out.
 
 The frontend keeps chat state in Nanostores and uses `@nanostores/preact` for UI
 subscriptions. The store polls the session list every five seconds while signed in.

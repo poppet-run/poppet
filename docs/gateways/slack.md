@@ -65,8 +65,3 @@ unavailability can retry for about a minute.
 
 `poppet worker status` shows Slack connection and event errors. A reconnect or
 successful event acknowledgement clears a stale error.
-
-Manual validation requires a real Slack app: check mention and thread replies,
-owner rejection, attachments, cancellation, command approval, scheduled results and failure notices,
-and worker restart/reconnection. Automated checks do not establish live Slack
-permissions or connectivity.

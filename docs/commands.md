@@ -91,25 +91,3 @@ requesting a retry.
 Scheduled runs exclude memory writes and task management. MCP uses explicit,
 separate allowlists for [scheduled reads and reviewed actions](mcp.md#schedule-a-reviewed-action).
 The reviewed Bash tool can perform host changes authorized by the saved prompt.
-
-## Validation
-
-Automated checks use fixture model decisions and isolated local shell commands.
-They cover execution, bounded output, process cleanup, denied and unavailable
-reviews, owner approvals through buttons and text replies, conversation and prompt
-isolation, competing decisions, expiry, cancellation, restart rejection, and failed
-message updates. Discord interaction tests use fixture HTTP responses. Tests also
-cover logged cron failures, fixed failure notices, and successful result delivery.
-They do not establish live messaging behavior or a live model's review accuracy.
-
-For a manual smoke test, ask for a harmless filesystem check in Discord, verify
-its Bash receipt, then request an operation whose review asks for approval and
-deny it with the button. Confirm no command ran and the buttons become disabled.
-Repeat with **Approve once**, then check `/approve <id>` and `/deny <id>` on new
-requests. Check another account cannot answer, and that expiry and `/cancel`
-disable the controls. After a worker restart, an old request must remain unusable.
-Then schedule a harmless job and verify its result arrives. Finally, verify a
-scheduled command needing approval logs a failure without executing or posting
-an approval prompt, retains the reason in `tasks show`, and delivers a fixed
-failure notice when eligible. In Slack, repeat approval and denial using the
-text controls in the original thread.
