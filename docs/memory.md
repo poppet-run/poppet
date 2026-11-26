@@ -24,7 +24,7 @@ have no surrounding whitespace, and fit in 4096 UTF-8 bytes. The store holds up 
 128 facts per scope and at most 8 KiB of serialized keys and values. If older
 facts exceed the byte limit, shorten or forget facts to bring them within it. Listing includes keys, values, update times, and source run IDs when
 available; CLI-created facts have no source run, and facts lose theirs when the
-session that saved them is [deleted](chat.md#delete-old-sessions).
+session that saved them is [deleted](storage.md#session-deletion).
 
 ## Ask the model to change a fact
 

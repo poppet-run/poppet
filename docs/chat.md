@@ -1,444 +1,321 @@
 # Chat
 
-[Documentation index](README.md)
+[Engineering notes](README.md)
 
-The [Bash tool](commands.md) can inspect and manage the host machine. Every
-invocation is reviewed. CLI runs execute commands the reviewer allows; commands
-requiring a human stop. Request the operation in Discord or Slack for human approval.
+A chat run turns one owner message into one saved answer. The agent in
+`packages/agent` owns runs, context, budgets, and built-in tools. The terminal
+commands live in `apps/cli/src/commands/chat/`. The
+[user guide](https://poppet.run/docs/chat/) covers commands and key bindings.
 
-## Start and continue a session
+The CLI runs chat in-process when no worker owns the data directory. Otherwise it
+sends each message to the worker over the [worker socket](worker.md#socket-transport).
+Gateways, web chat, and scheduled tasks call the same `Agent.send`.
 
-After signing in, choose a model ID returned by `provider models` and save it in `config.json`:
+## Defaults
 
-```json
-{
-  "provider": "openai-chatgpt",
-  "model": "replace-with-model-id"
-}
-```
+`ChatSettingsLive` in `agent/src/settings.ts` builds the `ChatPolicy` from the
+`chat` settings and the chat limits in `io/src/settings.ts`. Every budget below
+except the facts budget can be changed in `config.json`. See
+[configuration](configuration.md#timeouts-and-limits) for ranges.
 
-```sh
-poppet chat new "Help me plan a small TypeScript project"
-poppet chat sessions
-```
+| Budget                | Default      | Setting                                   |
+| --------------------- | ------------ | ----------------------------------------- |
+| Context               | 256 KiB      | `limits.contextBytes`                     |
+| History               | 20 exchanges | `limits.historyTurns`                     |
+| Requested output      | 2048 tokens  | `chat.outputTokens`                       |
+| Model turns per run   | 16           | `limits.modelTurns`                       |
+| Tool calls per run    | 16           | `limits.toolCalls`                        |
+| Tool result           | 16 KiB       | `limits.toolBytes`                        |
+| Run deadline          | 300 seconds  | `chat.runDeadlineSeconds`                 |
+| Concurrent requests   | 3            | `chat.maxConcurrentRequests`              |
+| Personality, profile  | 8 KiB each   | `limits.soulBytes`, `limits.profileBytes` |
+| Saved facts           | 8 KiB        | Fixed                                     |
+| Skill index           | 8 KiB        | `limits.skillIndexBytes`                  |
+| Answer text           | 128 KiB      | `limits.replyTextBytes`                   |
+| Serialized completion | 1 MiB        | `limits.completionBytes`                  |
+| Inference deadline    | 60 seconds   | `timeouts.inferenceSeconds`               |
 
-The answer streams to stdout. The session and run IDs print to stderr. Copy the
-session ID to continue or inspect it in a later invocation:
+## Request slots
 
-Bash / Zsh / POSIX sh:
+`AgentLive` captures `Store`, `ModelResolver`, and `ChatSettings`. Each `send`
+stream holds two permits for its whole lifetime, including persistence and
+provider cleanup:
 
-```sh
-session_id='paste-session-id-here'
-poppet chat send "$session_id" "What should I build first?"
-poppet chat show "$session_id"
-```
+- A session permit. Two sends to one session never read the same history or save
+  out of order.
+- One of the `chat.maxConcurrentRequests` slots, shared by interactive, messaging,
+  and scheduled requests.
 
-fish:
+The stream takes the session permit first, so a request waiting on a busy session
+holds no shared slot. The agent drops a session permit once nothing holds or
+waits for it. A caller can cancel a waiting request before it creates a run.
 
-```fish
-set session_id 'paste-session-id-here'
-poppet chat send $session_id "What should I build first?"
-poppet chat show $session_id
-```
+## Run lifecycle
 
-`chat new` and `chat send` each submit one message. `chat sessions` lists saved sessions;
-`chat show` prints the session, its conversation, and a table of runs with their
-states, token usage, tool calls, and failures. Add `--json` for every saved message,
-tool call, run output, and usage record. Opaque provider continuation is retained
-privately in SQLite and omitted from both forms. Inspection needs no selected model or login.
+`send` saves the input and queues a run before it resolves the model. It then
+resolves the session's saved provider and model. The CLI's resolver builds only
+that provider's layer inside the stream scope, so credential locks and HTTP
+clients stay open for the request and close when it ends.
 
-With `chat.logReasoning` enabled, `chat new` streams thinking to stderr using the
-[interactive prompt's formatting](#interactive-prompt). Stdout contains only the answer.
+The session's provider and model never change. A run keeps one model instance
+through every tool round trip. Configuration changes affect new sessions only,
+because continuation data may not carry across models. The agent never falls back
+to another provider or model and never retries a request.
 
-## Interactive prompt
+Each run reads a memory snapshot once at start. A fact that a concurrent run saves
+appears in the next run.
 
-Start a new session or resume one in a terminal:
+Run finalizers record a provider, agent, or store failure category, or an
+interruption. Only a completed response becomes a saved assistant message, and
+the store writes it in the same transaction as the run result. Cancelling,
+closing output, or hitting a deadline saves no partial answer, even when text
+already reached the terminal. Failed inputs stay visible in `chat show`, and
+context excludes them. See [storage](storage.md#runs) for run states.
 
-```sh
-poppet chat
-poppet chat $session_id
-```
+## Context assembly
 
-The conversation appears above a bordered input box at the bottom of the terminal.
-On 256-colour and truecolour terminals, the welcome banner opens with the coloured
-Poppet mascot using a randomly chosen expression each time the prompt starts; narrow
-terminals stack or omit the artwork.
-Messages have bold yellow `You` and bold cyan `Poppet` labels, with blank lines
-between them. Instructions,
-attachments, and session details use neutral colours; errors use red. `NO_COLOR`
-disables colour styling.
+`agent/src/context.ts` builds each request from completed runs:
 
-Poppet's answers render Markdown headings, emphasis, inline code, lists,
-blockquotes, links, tables, and fenced code blocks. Recognized code languages use
-syntax highlighting when terminal colour is enabled. Saved answers use the same
-formatting when you resume a session. User messages and the composer remain plain
-text, and the original Markdown stays in storage. Rendering updates as text arrives
-and reflows on resize. Links show their destination and images appear as text.
+- It trims history at exchange boundaries. A tool request, its results, and the
+  provider continuation stay together.
+- The newest input must fit alone. Otherwise the run fails with `context-limit`.
+- When the model reports its capacity, the context also reserves room for output
+  and request overhead. The estimate counts UTF-8 bytes at three bytes per token.
+  It is not a tokenizer, so a provider can still reject a request.
+- Tool definitions, tool results, memory, and the skill snapshot count toward the
+  estimate.
+- Trimming changes the request only. Stored history stays whole.
 
-Press Enter to send and Shift+Enter to insert a newline. Shift+Enter requires a
-terminal that reports modified keys separately; the chat enables the enhanced
-keyboard protocol where supported. Terminals that send Shift+Enter as plain Enter
-cannot distinguish the shortcut. Pasted multiline text stays in
-the composer until you press Enter in terminals supporting bracketed paste.
-Left and Right move the cursor, Backspace and Delete remove characters, and
-Home/End or Ctrl-A/Ctrl-E move to the start/end of the draft. Ctrl-U clears the
-text before the cursor. Up/Down recall messages sent during this invocation and
-restore your draft when you move past the latest entry. History is not saved to disk.
+The agent validates imported exchanges that have no run as complete message
+sequences.
 
-You can draft the next message while Poppet responds. Enter queues it above the
-input box and clears the composer. Queued messages run in order after the current
-request finishes, and move into the conversation when their turn starts.
-`/attach <path>` binds a file to the next message you submit, including queued
-messages. Attachment paths are captured on submission; files are read when the turn starts.
-Use `/queue remove N` to remove the numbered pending message and its attachments.
+## Model stream
 
-If a turn fails and the session can continue, the queue pauses. `/queue retry`
-retries the failed message before the queue; `/queue resume` skips the failed
-message and continues with pending messages. Neither happens automatically.
-Queued messages exist only in this invocation and are discarded on exit.
+`agent/src/reply.ts` forwards text deltas as they arrive. It emits a completion
+only after the source ends cleanly with one completion that matches the session.
+Malformed, missing, duplicate, or trailing events fail the run. Text that arrives
+only in the terminal snapshot, or a final suffix that was never streamed, is
+emitted before the answer is committed. `reply.ts` also checks continuation, the
+finish reason, output limits, and that the completion agrees with the streamed
+text.
 
-The status line animates `Thinking...` until the answer starts, then animates
-`Responding...` until the turn finishes, using the same cyan sweep as `chat new` in 256-colour terminals
-and cycling dots otherwise. It stops on errors, completion, and exit. The status
-line also shows response progress and the number of attachments staged for the next
-message. Page Up/Page Down scroll through this invocation's conversation. Resizing
-the terminal reflows text and preserves the draft. On exit, the normal terminal
-screen is restored and a command is printed to resume the session. The conversation
-is not copied into terminal scrollback. If no session was created, the exit message
-says so instead.
+The run deadline covers provider resolution and streaming. Provider adapters keep
+their own 60-second inference deadline.
 
-The session ID appears once at the start when resuming, or when the first message
-creates a new session. Interactive chat does not display run IDs.
+With `chat.logReasoning` on, readable reasoning streams to the caller. `chat new`
+writes it to stderr, and the interactive prompt shows it under a muted `Thinking`
+heading. The store saves readable reasoning in the continuation whether or not
+logging is on.
 
-Each turn uses the same saved session, provider, model, and skill.
-Blank messages are ignored. `/exit`, Ctrl-D at an empty idle composer, or Ctrl-C
-leaves the chat, including during an unfinished bracketed paste. Ctrl-C during
-inference cancels the active request and exits;
-the interrupted run remains inspectable. Earlier completed answers remain saved.
-There is no automatic retry.
+## Tool loop
 
-With `chat.logReasoning` enabled, provider reasoning appears under a muted
-`Thinking` heading before the answer without duplicating it into the worker
-log. Providers may return no readable reasoning for a turn; in that case no
-heading is printed.
+`agent/src/conversation.ts` runs the model and tool loop:
 
-`TERM=dumb` uses a simple, single-line `You>` prompt without message queuing. The plain prompt and
-`chat new` retain the streamed thinking output on stderr and answers on stdout.
-On supported terminals, their `Thinking...` indicator animates until the answer
-starts, using cyan when colour is available. It clears on completion or
-cancellation and is omitted for redirected stderr or `TERM=dumb`.
+1. It advertises only the tools this run allows. Models without tool support get
+   none.
+2. It validates the whole batch of tool calls from a completed response. If any
+   call is invalid, no call runs and each call reports why.
+3. It records the calls, runs them one at a time, and continues with the saved
+   results. A side effect always needs another model turn first.
 
-For a new session, `--skill <name>` works as it does with `chat new`.
-Omit it when supplying a session ID, which retains its original selection.
-A session is created only when you submit its first nonblank message. Failed turns
-keep the acknowledged session so a fresh message can continue it. If the first
-worker response is lost before its session identity arrives, the prompt stops
-rather than creating another session. Inspect saved sessions before trying again.
-The worker returns structured session metadata alongside its session announcement.
+`agent/src/tool-execution.ts` dispatches each call, classifies its outcome, and
+writes the tool journal. The store keeps each call in `tool_calls` and moves it
+from pending to running to completed or failed. See
+[storage](storage.md#tool-call-journal).
 
-The prompt uses the existing worker when one is running, and local execution
-otherwise. It opens storage for each request rather than holding it while waiting
-for input. Both stdin and stdout must be terminals; use the one-shot commands for
-scripts. Resuming a session loads its saved user and assistant text before the
-first prompt, with attachment names shown on user messages. The screen starts at
-the latest messages; Page Up scrolls to earlier ones. History loading uses the
-worker when available and does not call the provider or replay tools. Use
-`chat show` for run details and tool records.
+A tool failure that left nothing unconfirmed becomes that call's result, so the
+model can explain it or try again within the budgets. Invalid arguments, a refused
+URL, an unreachable page, and a task change that the task's state forbids all work
+this way. A failure with unknown effects ends the run and is saved as uncertain.
+A memory write without a saved receipt and an MCP call lost after dispatch both
+work this way. Nothing replays an uncertain call. Someone has to inspect the
+affected state before asking again.
 
-## Select a skill
+Recorded usage sums every model turn when every turn reports usage. Otherwise it
+is null.
 
-```sh
-poppet chat new --skill weekly-review "Review my Acorn project"
-```
+## Untrusted content
 
-The session saves the skill's name and text when created. Later turns and restarts
-use that snapshot even if the file changes or disappears. `chat show` includes
-the saved `skill`; ordinary sessions have `null`. Skill instructions count toward
-the context budget and keep the existing tool permissions. See [skills](skills.md).
+Fetched pages, MCP results, recalled conversations, skills, attachments, and Bash
+output are data. Only the owner's current message can authorize a change.
 
-To load a skill for one message in any session, write `$` and its name, for example
-`poppet chat send <session> 'Run $weekly-review for Acorn'`. Quote the message so
-the shell does not expand it. See
-[name a skill in a message](skills.md#name-a-skill-in-a-message).
+Once a run receives a fetched page or an MCP result, or the owner's message has
+attachments, the loop withdraws task management, memory changes, and MCP tools
+for the rest of the run. Reading tools stay. The model proposes the withdrawn
+action instead, and a new owner message can confirm it. Exceptions:
 
-## Change saved memory
+- An MCP server with `availableAfterUntrusted` keeps its allowed tools, except
+  reviewed ones.
+- Bash output withdraws reviewed MCP tools only.
+- A scheduled task keeps its [note tool](tasks.md#task-notes).
 
-Tool-capable models can remember, replace, or forget a saved fact when explicitly
-asked in the current message. For example, ask to remember `answer.style` as
-"Keep answers concise", then inspect it with `memory list`. Ordinary chat,
-the interactive prompt, and authorized messaging use the same memory tool.
-Scheduled runs cannot change memory. See [memory](memory.md#ask-the-model-to-change-a-fact)
-for provenance, limits, cancellation, and uncertain outcomes.
+## Built-in tools
 
-## Manage scheduled tasks
+| Tool                             | Runs                       | Page                                        |
+| -------------------------------- | -------------------------- | ------------------------------------------- |
+| `poppet_history.search_sessions` | All                        | [Conversation recall](#conversation-recall) |
+| `poppet_history.read_session`    | All                        | [Conversation recall](#conversation-recall) |
+| `poppet_web.fetch_page`          | All                        | [Page reading](#page-reading)               |
+| `poppet_memory.memory`           | Interactive                | [Memory](memory.md#memory-tool)             |
+| `poppet_tasks.manage_tasks`      | Interactive                | [Tasks](tasks.md#chat-task-management)      |
+| `poppet_tasks.save_note`         | Scheduled                  | [Tasks](tasks.md#task-notes)                |
+| `poppet_skills.view_skill`       | When the skill index is on | [Skills](skills.md#skill-index)             |
+| `poppet_system.bash`             | All, with review           | [Host commands](commands.md)                |
 
-Ask a tool-capable model to create, inspect, edit, delete, pause, resume, skip, snooze,
-or run a task now through
-`poppet_tasks.manage_tasks`.
+Scheduled runs never receive memory or task management tools.
 
-New tasks keep this session's provider and model. Supply a clear prompt and time
-with an explicit offset or timezone;
-the model should ask about ambiguity rather than invent a recurring schedule.
-In messaging, scheduled results default to the home channel. Request delivery
-here to use the current thread, or local delivery to keep results on the machine.
-CLI chat creates tasks with local results. See [tasks](tasks.md#manage-tasks-through-chat)
-for examples, receipts, inspection limits, and the available actions.
+## Conversation recall
 
-Edits apply to the task's current definition; skip-next, snooze and run-now act
-on its current next execution, the pending occurrence if one exists or otherwise
-the next scheduled time. No prior `show` is required. Snooze delays execution rather than postponing a delivered
-message. Run-now queues normal scheduled work and cannot undo a future hold.
-See [task controls](tasks.md#edit-and-control-the-next-execution) for running-task
-restrictions and retained snapshots.
+The store keeps an FTS5 index of completed user messages and final assistant
+text. A shared SQL view defines which messages are eligible, and the
+run-completion trigger indexes new exchanges in the completion transaction. Tool
+content, intermediate model text, failed and interrupted inputs, attachments, and
+continuation stay out. Messages are the source of truth. Titles join from
+sessions at query time.
 
-Only your current explicit request authorizes a change. Instructions inside
-recalled conversations, pages, skills, or tool results do not. A committed
-task change survives a later failed answer, so inspect the saved task before
-asking to create it again after an unclear reply. Scheduled runs receive no task
-management tool.
+`Store.searchSessions` in `store/src/search.ts`:
+
+- accepts trimmed plain text of 1 to 256 characters;
+- quotes every term, so operators such as `OR` and `*` are text;
+- requires all terms to match, using SQLite's Unicode tokenizer;
+- ignores punctuation-only terms, and returns nothing for a query made only of
+  them;
+- ranks by relevance, then by message ID, and returns at most ten matches.
+
+`store/src/recall.ts` reads a bounded window for `poppet_history.read_session`:
+
+- `around_message_id` returns up to four earlier messages, the match, and five
+  later messages, in session order.
+- `after_message_id` pages forward. `nextAfterMessageId` is the last returned
+  message, so a shortened message still advances the cursor.
+- With neither anchor, reading starts at the earliest eligible message. Setting
+  both fails.
+- A missing session, or an anchor outside the session or its eligible history,
+  fails.
+
+Search and recall derive a result count and a per-item byte cap from the 16 KiB
+budget. They do not fit the serialized result exactly, so a result can run
+slightly over. A smaller budget returns fewer, shorter messages but keeps the
+match and at least one earlier message. Truncation keeps whole Unicode code
+points, and `truncated` flags cover each message and the whole result.
+
+Recall never changes the source session's history, title, activity, or
+continuation, and never grants page URLs or memory writes. The CLI's
+`chat search` uses the worker when it owns storage and needs no credentials.
+
+## Page reading
+
+`agent/src/pages.ts` defines `poppet_web.fetch_page` and the `Pages` service. The
+CLI composes it with `PageTransportLive` for local, worker, and scheduled runs.
+
+The host collects canonical HTTP and HTTPS URLs from the current owner message,
+or from the saved prompt in a scheduled run. Batch validation checks each
+requested URL against that set before any tool runs. History, skills, recalled
+text, and links inside pages cannot add URLs.
+
+`agent/src/page-network.ts` checks every initial and redirect URL:
+
+- It rejects userinfo and nonstandard ports and strips the fragment.
+- It resolves A and AAAA records and rejects the URL if any address is not
+  public. The policy in `io/src/public-url.ts` follows the
+  [IANA IPv4](https://www.iana.org/assignments/iana-ipv4-special-registry/) and
+  [IPv6](https://www.iana.org/assignments/iana-ipv6-special-registry/) special
+  registries, and also excludes mapped, translation, and transition ranges.
+- It connects to the chosen literal IP, so a second lookup cannot rebind the
+  connection. The original hostname supplies Host, SNI, and the certificate check.
+- It ignores ambient proxies and sends no cookies, authorization, or provider
+  credentials.
+- It follows at most three redirects and checks each one again.
+
+One deadline, 15 seconds by default (`timeouts.pageFetchSeconds`), covers DNS, connections, redirects, body reads, and
+extraction. Interruption cancels DNS queries and closes HTTP I/O. The transport
+stops at `limits.pageBytes`, 1 MiB by default, on the wire before gzip, deflate,
+or Brotli decoding, and caps the decoded body at the same size. Incomplete bodies, unsupported compression or MIME types,
+HTTP failures, and invalid UTF-8 become a failed tool result. Nothing retries.
+
+`agent/src/page-text.ts` reads UTF-8 plain text and static HTML. Bun's
+HTMLRewriter removes scripts, styles, navigation, and hidden elements and adds
+text boundaries. A second parse collects the cleaned document, because removal
+still emits text callbacks. The pinned `entities` package decodes character
+references that the native parser leaves escaped. The result has `url` (the final
+source), `title` or null, `text`, and `truncated`. Truncation keeps the URL and
+the flag. There is no JavaScript, PDF support, crawling, or page cache.
+
+## Attachments
+
+`agent/src/attachments.ts` identifies and checks files for every entry point:
+
+- Images are PNG, JPEG, WebP, or GIF, identified by their bytes. They need a model
+  whose catalog accepts images. ChatGPT reports this through `input_modalities`.
+- Text files are UTF-8 without NUL bytes and need an allowed extension, such as
+  `.txt`, `.md`, `.log`, `.csv`, `.json`, `.yaml`, or a common source extension.
+- By default a message has at most 4 files (`limits.attachmentsPerMessage`).
+  Each image is at most 5 MiB (`limits.imageBytes`) and each text file at most
+  64 KiB (`limits.textFileBytes`).
+
+One rejected file fails the whole message before inference, with a reply that
+names the file. The store saves attachment bytes with the user message. Later
+turns resend them while their exchange stays in context. Each image counts as
+6 KiB of context and each text file as its size. A request resends at most the 8
+newest images and replaces older ones with a note naming the attachment ID. Each
+attachment in a request has a unique content ID. The model sees text files
+labelled as untrusted content.
+
+Gateways download files when the request runs. See
+[gateways](gateways/discord.md#attachments) for the adapter side.
 
 ## Session titles
 
-New sessions save a title from their initial prompt before inference. Poppet
-normalizes whitespace and controls and limits titles to 80 Unicode characters.
-After the first successful answer is printed, it attempts one optional title
-request through the saved provider and model. The request uses only a
-bounded excerpt of the original prompt, with no tools, memory, or conversation
-continuation. It has a ten-second deadline and can extend CLI exit time and use
-additional provider quota. Failure or cancellation leaves the answer completed
-and keeps the fallback title. It is not retried automatically.
+The store owns title metadata and atomic attempt claims. A new session starts with
+a fallback title. Accepting its first input replaces it with a prompt title in the
+same transaction: whitespace and control characters normalized, at most 80
+Unicode characters. Scheduled sessions save the task name instead.
 
-`chat sessions` and `chat show` include the title, its source, whether naming was
-attempted, and separate `titleUsage`. A null usage value means unknown. Chat run
-usage excludes naming. Old sessions remain unnamed and retain their IDs.
-Titles can repeat; commands always use session IDs.
+After the host prints or delivers the first answer, `agent/src/title.ts` makes one
+optional naming request with the session's provider and model:
 
-```sh
-poppet chat rename $session_id "Weekly project review"
-```
+- It reads only the first user prompt, cut to 2048 Unicode characters.
+- It has no tools, memory, continuation, or transcript writes.
+- It bounds the title to 1024 UTF-8 bytes and has a ten-second deadline
+  (`timeouts.sessionTitleSeconds`).
+- A durable claim comes before model resolution, so a restart never repeats it.
+- A separate naming permit allows one naming request at a time, outside the chat
+  slots.
 
-Manual names survive restart and win over an in-flight title request. Renaming
-needs no model or credentials and works through the worker when it owns storage.
-Title changes do not change activity timestamps or saved message order.
+A generated title replaces only a fallback title, so a manual rename always wins.
+Title usage is saved apart from run usage. Failure keeps the fallback and is not
+retried. Title changes never change activity timestamps. Scheduled runs skip
+naming. Gateways can rename the platform thread too. See
+[Discord thread names](gateways/discord.md#thread-names).
 
-## Delete old sessions
+## Interactive prompt
 
-```sh
-poppet chat delete $session_id
-poppet chat prune --days 90 --dry-run
-poppet chat prune --days 90
-```
+`chat/command.ts` starts the prompt for `poppet chat [session]`. Both stdin and
+stdout must be terminals. `TERM=dumb` falls back to a single-line `You>` prompt
+without a queue.
 
-`chat delete` takes one or more session IDs and removes each session with its
-messages, runs, tool calls, attachments, and search entries. Nothing is deleted if
-any ID does not exist or any session has a reply in progress. Stop the reply first.
+- `terminal.ts` owns raw mode, the alternate screen, the enhanced keyboard
+  protocol for Shift+Enter, bracketed paste, resize, and restoring the terminal on
+  exit or a hung-up PTY.
+- `prompt.ts` owns the composer, the per-invocation input history, and the
+  message queue. The queue lives in memory and pauses after a failed turn until
+  the owner runs `/queue retry` or `/queue resume`.
+- `markdown.ts` renders answers and highlights code. Stored text stays Markdown.
+  `NO_COLOR` turns off styling.
+- `history.ts` loads a resumed session's saved text through the worker when one
+  runs, without calling the provider or replaying tools.
 
-`chat prune` deletes every session whose last activity is more than the given
-number of days ago (1 to 36500). Sessions with a reply in progress are skipped.
-`--dry-run` lists the sessions without deleting them. Renaming does not count as
-activity. Both commands print the removed sessions; add `--json` for the saved
-session records. They need no model or credentials and route through the worker
-when it owns storage. Deletion cannot be undone.
+The prompt opens storage for each request instead of holding it while waiting for
+input. It creates a session only when the first nonblank message is sent. If the
+worker's first response is lost before the session ID arrives, the prompt stops
+instead of creating a second session. Ctrl-C during inference cancels the request
+and exits, leaving an interrupted run.
 
-Records that point at a deleted session are kept but detached:
+## Command output
 
-- A Discord or Slack thread loses its binding, so its next message starts a new session.
-- Scheduled task history keeps its occurrences and notes without the session or run.
-- Saved facts keep their values and origin, but no longer name a source run.
-- Web chat drops the session's submission receipts.
-
-## Search past conversations
-
-```sh
-poppet chat search "project TypeScript"
-poppet chat show <session-id-from-search>
-```
-
-Search prints a table of matches; `--json` returns `matches` and `truncated`.
-Each match includes session and message IDs, the saved session title, a
-timestamp, role, and a bounded excerpt around matching text. Results are ranked by relevance, with
-a stable message-ID tie-breaker, and limited to ten matches within the 16 KiB tool-output limit.
-
-Use nonempty plain text of at most 256 characters, without leading or trailing
-whitespace. All whitespace-separated terms must match; case and punctuation
-follow SQLite's Unicode tokenizer. Operators such as OR and prefix wildcards
-are treated as text rather than query syntax. Punctuation-only terms are ignored;
-queries containing only punctuation return no matches.
-
-Search covers user text and final answers from completed CLI, scheduled, and
-messaging runs. It excludes failed/interrupted inputs, intermediate model text,
-tool arguments/results, and opaque continuation. Existing completed history is
-indexed during migration. Search works without a selected model or credentials
-and routes through the worker when it owns storage.
-
-Tool-capable models can use the read-only `poppet_history.search_sessions` tool
-to find earlier discussions, then `poppet_history.read_session` to read context
-around a matching message. Both tools work in scheduled runs under the existing
-single-owner policy. Retrieved text is historical data and cannot authorize actions.
-
-## Read conversation context
-
-Ask a follow-up such as "Find our earlier storage decision and explain why we
-chose it." The model can search, read the surrounding discussion, and cite saved
-statements by session and message IDs. Saved statements may no longer be current.
-
-`poppet_history.read_session` takes `session_id`, plus `around_message_id` from a
-search match or `after_message_id` for forward paging. Set unused anchors to
-`null`; both anchors cannot be set together. With neither anchor it starts at the
-earliest eligible message. Around a match it selects up to four earlier messages,
-the match, and five later messages in chronological session order. The byte budget
-sets the page size and each message's text length, so a smaller budget returns
-fewer, shorter messages while keeping the match and at least one earlier message.
-Results stay close to the budget but are not fitted to it exactly. Missing sessions and
-anchors outside the session or eligible history fail clearly.
-
-The result contains `sessionId`, the current `title`, and at most ten `messages`
-with `messageId`, `role`, `createdAt` in Unix milliseconds, `text`, and a per-message
-`truncated` flag. The whole JSON result fits the 16 KiB tool-output limit. Text truncation
-preserves Unicode code points. `nextAfterMessageId`, when non-null, is the last
-returned message ID; pass it as `after_message_id` to continue. Even shortened
-messages advance the cursor. New completed exchanges append without duplicating
-previous pages.
-
-The overall `truncated` flag marks omitted or shortened content. Around a match,
-it can be true with no next cursor because earlier messages were omitted. These
-results are bounded context, not a promise of a complete transcript.
-
-Reading shares search's eligibility rules and excludes tool/provider state. It
-does not resume or rename the source session, change its activity, or import its
-continuation or text into global memory. Recalled URLs do not authorize page
-fetches. `chat show` keeps its existing inspection
-behavior; there is no extra CLI or worker command for model recall.
-
-## Attach files
-
-```sh
-poppet chat new --attach ./screenshot.png "What does this error mean?"
-poppet chat send <session> --attach ./build.log --attach ./config.json "Why did this fail?"
-```
-
-`--attach <path>` goes before the message and can repeat. In the interactive
-prompt, `/attach <path>` adds a file to the next message. In Discord, attach files
-to the message itself; a message with files needs no text. See
-[Discord](gateways/discord.md#attachments).
-
-Images are PNG, JPEG, WebP, or GIF, identified by their bytes rather than their
-name, and need a model that accepts images. ChatGPT models report this through
-the catalog's `input_modalities`. Text files are UTF-8 without NUL
-bytes and need an allowed extension such as `.txt`, `.md`, `.log`, `.csv`,
-`.json`, `.yaml`, or a common source-code extension. PDFs and other files are
-refused. By default one message holds at most 4 files, each image at most 5 MiB and each
-text file at most 64 KiB (`limits.attachmentsPerMessage`, `limits.imageBytes`, and
-`limits.textFileBytes`; see [timeouts and limits](configuration.md#timeouts-and-limits)).
-
-A rejected file stops the whole message, with a reply naming the file and why;
-the model never answers without a file you sent. Sending an image to a session
-whose model does not accept images fails before inference. Start a new session
-with a model that does.
-
-Files are saved in the database with the message, and later turns in the session
-resend them while their exchange stays in the retained history. Each image counts
-as 6 KiB of the context budget, and each text file at its size. Only the 8 newest
-images are resent; older ones are replaced by a note naming the attachment ID, so
-the model knows an image was there. `chat show` lists each message's attachments
-by ID, name, type, and size, not their contents. Conversation search does not
-index attachment contents.
-
-The model receives text files labelled as untrusted file content, and is told
-never to follow instructions found in attachments. Each attachment in a model request must have a unique content ID. A message with attachments
-withdraws task, memory, and MCP mutations for its run, as a fetched page does; ask
-for those changes in a follow-up message.
-
-## Read a supplied URL
-
-```sh
-poppet chat new "Summarize https://example.com/ and cite the source"
-```
-
-Tool-capable models can call `poppet_web.fetch_page` for a public HTTP(S) URL
-explicitly included in the current message. The result contains the final source
-`url`, optional `title`, extracted `text`, and `truncated`. Include the URL again
-in later requests that need a fresh read. URLs in history, skills, and
-fetched pages grant no permission to retrieve another page.
-
-Reading supports UTF-8 plain text and static HTML. It removes scripts, styles,
-common site navigation and hidden elements, and does not execute JavaScript.
-PDFs, authenticated pages, downloads, and crawling are unsupported.
-An empty or unsupported page is reported to the model as a failed tool call, so
-it can explain the problem; there is no automatic retry. `chat show` retains the
-tool call and failure or bounded result.
-
-Destinations must resolve entirely to public addresses on standard HTTP(S) ports.
-Credentials in URLs are rejected. Each read has a 15-second overall deadline
-(`timeouts.pageFetchSeconds`), at most three redirects, and 1 MiB limits for transferred and
-decoded bodies (`limits.pageBytes`).
-Results fit the 16 KiB tool-output limit; truncation keeps the source URL and flag.
-
-## Provider and model selection
-
-New sessions use the configured `provider` and required `model`, with
-both read from `config.json`. Existing
-sessions keep their saved provider and model when configuration
-changes. Start a new session to change that selection.
-
-Save the provider and model in `config.json`:
-
-```json
-{
-  "provider": "opencode-go",
-  "model": "glm-5.3"
-}
-```
-
-```sh
-poppet chat new "Explain how to structure a TypeScript CLI"
-```
-
-## Failures and cancellation
-
-Poppet saves each input before resolving its model. Only an authoritative
-completed response becomes a saved answer. Provider failures, context errors,
-Ctrl-C, closed output, and deadlines leave inspectable failed or interrupted
-runs. Partial output may already be visible in the terminal but is not saved as
-an answer. Failed inputs remain visible and are excluded from subsequent model
-context; sending another message is an explicit new request. Requests are never
-automatically retried or switched to another provider/model.
-
-## Context and run limits
-
-Context retains recent complete exchanges, including tool pairs and continuation,
-up to 20 exchanges within a 256 KiB context budget. When model capacity is known,
-Poppet also reserves room for output and request overhead. UTF-8 bytes are a
-conservative estimate rather than an exact tokenizer, counting three bytes per
-token of reported capacity; providers can still reject oversized context. A new
-message that cannot fit fails clearly. A read result that would not fit the
-remaining budget is refused and reported to the model, which can ask for less. Trimming changes
-only the request, not saved history. Answers are limited to 128 KiB of text and
-1 MiB including continuation. The runner has a five-minute absolute deadline by default
-(`chat.runDeadlineSeconds`);
-provider inference also retains its 60-second deadline. Each run permits at most
-sixteen model turns and sixteen tool calls, with 16 KiB per tool result. These are
-defaults; the `limits` and `timeouts` fields are listed under
-[timeouts and limits](configuration.md#timeouts-and-limits).
-
-Tool-capable models receive conversation search,
-page reading, explicit memory, and interactive task management. Models without tool
-support continue to answer text requests. The runner checks complete tool
-requests before execution and keeps one provider/model throughout the exchange.
-
-A tool failure that left nothing unconfirmed, such as invalid arguments, a refused URL, an unreachable page, or a task change its state does not allow, becomes that
-call's result so the model can explain it or correct the request. When any call in
-a batch is invalid, none of the batch runs and each call reports why. A failure
-whose effects are unknown, such as a memory write without a saved receipt or an MCP call lost
-after dispatch, is saved as uncertain and ends the run without replay. Budgets
-still bound repeated attempts.
-
-Once a fetched page or MCP result enters a run, or your
-message includes attachments, task management, memory changes, and MCP tools are
-withdrawn for the rest of that run. Reading tools remain.
-The model proposes withdrawn actions instead, and a new message from you can
-confirm them.
-Recorded usage sums all model turns when every turn reports usage, otherwise it
-is null.
-
-See [worker](worker.md#interactive-commands) for chat while a worker is running.
+`chat new` and `chat send` stream the answer to stdout and print the session and
+run IDs to stderr. The worker returns session metadata with that announcement, so
+interactive clients can keep the session after a failed turn. `chat show --json`
+returns every saved message, tool call, run output, and usage record, and omits
+provider continuation. Listing, showing, searching, renaming, and deleting need
+no model or credentials. See [storage](storage.md#session-deletion) for deletion.

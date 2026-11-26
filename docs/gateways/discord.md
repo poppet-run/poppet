@@ -81,7 +81,7 @@ are not supported.
 
 Attach images or text files to a mention or a thread message; a message with
 files needs no text, and `/new` or `/new --skill <name>` with files needs no prompt.
-The supported types and limits are in [chat](../chat.md#attach-files).
+The supported types and limits are in [chat](../chat.md#attachments).
 
 Files download when the request runs, not when the message arrives. Downloads
 come only from Discord's CDN over HTTPS, follow no redirects, stop at 5 MiB

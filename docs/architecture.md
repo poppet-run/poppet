@@ -388,85 +388,7 @@ their inputs without replaying them. A hard crash releases the OS-held SQLite lo
 leftover PID marker through the shared scoped lock helper. Credentials, facts, jobs, context
 assembly, and model execution are outside this store's record APIs.
 
-## Persisted chat
-
-`AgentLive` captures `Store`, `ModelResolver`, and validated `ChatSettings`.
-Each `send` stream holds two permits for its full lifetime, including persistence
-and provider cleanup: one for its session, so two sends to one session never read
-the same history or save out of order, and one of `chat.maxConcurrentRequests`
-slots shared by interactive, messaging, and scheduled requests. The session permit
-is taken first, so a request waiting for a busy session holds no shared slot.
-Session permits are removed once no request holds or waits for them. Waiting
-consumers can be cancelled before creating a run. Each run reads memory once when
-it starts, so a fact saved by a concurrent run appears in the next run.
-Its `send` stream first saves the input and starts a run, then resolves the
-session's provider/model. The CLI supplies a resolver that builds only that
-registration inside the stream scope. Provider resources, including credential
-locks, remain alive through the request and close on completion or interruption.
-Listing sessions and inspecting history require only the store layer.
-
-Context uses completed runs and excludes failed/interrupted inputs. Imported
-exchanges with no run are validated as complete message sequences. History is
-trimmed at exchange boundaries, preserving tool request/result pairs and opaque
-continuation together. The newest input must fit by itself or the run fails with
-`context-limit`. Settings bound context bytes, history turns, and requested output
-tokens. Advertised model capacity further limits input and output. The UTF-8 size
-estimate is not an exact tokenizer, and trimming never changes stored history.
-
-Tool-capable models receive conversation search, explicit
-memory, and page reading. The conversation workflow
-validates complete tool requests, records them, executes sequentially, and
-continues with the saved results. Models without tool support receive no tools.
-Text deltas stream immediately; terminal-only text or an unstreamed final suffix
-is emitted before committing the answer. The source must end cleanly after one
-validated completion matching the session identity. Malformed, missing, duplicate,
-or trailing events fail. Text is capped at 128 KiB and serialized completion at
-1 MiB. A five-minute absolute deadline includes provider resolution and streaming;
-provider adapters retain their own 60-second inference deadlines (`timeouts.inferenceSeconds`).
-
-Run finalizers record provider/agent/store failure categories or interruption.
-Only completed inference becomes a saved assistant message, atomically with its
-result. Stopping consumption or cancelling a request saves no partial answer.
-Failed inputs remain visible in `chat show` but are not retried implicitly.
-Inspection omits provider continuation while retaining normalized output, usage,
-and run failure reasons. Tool results, profile content, and saved facts each have
-separate content budgets.
-
-## Tool execution
-
-`conversation.ts` captures the store, memory and pages services, and chat budgets. It keeps
-one model instance throughout each run. `reply.ts` forwards text but emits a
-completion only after clean source termination and validates continuation,
-finish reason, output limits, and agreement with streamed text. Complete tool
-requests pass through the shared contract; no SDK types enter the agent.
-
-The loop advertises only allowed tools, validates the whole batch, and requires
-another model turn before performing side effects. Default budgets are sixteen
-model turns, sixteen calls, and 16 KiB per tool result, configurable under `limits` in
-`config.json`; `@poppet/io` defines every timeout and limit with its default and range. Current-run messages are
-never trimmed independently of their tool pairs. Definitions and tool results
-count toward the context estimate; overflowing the current exchange fails clearly.
-Recorded usage sums all model turns when complete usage data is available.
-
-`tool_calls` stores durable tool execution. Store methods atomically record an
-assistant tool request with pending calls and a completed tool result with its transcript
-message. The state progresses from pending to running to completed or failed.
-Run failure/reopening interrupts pending calls and marks remaining running calls
-uncertain. Completed calls are immutable; terminal calls cannot restart. Calls
-and model requests are never replayed. `chat show` exposes the ledger for manual
-inspection. An uncertain mutation requires inspecting the affected state before an explicit retry.
-
-Reported tool failures, including refused arguments and failed page reads, return to
-the model within the existing budgets. An invalid batch executes none of its
-calls. Uncertain effects end the run without replay. Once page, search, or MCP
-content enters a run, or the owner's message carries attachments, task management,
-memory changes, and MCP tools are withdrawn until a new owner message. A server configured with
-`availableAfterUntrusted` keeps its allowed MCP tools except for tools that require review.
-Bash output also withdraws reviewed MCP tools. A scheduled task's note tool
-also stays available; see [task notes](#task-notes).
-See [chat limits](chat.md#context-and-run-limits).
-
-### Reviewed host commands and MCP actions
+## Reviewed host commands and MCP actions
 
 `agent/action-review.ts` makes the isolated reviewer request to the run's
 resolved model. `agent/bash.ts` supplies Bash's command policy. Review has no tools or continuation and receives only
@@ -506,54 +428,6 @@ answer with exactly `NO_REPLY` when its condition is not met. `isNoReply` from
 `@poppet/agent` matches only a whole trimmed answer. Such a run completes with a
 `completed no-action` log line and `noAction` in `tasks show`, where its saved
 output stays inspectable.
-
-## Supplied page reading
-
-`agent/pages.ts` defines `poppet_web.fetch_page` and the injected `Pages` service.
-The CLI composes it with `PageTransportLive` and chat settings for local, worker,
-and scheduled runs. Providers see only the generic tool definition and result.
-No store migration or new configuration is needed.
-
-The host extracts canonical HTTP(S) URLs solely from the current user message or
-saved scheduled prompt. Whole-batch validation checks the requested initial URL against
-that set before any tool executes. History, skills, and page links
-cannot expand it. Page text remains untrusted source material, and guidance asks
-the model to cite the returned final source URL.
-
-Every initial/redirect URL rejects userinfo and nonstandard ports, strips its
-fragment, resolves A and AAAA records, and rejects the entire answer if any address
-is non-public. The IP policy conservatively excludes special-purpose ranges,
-including mapped IPv4, translation and transition IPv6, and documentation ranges.
-The policy follows the [IANA IPv4](https://www.iana.org/assignments/iana-ipv4-special-registry/)
-and [IPv6](https://www.iana.org/assignments/iana-ipv6-special-registry/) registries.
-The HTTP(S) client connects to the selected literal IP, so no second hostname lookup
-can rebind the connection. The original hostname supplies Host, SNI, and certificate
-identity checks. Fresh connections ignore ambient proxies and send no cookies,
-authorization headers, or provider credentials. Redirects are followed explicitly
-and checked afresh, with at most three per read.
-
-One Effect deadline covers DNS, connections, redirects, body reads, and extraction
-within 15 seconds. Interruption cancels DNS queries and closes active HTTP I/O.
-The transport bounds actual transferred bytes to 1 MiB before gzip, deflate, or
-Brotli decoding, which independently caps decoded output at 1 MiB. Incomplete bodies,
-unsupported compression, HTTP failures, invalid UTF-8, and unsupported MIME types
-or charset declarations produce a failed durable tool result. The model can
-explain the failure or make another permitted request within the run budgets;
-the transport never retries automatically.
-
-Bun's native HTMLRewriter removes non-content elements and adds text boundaries.
-A second parse collects the cleaned document because removal still emits text
-callbacks. The pinned `entities` decoder handles character references, which the
-native parser leaves escaped. UTF-8 plain text retains literal character escapes.
-Results include source URL, nullable title, text, and an explicit truncation flag,
-all within the existing serialized tool-result budget. There is no browser,
-JavaScript execution, PDF support, crawling, page cache, or general integration
-framework.
-
-Offline checks inject DNS/transport and static fixtures. Loopback integration
-checks use the production HTTP(S) client to prove literal-address connections,
-source Host/SNI and TLS identity, proxy isolation, wire/decompression limits, and
-cancellation.
 
 ## Chat task management
 
@@ -633,42 +507,6 @@ content, since change detection saves values derived from fetched pages.
 
 `tasks clear-note` appends a `cli` row under the same running-occurrence check as
 other task controls. See [task notes](tasks.md#task-notes).
-
-## Conversation search
-
-The schema includes an FTS5 index of completed user messages and final assistant text.
-A shared SQL view defines eligibility for the run-completion trigger,
-which indexes new exchanges inside the completion transaction. Tool content,
-intermediate responses, failed/interrupted inputs, and continuation are excluded.
-Messages remain the source of truth; current titles join from sessions at query
-time. `Store.searchSessions` validates plain-text queries, quotes FTS terms, binds
-parameters, and sizes ranked excerpts from the byte budget. Search and recall
-derive a result count and per-item byte cap from the budget instead of fitting
-serialized output exactly, so results can run slightly over it.
-
-`agent/search.ts` defines the read-only `poppet_history.search_sessions` and
-`poppet_history.read_session` schemas. The conversation loop dispatches them alongside other tools, using the same
-namespace/permission checks, durable tool lifecycle, and run budgets. Historical
-text is untrusted data, not permission to act. Scheduled runs may search and read without
-gaining mutation permissions. The CLI uses the shared worker command schema and
-owning store connection, with local fallback only when the worker is unavailable.
-Search inspection needs neither provider credentials nor model inference. The
-existing single-owner policy governs recall across CLI, task, and messaging
-sessions; multiple users would need an explicit access policy.
-
-`store/recall.ts` reads bounded windows around or after eligible message IDs. It
-uses the existing search index for eligibility and the shared projection over
-original messages for text, returning no raw message or provider records. SQL
-caps row counts and text length; serialization caps the whole result to
-the 16 KiB tool-output limit with per-message truncation flags. Around-message reads keep
-the match when the budget reduces the context window. The forward cursor passes
-every returned message even if shortened, so large messages cannot trap paging.
-
-The model searches before reading when it lacks a session ID and cites recalled
-statements by session/message IDs. Recall never changes source history, titles,
-activity, continuation, memory, or permissions.
-`chat show` and its local/worker inspection path remain unchanged; model recall
-requires no additional socket command or migration.
 
 ## Explicit memory
 
@@ -1154,25 +992,7 @@ References: [Effect installation](https://effect.website/docs/v4/getting-started
 [configuration](https://effect.website/docs/v4/configuration), and
 [process runtime](https://effect.website/docs/v4/platform/runtime).
 
-## Session and conversation naming
-
-`@poppet/store` owns title metadata and atomic attempt claims.
-New sessions begin with a fallback; accepting their
-first user input replaces it with a normalized prompt title in the same durable
-transaction. Scheduled sessions instead save the task name at creation. Manual
-renames and generated results update metadata without changing activity ordering.
-Generated results replace only fallback titles, so an in-flight request cannot
-overwrite a manual rename. Usage is stored separately from conversation runs.
-
-`@poppet/agent` owns fallback normalization and a tool-free naming request using
-the session's pinned selection. It reads only the first original user prompt,
-limits the excerpt to 2048 Unicode characters, bounds title output to 1024 UTF-8
-bytes, and applies a ten-second deadline. The request has no shared prompt data,
-conversation continuation, tools, transcript writes, or automatic retries. A
-persisted claim precedes model resolution. The host prints or delivers the saved
-answer before asking the agent to name the session. Both paths use a separate
-shared naming permit, allowing one naming request at a time independently of
-chat request slots, within the owning process scope.
+## Conversation naming
 
 The gateway's channel naming capability returns creation ownership,
 reads current names, and conditionally renames managed conversations. Bindings
