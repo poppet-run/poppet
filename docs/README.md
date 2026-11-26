@@ -37,10 +37,12 @@ when behaviour changes, and the website page when users would notice.
 
 ## Gateways
 
-- [Discord](gateways/discord.md): threads as sessions, approvals, attachments, and
-  thread naming.
-- [Slack](gateways/slack.md): Socket Mode, threads, and approvals.
-- [Telegram](gateways/telegram.md): long polling, chats, and forum topics.
+- [Gateways](gateways.md): registration, the adapter contract, acceptance,
+  execution, delivery, and thread names.
+- [Discord](gateways/discord.md): threads as sessions, attachments, approvals, and
+  thread names.
+- [Slack](gateways/slack.md): Socket Mode, conversation rules, and approvals.
+- [Telegram](gateways/telegram.md): long polling, chats, forum topics, and limits.
 
 ## Providers
 

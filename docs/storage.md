@@ -154,7 +154,7 @@ was turned off. `gateway_inbox` is the durable request queue.
 `gateway_deliveries` holds reply and scheduled result chunks. A unique
 `(occurrence_id, run_id)` index stops duplicate scheduled entries and still lets
 a successful retry deliver. Delivery state is independent of task execution, so
-queued replies survive clearing tasks. See [gateways](gateways/discord.md).
+queued replies survive clearing tasks. See [gateways](gateways.md).
 
 ## Session deletion
 
