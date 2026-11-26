@@ -1,360 +1,236 @@
-# MCP tools
+# MCP
 
-[Documentation index](README.md)
+[Engineering notes](README.md)
 
-Poppet can connect to local stdio MCP servers and remote Streamable HTTP servers
-and offer explicitly allowed tools in CLI, messaging, and scheduled runs. MCP is
-disabled until you add an enabled server to `config.json`. Local servers execute
-code with your account's permissions; remote servers receive the arguments and
-headers you select. Review and trust the executable or endpoint before enabling
-it. Tool allowlists do not provide an operating-system sandbox.
+Poppet is an MCP client for local stdio servers and remote Streamable HTTP
+servers. It offers tools that the owner allowed by name in interactive and
+scheduled runs. The [user guide](https://poppet.run/docs/mcp/) covers the `mcp`
+commands.
 
-The `@poppet/mcp` workspace owns the client runtime, server configuration schemas,
-inspection commands, errors, and prompt policy. The CLI supplies configuration
-and limits and adapts allowed tools to the agent's generic external-tool hook.
+`@poppet/mcp` owns the configuration schemas, connections, discovery, schema
+validation, OAuth, inspection commands, errors, and the tool policy text. It
+depends on credentials and the provider contract, and not on the agent or
+application configuration. The `@poppet/mcp/config` export lets `@poppet/config`
+validate the `mcpServers` section without importing the SDK.
 
-It has separate configuration, run-owned resources, and no scheduled access. It
-is not a generic MCP server entry or part of the MCP allowlist.
+The CLI passes the tool-result byte limit to `makeMCPLive` and adapts tools and
+errors to the agent through `ExternalAgentToolsLive` in
+`apps/cli/src/commands/mcp/tools.ts`. `ExternalTools` in the agent stays generic.
+MCP policy comes from `mcp/src/instructions.ts`. Server instructions never reach
+the model.
 
-## Configure a server
+## Configuration
 
-Add `mcpServers` to your existing `<data directory>/config.json`:
+`mcpServers` in `config.json` is a list of at most 8 servers. `mcp/src/config.ts`
+validates it:
 
-```json
-{
-  "mcpServers": [
-    {
-      "id": "reference",
-      "enabled": true,
-      "command": "/absolute/path/to/trusted-server",
-      "args": ["--stdio"],
-      "cwd": "server-data",
-      "environment": {
-        "API_TOKEN": { "env": "REFERENCE_API_TOKEN" }
-      },
-      "tools": ["lookup_record"],
-      "scheduledTools": []
-    }
-  ]
-}
-```
+- `id` is unique, lowercase, starts with a letter, and has at most 64 letters,
+  digits, or hyphens.
+- An entry has `command` and `args` for stdio, or `url` for HTTP, never both.
+  HTTP entries take no `args`, `cwd`, or `environment`.
+- `tools` lists the allowed tool names. `scheduledTools`, `reviewedTools`,
+  `scheduledReviewedTools`, and `availableAfterUntrusted` are optional.
+- `reviewedTools` and `scheduledTools` are disjoint subsets of `tools`.
+  `scheduledReviewedTools` is a subset of `reviewedTools`.
+- Secrets come only from references. `{ "env": "NAME" }` reads one environment
+  variable. `{ "credential": "name" }` reads the protected file
+  `auth/name.json`, which must be a `0600` regular file in a `0700` directory.
+  A missing reference makes that server unavailable.
 
-Replace the executable, arguments, and tool names with your server's values.
-`args` and `tools` are required arrays; `cwd`, `environment`, `scheduledTools`,
-`reviewedTools`, `scheduledReviewedTools`, and `availableAfterUntrusted` are
-optional. IDs must be unique lowercase names beginning with a letter, followed
-by letters, digits, or hyphens, at most 64 characters. Commands run with
-an argument array and no shell. Install servers yourself. Never put secret values
-in commands, arguments, or general configuration.
+Stdio servers start with an argument array and no shell. A relative `cwd`
+resolves beside `config.json`. A bare executable name uses the inherited `PATH`.
+The child gets the SDK's standard environment (`HOME`, `PATH`, `USER`, `LOGNAME`,
+`SHELL`, and `TERM` on macOS) plus only the named references. The worker suppresses
+server stderr and does not log raw protocol failures, which may hold credentials.
+The macOS LaunchAgent saves only the data directory, so an installed worker can
+use credential references but not shell variables.
 
-Relative file-configured working directories resolve beside `config.json`.
-Without `cwd`, the server uses Poppet's working directory. An executable name
-without a path uses the inherited `PATH`. Prefer an absolute executable path for
-a background worker.
+HTTP URLs use `https:`. Plain `http:` is allowed only for `localhost`,
+`127.0.0.1`, and `[::1]`. URLs cannot hold userinfo or a fragment. Each header is
+a reference with an optional non-secret `prefix`. Header values must be non-empty
+visible ASCII, and header names are unique ignoring case. The transport owns
+`Accept`, `Content-Type`, `Content-Length`, `Host`, `Last-Event-ID`,
+`Mcp-Session-Id`, and `Mcp-Protocol-Version`, so configuration cannot set them.
 
-### HTTP servers
+`mcp add`, `mcp allow`, `mcp deny`, and `mcp remove` edit this section. `allow`
+and `deny` connect only to discover names. Unknown names or failed discovery
+leave permissions unchanged. `mcp allow --all` saves the names discovered now,
+for interactive use only. `mcp remove` also deletes the `mcp-<id>` credential and
+any saved sign-in. The worker reads configuration at start, so permission
+changes need a restart.
 
-Add a remote server from the CLI:
+## Connections
 
-```sh
-poppet mcp add remote https://mcp.example.com/mcp --auth api-key
-poppet mcp tools remote
-poppet mcp allow remote lookup_record
-```
+Both transports share one connection lifecycle in `mcp/src/connection.ts`. The
+first eligible run connects lazily. The worker keeps connections across requests,
+and a standalone CLI request closes them when its scope ends. A failed server
+leaves built-in tools and other servers working. It reconnects on a later
+eligible request after 30 seconds, doubling after each failure up to 10 minutes.
+`mcp servers` shows the next `retryAt`. Nothing retries or replays a call.
 
-`add` saves an enabled server with no tools allowed and does not connect to it.
-`--auth` is required: `none` sends no credentials, `api-key` reads a key
-from a hidden prompt or `--api-key <key>`, saves it as the protected credential
-`mcp-<id>`, and sends it as `Authorization: Bearer <key>`. `oauth` configures
-OAuth for a separate `mcp login` step.
-
-`mcp tools <id>` discovers tools and shows their `allowed` and `scheduled`
-permissions, plus flags for per-call review and scheduled review. `mcp allow <id> <tools...>` adds discovered names to the interactive
-allowlist. `mcp allow <id> --all` saves all names discovered now; tools the
-server adds later remain blocked. `--all` grants interactive access only and
-cannot be combined with explicit names or `--scheduled`. Use
-`mcp allow <id> <tools...> --scheduled` to grant interactive and scheduled access
-to tools you have verified as read-only.
-Unknown tools and failed discovery leave permissions unchanged.
-
-`mcp deny <id> <tools...>` removes the selected tools and their scheduled and
-review permissions without connecting to the server. Add `--scheduled` to remove
-only scheduled access from either scheduled list. These commands work with HTTP
-and configured stdio servers. Restart the worker after adding,
-removing, or changing permissions. Until then inspection through that worker
-reflects its existing configuration.
-
-Custom API-key header names and prefixes belong in `headers` in `config.json`.
-For example, use `"X-API-Key": { "credential": "mcp-remote" }` instead of the
-Authorization entry for an unprefixed key. `poppet mcp remove <id>` deletes
-the entry, its `mcp-<id>` credential, and any saved sign-in.
-
-An entry with `url` instead of `command` connects over Streamable HTTP:
-
-```json
-{
-  "id": "remote",
-  "enabled": true,
-  "url": "https://mcp.example.com/mcp",
-  "headers": {
-    "Authorization": { "credential": "remote", "prefix": "Bearer " },
-    "X-Team": { "env": "REMOTE_TEAM" }
-  },
-  "tools": ["lookup_record"],
-  "scheduledTools": []
-}
-```
-
-An entry has either `command` or `url`, never both, and HTTP entries take no
-`args`, `cwd`, or `environment`. URLs must use `https:`; plain `http:` is
-accepted only for `localhost`, `127.0.0.1`, and `[::1]`. URLs cannot contain a
-username, password, or fragment. Put secrets in `headers`, not the path or
-query, which server logs may record.
-
-Each header names an `{ "env": "NAME" }` or `{ "credential": "name" }` reference,
-as for stdio environments, with an optional non-secret `prefix` such as
-`"Bearer "`. Values must be non-empty visible ASCII. Header names are unique
-regardless of case. `Accept`, `Content-Type`, `Content-Length`, `Host`,
-`Last-Event-ID`, `Mcp-Session-Id`, and `Mcp-Protocol-Version` belong to the
-transport and cannot be configured. A missing reference makes that server
-unavailable. Resolved header values are redacted from results and rejected in
-tool definitions, like selected environment values.
-
-### OAuth sign-in
-
-```sh
-poppet mcp add notes https://mcp.example.com/mcp --auth oauth
-poppet mcp login notes
-poppet mcp tools notes
-poppet mcp allow notes search
-```
-
-`add` saves `"oauth": {}` in the entry. `login` starts sign-in and discovers the
-server's authorization server from its protected resource metadata, registers
-itself as a public client when the authorization server offers dynamic
-registration, and opens the browser with PKCE and a resource indicator. The
-callback, `--no-browser`, pasted callback addresses, and SSH forwarding work as
-for [ChatGPT sign-in](providers/openai-chatgpt.md). `login --no-browser` prints
-the sign-in link. Run `poppet mcp login <id>` to sign in again and
-`poppet mcp logout <id>` to delete tokens while keeping the registration;
-logging out does not revoke the grant at the authorization server.
-
-`oauth` accepts optional `clientId`, `clientSecret` (a `{ "credential": "name" }`
-reference, never a literal), `scopes`, and `callbackPort` (1024–65535) in
-`config.json`. `mcp login <id> --callback-port <port>` overrides the port for
-that sign-in without changing configuration. Use a pre-registered
-client when the authorization server has no dynamic registration; register a
-fixed loopback redirect such as `http://127.0.0.1:1455/auth/callback` and set
-the same `callbackPort`. Without `scopes`, Poppet requests what the server's
-metadata advertises. If the callback supplies an issuer (`iss`), it must appear
-once and match the discovered issuer. An OAuth entry cannot also configure an `Authorization`
-header; other headers are sent only to the MCP endpoint. Client metadata
-documents and unattended grants are unsupported.
-
-Tokens live in `<data directory>/auth/mcp-oauth-<id>.json`, protected like API
-keys and bound to the configured URL: changing the URL requires a new sign-in.
-Discovery, registration, and token requests use public HTTPS. Plain HTTP
-OAuth endpoints are allowed for loopback MCP servers only. A
-`WWW-Authenticate` resource metadata URL must share the MCP server's origin
-unless you set `oauth.resourceMetadataUrl` explicitly. Poppet validates the
-browser authorization destination before opening it. Access tokens are redacted
-from results and rejected in tool definitions.
-
-A run never opens a browser. When the server rejects an access token, Poppet
-claims a short-lived refresh lease and releases the file lock before contacting
-the authorization server. A worker and CLI process adopt the same refreshed
-token, and a delayed rejection of the old token keeps the newer sign-in. A rejected
-or missing refresh token, a missing sign-in, or a changed URL puts the server in
-`needs-login`: its tools are unavailable, other servers keep working, and no
-backoff applies. The next request after `mcp login` reconnects, including in a
-running worker. A server asking for more scope fails that call with a
-diagnostic naming the scope; add it to `scopes` and sign in again.
-`mcp servers` reports `signIn` with `signedIn`, `expiresAt`, and granted
-`scopes`, never token values. Active connections check saved sign-in before
-sending requests, so logout blocks further calls without restarting the worker.
-Calls already sent before logout may still complete.
-
-Set `mcpServers` to `[]` in `config.json` to disable every server. Worker settings
-change after restart, including allowlist changes.
-
-Children receive the SDK's small standard environment containing `HOME`, `PATH`,
-`USER`, `LOGNAME`, `SHELL`, and `TERM` on macOS, plus only your named references.
-They do not inherit all provider keys or channel tokens. `{ "env": "NAME" }`
-selects one environment value. `{ "credential": "name" }` selects an existing
-protected API-key entry from `<data directory>/auth/name.json`. Its format is
-`{"version":1,"provider":"name","key":"<secret>"}`. Provision it separately,
-with a `0700` auth directory and a `0600` regular file; symlinks are rejected.
-MCP inspection does not create or write credentials. Missing selected references
-make that server unavailable.
-
-The macOS LaunchAgent saves only the data directory, so shell secret variables
-are unavailable to an installed worker. Use protected credential references for
-that worker. Selected values are never added to model instructions; exact matches
-in returned text or structured JSON are redacted. Poppet suppresses server stderr
-and avoids logging raw protocol failures, which may contain credentials.
-
-## Inspect and use tools
-
-```sh
-poppet mcp servers
-poppet mcp tools reference
-poppet chat new "Use reference to look up record 123"
-```
-
-`servers` shows configured permissions, transport, connection state,
-PID (stdio only), the HTTP endpoint's origin, available tools, and diagnostics. They never launch servers or require a model.
-`tools <server>` explicitly starts discovery when needed and prints every discovered
-tool with `allowed` and `scheduled` permission flags. Allowed tools include their
-model definitions; blocked tools have `definition: null`. Both commands use
-the owning worker when available. Without a worker, discovery uses a local scope
-and closes the server before returning. There is no arbitrary tool-execution
-socket command.
-
-The first eligible agent run connects lazily. The worker retains its connections
-across requests; a standalone CLI request closes them when its scope ends. A
-server failure leaves built-in tools available. A failed server reconnects on a
-later eligible request after 30 seconds, doubling after each failed reconnection
-to at most 10 minutes; `mcp servers` shows the next `retryAt`. Calls are never
-automatically retried or replayed.
-
-Model tool names use a stable hash of the server ID and original tool name under
-`poppet_mcp`. `chat show <session>` retains `serverId` and `toolName` separately,
-so inspection and recovery do not depend on a discovery catalog.
-
-## Permissions and untrusted content
-
-Only discovered names in `tools` are offered. Interactive mutations also need
-your current explicit request. `scheduledTools` is empty by default and must be a
-subset of `tools` that you have reviewed as read-only. Server annotations cannot
-grant scheduled access. Poppet cannot verify that a server implements its tools
-honestly.
-
-Each run takes a catalog snapshot. List-change notifications cannot expand it;
-restart the owner to refresh discovery. Server instructions are ignored.
-Descriptions, schemas, and results remain untrusted data. They cannot authorize
-memory or task mutations, expand permissions, or grant URL access.
-
-Once a fetched page, search result, or MCP result enters a run, MCP tools are
-withdrawn for the rest of it, so each run makes at most one round of MCP calls.
-Set `"availableAfterUntrusted": true` on a server whose workflow needs several
-calls, such as reading its own docs before running code. Its allowed tools then
-stay available after untrusted content unless listed in `reviewedTools`. Task
-and memory tools are still withdrawn. Only opt in a server you trust with that
-content. Text from an email, page, or earlier result can steer that server's
-later calls, limited to its `tools` or `scheduledTools` for that run. URLs
-returned by MCP do not authorize `fetch_page`. Scheduled runs retain the
-built-in mutation restrictions. Poppet sends the validated arguments and selected
-child credentials, without automatically attaching history or global memory.
-
-## Review an action
-
-Add exact tool names to a server's `reviewedTools` and keep those names in
-`tools`. Restart the worker after editing the file. For example, a server
-might have `"tools": ["find_issue", "create_issue"]` and
-`"reviewedTools": ["create_issue"]`. An omitted review list keeps the existing
-allowlist behavior. Server annotations, including `readOnlyHint`, never change
-permissions or review policy. Keep reviewed tools out of the read-only
-`scheduledTools` list.
-
-Poppet reviews each proposed call against your current message before it
-dispatches. Review uses the same model and decision contract as
-[host commands](commands.md). It receives the configured server, original tool
-name, the validated arguments in full, and the server's untrusted description
-and input schema. The limits are 8 KiB for the escaped invocation and 32 KiB
-for the JSON-encoded owner message. Larger requests fail before dispatch.
-A denial or failed review stops the run. When review requires a person,
-Poppet sends the target, expected effects, reason, and exact invocation to
-the originating Discord or Slack conversation. Only the configured owner
-can answer with `/approve <id>` or `/deny <id>`. Discord and Slack also have buttons.
-The request expires in two minutes (`timeouts.approvalSeconds`) and permits one execution. Use a private
-conversation for private arguments. CLI and web chat stop when a person is
-needed. Make a fresh request in Discord or Slack to obtain approval there.
-
-Attachments and results from pages, searches, Bash, or MCP withdraw reviewed
-MCP tools for the rest of the run, including calls waiting behind those
-results in the same batch. Name the proposed action and target in a fresh
-message. The server's `availableAfterUntrusted` setting never overrides this
-rule for reviewed tools.
-
-`poppet chat show <session>` displays the review decision, reason, and journal
-outcome, and identifies the owner if they answered an approval request. A
-completed receipt with `approvedBy: "reviewer"` or `approvedBy: "owner"`
-describes a call that already ran. If a connection fails during dispatch, inspect the provider
-before requesting the action again. Reviewed HTTP calls stop at redirects and
-auth challenges. Sign in again if needed before making a new request.
-
-## Schedule a reviewed action
-
-List exact tool names in `scheduledReviewedTools` under the configured server
-and keep them in `reviewedTools` and `tools`. An empty or omitted list grants
-no scheduled access to reviewed actions. Edit the file and restart the worker.
-`mcp allow --scheduled` grants read-only access through `scheduledTools`.
-
-Each scheduled call is reviewed against the saved task prompt. Only an
-`allow` decision dispatches the action. A denial, unavailable review, or need
-for a person fails the occurrence without posting an approval request.
-`poppet tasks show <task-id>` shows review decisions, reasons, and dispatch
-outcomes for the linked runs. Use `--json` to inspect the stored tool result.
-Inspect the provider after an uncertain result
-before requesting a retry. Poppet never replays the uncertain call, and a
-recurring task retains its future schedule.
-
-## Bounds and schema compatibility
-
-The official TypeScript client SDK is pinned at 2.3.1 and exercised under Bun 1.4.4.
 Connections use the SDK's legacy initialization handshake for the 2025 protocol.
-Poppet supports tool discovery and invocation only. The legacy HTTP+SSE
-transport, resources, prompts, sampling, elicitation, MCP tasks, and media
-forwarding are outside this implementation. Resource links and media are marked omitted and never fetched.
+The pinned client is `@modelcontextprotocol/client` 2.4.0. Poppet supports tool
+discovery and invocation only. Resources, prompts, sampling, elicitation, MCP
+tasks, the legacy HTTP and SSE transport, and media forwarding are out of scope.
+Resource links and media in results are marked omitted and never fetched.
 
-- At most 8 configured servers, 8 discovery pages per server, 128 discovered tools
-  (`limits.mcpTools`), and 256 KiB of discovery JSON per server (`limits.mcpDiscoveryBytes`).
-  Connection, startup, and tool calls use `timeouts.mcpConnectSeconds` (5),
-  `timeouts.mcpStartupSeconds` (8), and `timeouts.mcpToolCallSeconds` (10).
-- Each stdio read buffer is capped at 4 MiB, before JSON parsing. HTTP JSON
-  bodies, HTTP errors, and individual SSE events have the same cap; OAuth
-  responses stay capped at 256 KiB. Each successful SSE response has a 16 MiB
-  total byte limit. Oversized protocol messages close the connection.
-- HTTP redirects are followed only within the endpoint's origin (or its HTTPS
-  upgrade) and only when they keep the method. The SDK's stream reconnection is
-  off: a dropped stream fails the connection, and Poppet's backoff reconnects it
-  with a new session. The worker logs transport cleanup failures and continues
-  closing its other connections.
-- Allowed descriptions are at most 4096 characters; input/output schemas are at
-  most 16 KiB, depth 32, and 1024 nodes. Draft-07 and 2020-12 schemas are validated
-  with AJV. Standard JSON Schema and OpenAPI formats (`date`, `time`, `date-time`,
-  `duration`, `uri`, `uri-reference`, `uri-template`, `email`, `hostname`, `ipv4`,
-  `ipv6`, `uuid`, `json-pointer`, `relative-json-pointer`, `regex`, `byte`,
-  `int32`, `int64`, `float`, `double`, `password`, and `binary`) are validated.
-  Valid required-only union branches retain their runtime assertions.
-  Patterns use the non-backtracking RE2 engine; lookarounds and backreferences
-  are unsupported, and some Unicode matching differs from JavaScript regexes.
-  References, `patternProperties`, and unsupported formats or keywords make that
-  tool unavailable with a diagnostic naming the tool and input/output schema.
-  Tools with longer descriptions or required task execution are skipped the same
-  way. The server's other allowed tools stay available, and `mcp servers` lists
-  skipped tools in its notes. Without
-  `$schema`, modern keywords such as `dependentRequired` select 2020-12;
-  otherwise draft-07 is used. Explicit dialect declarations take precedence. Vendor `x-` keywords, such as FastMCP's
-  `x-fastmcp-wrap-result`, are ignored; `x-` property names are still validated.
-  Required MCP task execution is unsupported.
-- Models receive a strict object containing one required `input` string. That
-  string contains the original JSON arguments. Poppet validates the decoded object
-  against the original server schema, without adding defaults, coercing values,
-  or dropping unknown fields. Optional server fields therefore remain optional
-  even with a strict-schema provider. Arguments are capped at 64 KiB.
-- Tool definitions count toward the existing context budget. Calls share the
-  existing run and tool-call budgets and whole-batch preflight validation.
-- Startup and discovery together have an 8-second deadline per server, with a
-  5-second protocol-request deadline. Invocation has a 10-second deadline. Process
-  cleanup can take another 5 seconds while stdin closure escalates to signals.
-  HTTP cleanup sends the session `DELETE` within 5 seconds, then aborts open requests.
-- Serialized results fit the 16 KiB tool-output limit. Text is shortened without splitting
-  Unicode; oversized structured JSON is omitted as a whole. Results explicitly
-  report `truncated`, `omittedContent`, `omittedStructuredContent`, and `redacted`.
-  A truncated result omits content or shortens a text block.
+HTTP adds a byte-bounded `fetch` and ends its session with `DELETE` on close.
+Redirects stay within the endpoint's origin, or its HTTPS upgrade, and must keep
+the method. SDK stream reconnection is off, so a dropped stream fails the
+connection and the backoff reconnects with a new session.
 
-Tool-reported errors leave a failed durable call. Transport/protocol failures
-following dispatch leave an uncertain call, as does cancellation while a call is
-running. An uncertain call may have changed external state. Inspect that server's
-state before explicitly requesting another attempt, including after a restart.
+`mcp servers` and `mcp tools` never need a model. They use the worker when it
+owns the data directory, and otherwise discover in a local scope that closes the
+server before returning. `servers` never launches a server. The worker socket
+exposes inspection only. Calls always go through the agent's durable tool path.
+
+## Tools and permissions
+
+Model tool names live under `poppet_mcp` and use a stable hash of the server ID
+and the original tool name. `tool_calls` stores `server_id` and `tool_name`
+separately, so inspection and recovery do not need a catalog. Built-in calls
+leave both null.
+
+Each run takes a catalog snapshot. List-change notifications cannot expand it,
+so discovery changes need an owner restart. Descriptions, schemas, and results
+are untrusted data. Server annotations, including `readOnlyHint`, never change
+permissions or review.
+
+- Interactive runs offer allowed tools from `tools`.
+- Scheduled runs offer `scheduledTools`, which the owner verified as read-only,
+  and reviewed calls from `scheduledReviewedTools`.
+- After a page, an MCP result, or attachments enter a run, the agent withdraws
+  MCP tools for the rest of the run. A server with `availableAfterUntrusted`
+  keeps its unreviewed tools. Text from earlier results can then steer that
+  server's later calls within its allowlist.
+- Bash output and any untrusted content withdraw reviewed tools, including calls
+  queued behind those results in the same batch. `availableAfterUntrusted` never
+  applies to reviewed tools.
+- MCP results never grant page URLs or memory and task writes.
+
+Poppet sends the validated arguments and the selected child credentials. It does
+not attach history or memory. It redacts exact matches of resolved secret values
+from returned text and structured JSON, and rejects tool definitions that contain
+them.
+
+## Reviewed actions
+
+For a tool in `reviewedTools`, the agent reviews each call with the same reviewer
+and decisions as [host commands](commands.md#review). The reviewer gets the server,
+the original tool name, the validated arguments in full, and the server's
+description and input schema. The escaped invocation is limited to 8 KiB and the
+JSON-encoded owner message to 32 KiB. Larger requests fail before dispatch.
+
+The journal records the decision on the pending call. Only an allowed or
+owner-approved call reaches dispatch. Approval prompts show the target, the
+expected effects, the reason, and the exact invocation. See
+[owner approval](commands.md#owner-approval).
+
+The HTTP transport binds the prepared sign-in and permits one POST for a reviewed
+call. A redirect or an authorization challenge stops dispatch without a resend.
+The store tells an interruption before dispatch apart from an uncertain call
+already in flight.
+
+A scheduled reviewed call is checked against the saved prompt. Only `allow`
+dispatches it. Any other result fails the occurrence without an approval
+prompt.
+
+## OAuth
+
+`mcp/src/oauth.ts` implements sign-in for entries with `"oauth": {}`.
+`mcp login` discovers the authorization server from protected resource metadata,
+registers a public client when the server offers dynamic registration, and opens
+the browser with PKCE and a resource indicator. It uses the shared
+[`@poppet/sign-in`](providers/openai-chatgpt.md#sign-in) callback, so
+`--no-browser`, pasted callbacks, and SSH forwarding work as they do for ChatGPT.
+
+- `oauth` takes optional `clientId`, `clientSecret` as a credential reference,
+  `scopes`, `callbackPort` (1024 to 65535), and `resourceMetadataUrl`.
+- An OAuth entry cannot also set an `Authorization` header. Other headers go to
+  the MCP endpoint only.
+- Without `scopes`, login requests what the metadata advertises.
+- A callback `iss` must appear once and match the discovered issuer.
+- A `WWW-Authenticate` resource metadata URL must share the MCP server's origin
+  unless `resourceMetadataUrl` is set.
+- `mcp/src/oauth-network.ts` requires public HTTPS for discovery, registration,
+  and token requests, and allows plain HTTP only for loopback MCP servers. Login
+  checks the browser destination before opening it.
+- Client metadata documents and unattended grants are not supported.
+
+Tokens live in `auth/mcp-oauth-<id>.json`, protected like API keys and bound to
+the configured URL. A changed URL needs a new sign-in. Access tokens are redacted
+from results and rejected in tool definitions. Logout deletes tokens, keeps the
+registration, and does not revoke the grant.
+
+A run never opens a browser. When a server rejects an access token, the client
+claims a short refresh lease and releases the file lock before calling the
+authorization server. A worker and a CLI process adopt the same refreshed token,
+and a late rejection of the old token keeps the newer sign-in. A rejected or
+missing refresh token, a missing sign-in, or a changed URL puts the server in
+`needs-login`. Its tools become unavailable with no backoff, and the next request
+after `mcp login` reconnects, including in a running worker. A request for more
+scope fails that call with a diagnostic naming the scope. Active connections
+check the saved sign-in before each request, so logout blocks further calls
+without a restart. `mcp servers` reports `signIn` with `signedIn`, `expiresAt`,
+and granted `scopes`, never tokens.
+
+## Bounds
+
+| Bound                                                    | Limit                        | Setting                       |
+| -------------------------------------------------------- | ---------------------------- | ----------------------------- |
+| Configured servers                                       | 8                            | Fixed                         |
+| Discovery pages per server                               | 8                            | Fixed                         |
+| Discovered tools per server                              | 128                          | `limits.mcpTools`             |
+| Discovery JSON per server                                | 256 KiB                      | `limits.mcpDiscoveryBytes`    |
+| Stdio read buffer, HTTP JSON body, HTTP error, SSE event | 4 MiB                        | Fixed                         |
+| OAuth response                                           | 256 KiB                      | Fixed                         |
+| One SSE response                                         | 16 MiB                       | Fixed                         |
+| Tool description                                         | 4096 characters              | Fixed                         |
+| Input or output schema                                   | 16 KiB, depth 32, 1024 nodes | Fixed                         |
+| Arguments                                                | 64 KiB                       | Fixed                         |
+| Startup and discovery                                    | 8 seconds per server         | `timeouts.mcpStartupSeconds`  |
+| Connection and each tool-list request                    | 5 seconds                    | `timeouts.mcpConnectSeconds`  |
+| Invocation                                               | 10 seconds                   | `timeouts.mcpToolCallSeconds` |
+| Stdio cleanup after closing stdin                        | 5 seconds, then signals      | Fixed                         |
+| HTTP session `DELETE`                                    | 5 seconds, then abort        | Fixed                         |
+| Serialized result                                        | 16 KiB                       | `limits.toolBytes`            |
+
+An oversized protocol message closes the connection. Tool definitions count
+toward the context budget, and calls share the run's tool-call budget and batch
+validation.
+
+## Schemas
+
+`mcp/src/catalog.ts` validates schemas with AJV. It picks draft-07 or 2020-12
+from `$schema`. Without one, modern keywords such as `dependentRequired` select
+2020-12. Validation covers the standard JSON Schema and OpenAPI formats: `date`,
+`time`, `date-time`, `duration`, `uri`, `uri-reference`, `uri-template`, `email`,
+`hostname`, `ipv4`, `ipv6`, `uuid`, `json-pointer`, `relative-json-pointer`,
+`regex`, `byte`, `int32`, `int64`, `float`, `double`, `password`, and `binary`.
+Patterns use RE2 through `re2-wasm`, so lookarounds and backreferences fail, and
+some Unicode matching differs from JavaScript. Vendor `x-` keywords are ignored,
+but `x-` property names are still validated.
+
+These make a tool unavailable, with a diagnostic naming the tool and schema:
+
+- `$ref`, `patternProperties`, or an unsupported format or keyword
+- a description over the limit
+- required MCP task execution
+
+The server's other tools stay available. `mcp servers` lists skipped tools in its
+notes.
+
+Models see a strict object with one required `input` string that holds the JSON
+arguments. Poppet decodes it and validates the object against the server's
+original schema, without defaults, coercion, or dropping unknown fields. Optional
+server fields stay optional even for strict-schema providers.
+
+## Results and failures
+
+Results fit the 16 KiB budget. Text is shortened on Unicode boundaries, and
+oversized structured JSON is omitted whole. Results report `truncated`,
+`omittedContent`, `omittedStructuredContent`, and `redacted`.
+
+A tool-reported error leaves a failed call. A transport or protocol failure after
+dispatch, or cancellation while a call runs, leaves it uncertain. Nothing replays
+an uncertain call, including after a restart.

@@ -120,7 +120,7 @@ Discord and [Slack](slack.md) are bundled adapters. Additional adapters can use 
 The [Bash tool](../commands.md) can manage the host machine. If command review
 requires a person, Poppet posts the exact command, working directory, timeout,
 and reason in the original thread. Reply `/approve <id>` or `/deny <id>` using
-the ID in that message. [Reviewed MCP actions](../mcp.md#review-an-action)
+the ID in that message. [Reviewed MCP actions](../mcp.md#reviewed-actions)
 show the target, expected effects, and exact arguments. Only the configured
 owner in that same authorized
 conversation can answer. Each ID permits one invocation and expires after two
