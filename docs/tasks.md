@@ -1,313 +1,271 @@
 # Scheduled tasks
 
-[Documentation index](README.md)
+[Engineering notes](README.md)
 
-Scheduled [MCP tools](mcp.md) are denied by default. A server's `scheduledTools`
-lists owner-verified reads. A separate `scheduledReviewedTools` list opts
-specific tools into [per-call review](mcp.md#reviewed-actions) using
-the saved task prompt. Either kind of tool must also be on the interactive
-allowlist.
-Annotations cannot grant permission. Restart the worker after changing these
-lists. MCP results cannot authorize built-in mutations or page fetching.
+A task is a saved prompt with a schedule. The worker runs each due occurrence as
+a fresh scheduled chat run and can deliver the answer to a gateway. The
+[user guide](https://poppet.run/docs/tasks/) covers the `tasks` commands.
 
-## Reviewed actions
+| Module                                | Owns                                                             |
+| ------------------------------------- | ---------------------------------------------------------------- |
+| `packages/tasks/src/task-schema.ts`   | Commands, schedules, timestamps, and `nextSlot`                  |
+| `packages/tasks/src/task-store.ts`    | `TaskRepository`, scheduling, claims, and occurrence transitions |
+| `packages/tasks/src/task-controls.ts` | Edit, skip, snooze, and run-now transactions                     |
+| `packages/tasks/src/task-records.ts`  | Task and occurrence records shared with the scheduler            |
+| `packages/tasks/src/scheduler.ts`     | The wake queue, `reconcileTasks`, and `executeOccurrence`        |
+| `packages/tasks/src/commands.ts`      | Task operations, inspection, and delivery state                  |
+| `packages/tasks/src/chat-tools.ts`    | `ChatTasksLive` for the chat tool                                |
+| `packages/tasks/src/task-socket.ts`   | The task command client for the worker socket                    |
+| `packages/agent/src/task-tools.ts`    | `poppet_tasks.manage_tasks` and the `ChatTasks` capability       |
+| `packages/agent/src/task-note.ts`     | `poppet_tasks.save_note`                                         |
+| `apps/cli/src/commands/tasks/`        | The `tasks` command and its argument parsing                     |
 
-Scheduled runs can use the [Bash tool](commands.md). Each command is reviewed
-against the saved job prompt using the job's provider and model. Allowed commands
-can modify the machine. Reviewed MCP actions follow the same rules. A denial,
-unavailable reviewer, or need for human approval fails the occurrence before
-dispatch. This stops the run without waiting for a person or trying an
-alternative tool. Future scheduled occurrences stay active. Earlier actions
-may already have taken effect.
+## Tasks and occurrences
 
-Failed runs log their failure reason code and retain details in `tasks show`.
-If the worker stops after saving a failed run, recovery records its occurrence
-as failed and retains the run's failure reason.
-A task with a messaging destination also posts a short
-[failure notice](#failure-notices) there. `tasks show` includes the reviewed
-MCP invocation, decision, reason, and journal outcome, including uncertain
-dispatches. Inspect them before retrying. Successful results go to the task's
-configured destination.
+The store holds at most 64 tasks (`limits.tasks`). A task saves its provider and model, an
+optional [skill snapshot](skills.md#snapshots), a prompt, a schedule, an optional
+end time, and an optional delivery destination. Every edit to the name, prompt,
+or schedule creates a new revision.
 
-## Create and inspect tasks
+An occurrence is one execution of one revision. It saves the definition and
+revision it runs, its logical slot (`scheduledAt`), its ready time
+(`availableAt`), and its destination. Claims and retries run from that
+snapshot, so later edits never rewrite history. Each occurrence gets a fresh
+session titled with the task name, cut to 80 characters. Scheduled runs skip
+title inference.
 
-Select a provider and model as for chat, and sign in before running a task.
-Tasks save that selection when added. The worker uses each saved selection even
-if its environment selects a different model later.
+The database stores times as UTC milliseconds. Task commands need no provider
+login or model.
 
-For a quick test, schedule a review of recent conversations one minute from now:
+## Schedules
 
-Bash / Zsh:
+A task has one schedule form:
 
-```sh
-poppet tasks add summary --in 1m "Summarize recent conversations"
-poppet worker run
-```
+- `--at` takes a timestamp with `Z` or a UTC offset. It must be in the future.
+- `--in` takes a positive whole number with `s`, `m`, `h`, or `d`. A day is 24
+  elapsed hours. The CLI turns it into an absolute `--at` time once.
+- `--cron` takes a five-field expression and needs `--tz`, which defaults to
+  [`timeZone`](configuration.md#time-zone) when it is set. Effect Cron evaluates
+  it.
 
-fish:
+Cron keeps local wall time. A local time skipped by a spring DST change moves
+forward, and a time repeated in autumn runs once.
 
-```fish
-poppet tasks add summary --in 1m "Summarize recent conversations"
-poppet worker run
-```
+A cron task can have an end time, `jobs.end_at`, set with `--until` or `endAt`.
+`nextSlot` in `task-schema.ts` is the only rule: a slot later than the end time
+does not exist, and one exactly at it does. Creation, reconciliation, resume, the
+controls, and schedule edits all advance `next_at` through `nextSlot`. So
+`next_at` is never later than `end_at`, and a null `next_at` on a cron task means
+it has ended. `tasks add` rejects an end time on a one-off, or one earlier than the
+first slot.
 
-`--in` accepts a positive whole number followed by `s`, `m`, `h`, or `d`.
-For example, `30s`, `10m`, `2h`, or `1d`. A day is exactly 24 elapsed hours.
-The CLI resolves the duration once and saves an absolute time. Use `--at` for
-an exact timestamp, or `--cron` with `--tz` for recurring work; `--tz` defaults to
-[`timeZone`](configuration.md#time-zone) when it is set. These schedule
-forms cannot be combined. A recurring task can also carry an
-[end time](#end-a-recurring-task) with `--until`.
+The end time is not part of an occurrence's definition. Changing it keeps the
+revision, and occurrences already queued still run, including a snoozed one held
+past it. Reconciliation returns the tasks that just ran out of slots, so the
+worker logs `task ended` once. Setting a later end time, or clearing it with
+`--until none`, resumes the cadence from that moment with no backlog. Status and
+`tasks show` report `ended`, distinct from `paused` and from a finished one-off's
+`done`.
 
-The worker prints timestamped lifecycle messages for starts, completed or failed
-runs, interruptions, cancellation, skipped intervals, task/provider pauses and
-resumes, and a task reaching its end time. Occurrence messages include the task name and occurrence ID. Failures use
-reason codes; prompts and model answers stay in saved results.
-An idle worker does not print polling messages.
+## Scheduler
 
-Leave the worker running. In another terminal using the same `POPPET_DATA_DIR`:
+The worker runs one occurrence at a time, from a one-second wake timer over
+wall-clock UTC. `reconcileTasks` queues due work:
 
-```sh
-poppet tasks
-poppet tasks show <task-id>
-poppet tasks clear-note <task-id>
-poppet tasks pause <task-id>
-poppet tasks resume <task-id>
-```
+- An overdue one-off runs once and never expires.
+- A recurring task has at most one pending or running occurrence. Other due slots
+  become skipped intervals, which stop at the end time.
+- After a delay or restart, the most recent missed slot runs once if it is within
+  `tasks.catchUpMinutes` (default 60). Earlier slots are skipped. With `0`,
+  startup skips missed recurring work, and a delayed timer runs the most recent
+  slot only if it is less than a minute old.
+- A pending recurring occurrence expires 24 hours after its `availableAt`.
+- If a schedule cannot advance, the task pauses and the worker logs the failure
+  and keeps processing other tasks.
 
-Running `poppet tasks` lists saved tasks. The explicit `tasks list` command is also supported.
+Provider failures hold scheduled work for that provider in
+`job_provider_pauses`. A quota hold has no end time, and no command clears it. A
+completed occurrence for the provider clears its hold. A temporary or rate-limit
+failure holds it for 30 seconds, doubling up to five minutes. `worker status`
+shows the holds. Nothing retries a failed occurrence by itself.
 
-## Edit and control the next execution
+The task service recovers state when it is built under a new store owner, before
+agent or scheduler work starts. Recovery marks an occurrence whose run failed as
+failed with the run's reason, and completes one whose run completed. The
+repository's command lock serializes worker commands and occurrence claims.
 
-Edit a task without replacing its ID or losing its history:
+## Scheduled run policy
 
-```sh
-poppet tasks edit <task-id> --name "Morning review"
-poppet tasks edit <task-id> --prompt "Summarize open decisions from recent conversations."
-poppet tasks edit <task-id> --cron "30 8 * * 1-5" --tz Europe/London
-poppet tasks edit <task-id> --at 2099-10-22T09:00:00+01:00
-poppet tasks edit <task-id> --until 2099-11-30T18:00:00+00:00
-poppet tasks edit <task-id> --until none
-poppet tasks run <task-id>
-```
+`executeOccurrence` calls `Agent.send` with `origin: "scheduled"`. The run:
 
-Edits change only supplied name, prompt, schedule, or end time fields. A cron replacement
-requires both expression and timezone, where `--tz` defaults to `timeZone`; a one-off replacement requires a future
-offset-qualified timestamp. `--until` sets or changes a recurring task's
-[end time](#end-a-recurring-task), and `--until none` clears it. Empty patches, unknown fields, conflicting schedules,
-and timezone-only changes are rejected. Identical values are a no-op. Provider,
-model, skill, and destination remain unchanged.
-Paused tasks may be edited without resuming them. Cancel a running occurrence
-explicitly before using any of these controls on that task.
+- gets the current profile and facts, conversation recall, page reading for URLs
+  in the saved prompt, and the task's skill snapshot;
+- never gets memory changes or `manage_tasks`, even when the prompt or skill asks;
+- gets MCP tools only from `scheduledTools` and `scheduledReviewedTools`;
+- reviews Bash and reviewed MCP calls against the saved prompt, and fails the
+  occurrence when a call needs a person (see
+  [host commands](commands.md#scheduled-runs));
+- does not expand `$name` mentions in the prompt;
+- gets the task note and `save_note`.
 
-Every occurrence saves the definition and revision it executes. A name/prompt
-edit replaces an unstarted occurrence with a new snapshot while retaining its
-logical slot, ready time, and destination. The original stays cancelled in history.
-A schedule change cancels pending work, clears its snooze, and computes the next
-future slot. Editing a completed one-off's name/prompt does not rerun it; supply
-a different future schedule to rearm it. An end time change alone keeps the
-revision and the pending occurrence, because the end time is not part of what an
-occurrence executes.
+The scheduled instructions let a conditional prompt answer with exactly
+`NO_REPLY`. `isNoReply` from `@poppet/agent` matches only the whole trimmed
+answer. Such a run completes, posts nothing, logs `completed no-action`, and shows
+`noAction: true` in `tasks show` with its saved output.
 
-| Control              | Behavior                                                                                                                                                                                                                            |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `skip_next` via chat | Consume exactly the selected pending occurrence or next slot. A recurring task keeps its cadence; a one-off has no next execution.                                                                                                  |
-| `snooze` via chat    | Delay that execution until a later future instant. `scheduledAt` keeps its original slot; `availableAt` is its effective ready time. The hold survives restart, and intervening cron slots do not build a backlog.                  |
-| `run`                | Queue through the normal scheduled runner and provider holds. Reuse eligible pending work, reject a future hold, preserve recurring cadence, and consume an unstarted one-off early. The receipt confirms queueing, not completion. |
+## Controls
 
-Chat skip and snooze actions and the run command act on the task's next execution when the command
-commits: its pending occurrence if one exists, otherwise its next scheduled time.
-A task with no upcoming execution needs a schedule edit first; a task past its
-end time needs a later or cleared end time. Receipts include
-changed fields, affected occurrence IDs, next time, and snooze changes. Lost responses never trigger local
-fallback or replay. Inspect `tasks show` before issuing another command after an
-unclear result.
+Controls act on the task's current definition. `skip_next`, `snooze`, and
+`run` act on its next execution: the pending occurrence if there is one,
+otherwise the unqueued `next_at` slot. Nothing needs a prior `show`.
+`task-controls.ts` checks paused and running state, holds, expiry, and future
+times in the same transaction as the change. A running occurrence blocks every
+control until it finishes or is cancelled. Paused tasks can be edited. A lost
+worker response never falls back to a local change.
 
-Pausing cancels a snoozed occurrence. Resume uses the ordinary future cron cadence
-and does not restore the snooze. Recurring expiration and retry freshness use
-`availableAt`, with the existing 24-hour window after that time; one-offs do not
-expire. Snooze and run reject an expired pending summary; skip it instead. Retries use the historical occurrence definition.
-Unsupported actions fail explicitly. No additional login or model is required
-to manage saved tasks.
+`tasks edit` changes only the supplied fields:
 
-## End a recurring task
+- A name or prompt edit replaces an unstarted occurrence with a new snapshot,
+  keeping its slot, ready time, and destination. The old one stays cancelled in
+  history. Editing a completed one-off does not run it again.
+- A schedule edit cancels pending work, clears a snooze, and computes the next
+  future slot. A cron edit needs both the expression and the zone. Changing to a
+  one-off clears the end time.
+- An end time edit keeps the revision and the pending occurrence. An earlier end
+  time cancels a snoozed occurrence whose slot is now past it, as `task-ended`.
+- Empty patches, unknown fields, conflicting schedules, and zone-only changes are
+  rejected. Identical values change nothing. Provider, model, skill, and
+  destination never change.
 
-A recurring task can carry an optional end time. After it, the task stops
-producing occurrences without being paused or removed. There is no default end
-time and no maximum duration.
+| Control     | Behaviour                                                                                                                                                                               |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skip_next` | Consumes the selected occurrence or slot. Recurring tasks keep their cadence. Skipping the last slot ends the task.                                                                     |
+| `snooze`    | Moves `availableAt` to a later instant and keeps `scheduledAt`. The hold survives restart and builds no backlog.                                                                        |
+| `run`       | Queues through the normal runner and provider holds. It reuses eligible pending work, rejects a future hold, and consumes an unstarted one-off early. The receipt confirms queueing.    |
+| `pause`     | Cancels pending work, including a snooze, and leaves a running occurrence alone.                                                                                                        |
+| `resume`    | Takes the next future slot. Missed slots and an old snooze do not come back.                                                                                                            |
+| `cancel`    | Cancels the pending or running occurrence. With none, it fails.                                                                                                                         |
+| `retry`     | Reruns the latest occurrence by slot, then revision, then insertion order, in a fresh session. It fails if that occurrence succeeded or is active. A paused task must be resumed first. |
+| `remove`    | Deletes one task, its note, and its occurrence history. Sessions and runs stay.                                                                                                         |
+| `clear`     | Deletes every task. A running worker interrupts active work first. Sessions, facts, and provider holds stay.                                                                            |
 
-```sh
-poppet tasks add release-watch --cron "0 9 * * *" --tz Europe/London --until 2099-10-29T09:00:00+00:00 "Tell me only if the release page changed"
-```
+`cancel` and `retry` take `--occurrence <id>` to select a specific occurrence of
+the task. Retry works on an unsuccessful occurrence whose slot is within the end
+time and the 24-hour window, even after the task has ended. An ended task with
+nothing pending rejects `skip_next`, `snooze`, and `run`. Snooze and run reject
+an expired pending occurrence.
 
-`--until` takes an absolute timestamp with `Z` or a UTC offset, the same form as
-`--at`, and must be in the future when set. It applies only to cron tasks:
-`tasks add` and `tasks edit` reject it on a one-off. `tasks add` also rejects an
-end time earlier than the first occurrence.
+## Chat task management
 
-The boundary is the cron slot, not the time work happens to run. A slot at or
-before the end time runs; a slot later than it is never scheduled. In the example,
-the 09:00 slot on 29 October still runs, and none follows. An occurrence already
-pending, snoozed, or running when the end time passes still runs to completion,
-including when a snooze holds it beyond the end time.
+`poppet_tasks.manage_tasks` is offered only in interactive runs. The agent
+defines the strict arguments and the narrow `ChatTasks` capability, and the host
+supplies `ChatTasksLive`. The agent does not import `@poppet/tasks`, because that
+package already depends on agent skills.
 
-Once no slot remains the task has no next execution. `tasks` and `tasks show`
-report its state and next run as `ended`, as distinct from `paused` and from a
-finished one-off's `done`, and `tasks show` prints the end time as `Until`. JSON
-output carries `endAt` in Unix milliseconds with a null `nextAt`. The worker
-logs the ending once, when the last slot is used up, which can be before the end
-time itself:
+Actions are `create`, `list`, `show`, `edit`, `pause`, `resume`, `skip_next`,
+`snooze`, `run_now`, and `delete`. Each action reads only its own fields and names
+a missing one in the error.
 
-```text
-time=2099-10-29T09:00:00.000Z level=info msg="task ended" task=<task-id> name=release-watch end_at=2099-10-29T09:00:00.000Z
-```
+Every call passes batch validation before any tool runs. Preparation checks the
+action's fields, task IDs, schedules, future times, skill files, and delivery
+access. Then:
 
-The task and its history are kept. To revive it, set a later end time or clear it
-with `tasks edit <task-id> --until none`. It then resumes its ordinary future
-cadence from that moment, with no backlog of slots missed while it was ended.
+- The current run supplies the provider and model.
+- The host clock adds the current UTC time, and the local time when `timeZone` is
+  set, so the model can resolve relative dates.
+- A recurring schedule needs an explicit zone or `timeZone`. One-off times and
+  `endAt` need an offset. `endAt: "none"` clears the end time.
+- A run can create at most 5 tasks (`limits.chatTaskCreatesPerRun`).
+- A chat-created or chat-edited cron schedule must leave at least 5 minutes
+  (`limits.chatTaskIntervalMinutes`)
+  between every pair of consecutive runs. The check covers every listed minute,
+  including the gap across the hour, so `0,30 * * * *` passes and `0,58 9 * * *`
+  fails.
+- Manual-only skills are refused.
+- Editing, resuming, rescheduling, running, or deleting a task needs access to
+  its saved destination. CLI chat can only touch tasks with local delivery.
 
-The other controls follow the same rule:
+The gateway rechecks the accepted owner and resolves the destination: the home
+conversation by default, the current conversation for "here", `local`, or an
+explicit `delivery: { conversationId }` checked by the current adapter. Arguments
+cannot pick another gateway, account, owner, or provider. CLI chat creates tasks
+with local delivery only.
 
-| Control            | With an end time                                                                                                                                       |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `pause` / `resume` | Resume computes the next slot as usual; if none is left before the end time the task is ended, not active.                                             |
-| `skip_next`        | Skipping the last slot ends the task. An ended task with nothing pending rejects the control.                                                          |
-| `snooze`           | A slot within the end time may be held past it and still runs. An ended task with nothing pending rejects the control.                                 |
-| `run`              | Reuses a pending occurrence, or queues work while a slot remains. An ended task with nothing pending rejects it; extend or clear the end time first.   |
-| `retry`            | Reruns an unsuccessful occurrence whose slot is at or before the end time, within the usual 24-hour window, even after the task has ended.             |
-| Schedule edit      | A new cron schedule keeps the end time and takes its next slot within it. Changing to a one-off clears the end time and reports `endAt` as changed.    |
-| End time edit      | Keeps the next slot if it is still within the end time. An earlier end time cancels a snoozed occurrence whose slot is now beyond it, as `task-ended`. |
+`Store.commitToolCall` runs the task change and the completion of its tool
+journal entry and message in one SQLite transaction. If saving the result fails,
+the change rolls back. A completed call, keyed by run and call ID, returns its
+saved result without running again. This is the only replay protection for task
+changes. A committed change survives a later model failure. If the task changed
+between preparation and commit, the call reports that the request is no longer
+valid.
 
-A running occurrence must finish or be cancelled before an edit, as for every
-control. Skipped intervals stop at the end time; later slots are not recorded as
-missed.
+Chat runs directly in the owning process. It never takes another agent permit or
+calls its own worker socket, and the existing timer picks up new work. Inspection
+uses bounded ID-cursor pages, limits recent occurrences, shortens prompts to fit
+the tool budget, and returns no model answers.
 
-## Manage tasks through chat
+## Task notes
 
-Editing, resuming, rescheduling, running, or deleting a saved task from chat
-requires access to its saved messaging destination. Use the owner CLI to make
-these changes to tasks that use a manual-only skill.
+A task can keep one note of at most 4096 UTF-8 bytes between occurrences.
+`executeOccurrence` reads the latest `job_notes` row and passes it as
+`SendOptions.taskNote`. The conversation then adds the note to the instructions as
+JSON and offers `poppet_tasks.save_note`. Because the note is in the instructions
+and not the user message, it never grants page URLs and never reaches the Bash
+reviewer.
 
-Tool-capable models can create, list, inspect, pause, and resume tasks when you
-explicitly ask in CLI chat or an authorized messaging conversation. For example:
+`save_note` takes text or `null` and no task ID, so a run can write only its own
+task's note. It writes nothing itself. Its arguments and result are the tool
+journal entry. `TaskRepository.finish` commits the note in the transaction that
+completes the occurrence. It reads the run's last completed `save_note` call and
+appends a `job_notes` row unless the text is unchanged.
 
-```text
-Every Friday at 09:00 Europe/London, summarize recent project conversations and deliver the result here.
-Every weekday at 09:00 Europe/London, summarize recent project conversations and post in #daily-updates.
-List my scheduled tasks.
-Show task <task-id>.
-Pause task <task-id>.
-Resume task <task-id>.
-```
+| Occurrence outcome              | Note                                                               |
+| ------------------------------- | ------------------------------------------------------------------ |
+| Completed, including `NO_REPLY` | The last saved value commits.                                      |
+| Failed or cancelled             | Unchanged, even if a cancelled run finishes later.                 |
+| Interrupted                     | Unchanged, unless recovery completes it because its run completed. |
+| Retried                         | Starts from the current note. Only the retry's own value commits.  |
+| Expired or skipped              | Unchanged.                                                         |
 
-The `poppet_tasks.manage_tasks` tool uses the existing scheduler. New tasks retain
-the current session's provider and model, with a self-contained prompt
-and an optional explicitly selected skill snapshot. They start fresh occurrence
-sessions. The agent receives the current UTC time for relative dates and should
-ask when the intended time, timezone, prompt, or task is unclear. With
-[`timeZone`](configuration.md#time-zone) set, it also receives your local time and
-uses that zone when you give none. One-off times
-must be in the future and include a UTC offset; recurring schedules require an
-explicit timezone. A receipt reports the saved ID, schedule, state, next time,
-end time, and destination.
+A note over the limit gets a tool result with its size and the limit, and the old
+note stays. The worker adds `note-updated` to the completion log line.
+`save_note` stays available after untrusted content, because change detection
+saves values derived from pages. Page text can therefore reach the next
+occurrence, but only as data under that occurrence's own restrictions.
 
-Ask for an end date to set one, for example "Every weekday at 09:00 Europe/London
-until 30 November, check the release page." The tool passes it as `endAt`, an
-absolute timestamp with an offset, on create or edit; `endAt: "none"` on edit
-clears it. The agent sets an end time only on your explicit request and should
-ask when its timezone is unclear. Receipts and `show` include `endAt`.
+Notes are task state, not part of a revision, so edits keep them.
+`tasks clear-note` appends a `cli` row with a null text, under the same
+running-occurrence check as the controls. Owners cannot write note text and chat
+cannot clear notes. `tasks show --json` returns `note` with `text`, `origin`
+(`occurrence` or `cli`), `occurrenceId`, `runId`, and `createdAt`, plus
+`noteHistory`, newest first.
 
-Messaging tasks default to "home", the configured home channel. "Here" selects
-the current conversation instead; "local" keeps results on the machine. To select
-another channel or thread, include a channel mention or its ID in your request.
-For the example above, select `#daily-updates` from Discord's channel mention picker.
-A plain channel name requires clarification. The tool passes the selected ID as
-`delivery: { conversationId: "..." }` to the current gateway, which validates the
-destination and access before saving it. Discord destinations must be in the
-configured server. Delivery rechecks access when the task finishes.
-CLI chat supports local results only; use the CLI destination flags for messaging.
-The model cannot select another gateway, account, owner, or provider.
+## Delivery
 
-Inspection uses bounded pages and flags shortened prompts or omitted occurrence
-status. Use stable task IDs to pause, resume, or delete; duplicate names need clarification.
-Pause cancels pending work and leaves active work running. Resume does not replay
-missed recurring occurrences. Use `edit`, `skip_next`, `snooze`, and `run_now` for
-the corresponding controls above. They act on the task's current state, so no
-earlier `show` is needed. A snooze uses an absolute `until` timestamp with an
-offset; ask about an unclear timezone. Each action reads only the fields it uses
-and ignores the rest. Create needs a name, prompt, schedule, and delivery; every
-action except create and list needs an ID; snooze needs `until`; and edit needs
-at least one of name, prompt, schedule, or `endAt`. A missing field fails with a message
-naming it. Ask "Delete my daily summary task" in the task's own authorized
-conversation to use `delete`; CLI chat can delete only tasks with local delivery.
-Use `poppet tasks remove` for other tasks. Deletion permanently removes the
-selected task and its occurrence history, including pending work, while
-retaining conversations and runs.
-A running occurrence prevents deletion; wait for it to finish or cancel it
-via CLI first. Retrying occurrences, cancelling active runs, and changing
-provider pauses remain CLI operations.
+`--to <gateway>` selects that gateway's home conversation. `--to
+<gateway>:<conversation-id>` selects one explicitly. Only the first colon
+separates, so the ID may contain colons. Without `--to`, results stay local. The
+adapter validates the ID and access before the task is saved. Creating a task
+through the worker, including queue wait and validation, must finish in eight
+seconds (`timeouts.taskOperationSeconds`), and a late lookup cannot save a task.
 
-Task changes and their durable tool receipts commit together. A saved change
-survives a later model failure or interrupted answer. If the task changes
-between preparing and applying a request, the tool can report that the request
-is no longer valid. Inspect `tasks list`,
-`tasks show`, or the run's tool records in `chat show` before requesting a new
-creation after an unclear result. Completed calls are not replayed. Scheduled
-runs cannot use this tool, including its read actions. Historical conversations,
-skills, pages, and tool results cannot authorize task changes. Chat cannot select
-a [manual-only skill](skills.md#files) for a task; use `tasks add --skill`.
-Poppet caps the store at 64 scheduled tasks, limits chat turns to at most 5 task
-creations per run, and requires chat-created or chat-edited recurring cron
-schedules to wait at least 5 minutes between consecutive runs. Poppet checks every
-listed minute, including the gap from the last minute of an hour to the first
-minute of the next, so `0,30 * * * *` is accepted and `0,58 9 * * *` is not.
+Each occurrence saves its own destination. Changing the home conversation affects
+new tasks only. Before sending, the gateway rechecks the bot account, owner,
+server, parent relationship, and current permissions. It never picks another
+conversation when the saved one is inaccessible. A task for a removed adapter
+keeps its history and waits for that adapter.
 
-## Deliver results to Discord
+Completed results and failure notices go into the gateway's durable delivery
+queue. Delivery is unique per occurrence and run, so a successful retry delivers
+its own result. Temporary failures retry with bounded backoff. An uncertain send
+is never resent. A delivery failure never changes a completed occurrence or
+repeats inference. With [quiet hours](configuration.md#quiet-hours), a post that
+becomes ready inside the window waits with `heldUntil` set to the window's end,
+without using attempts. `tasks show` lists a `delivery` entry per run with chunk
+states, message IDs, attempts, and `heldUntil`.
 
-Configure [Discord](gateways/discord.md) with a home channel and start
-`poppet worker run`. To deliver scheduled results there:
-
-```sh
-poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --to discord "Summarize recent conversations"
-```
-
-Use `--to discord:<channel-or-thread-id>` before the prompt to select an
-explicit destination. A running messaging worker validates access before creating the task.
-Creation through the worker must finish within eight seconds (`timeouts.taskOperationSeconds`), including queue
-waiting and destination validation. An expired lookup cannot save a task afterward.
-
-The worker validates messaging destinations and delivers results through configured
-adapters. Tasks without a messaging destination keep their results local.
-
-Each occurrence saves its destination independently of later task or channel
-configuration. Changing the home channel affects newly created tasks only. The
-worker rechecks the saved bot account, owner, server, parent relationship, and current
-channel or thread permissions before sending. It never chooses the last active
-conversation or redirects a result when its destination becomes inaccessible.
-
-Completed results and failure notices enter the gateway delivery queue, using the
-task's saved destination. `tasks show`
-includes the destination and a `delivery` array of run IDs, chunk states, message
-IDs, attempt counts, and `heldUntil`. Each delivered run has its own receipt.
-After the channel acknowledges a send, the worker records the message ID before
-finishing a graceful shutdown. An empty array means no reply has been queued. Temporary delivery failures
-retry with bounded backoff. Failed and uncertain sends remain inspectable;
-uncertain sends are not resent automatically. Inspect the saved output before
-manually reposting it. Delivery failures never change a completed occurrence or
-repeat inference, and `tasks retry` rejects completed occurrences.
-
-With [quiet hours](configuration.md#quiet-hours) set, a post that is ready inside
-the window stays pending with `heldUntil` set to the window's end, then sends.
-The worker logs the hold and its end time. A hold uses no delivery attempts.
-
-A task can stay quiet when it has nothing to report. Make the prompt conditional,
-for example "Tell me only if the page changed." When the condition is not met, the
-run answers with exactly `NO_REPLY` and nothing is posted. The occurrence still
-completes, the worker logs `completed no-action`, and `tasks show` marks it with
-`noAction: true` and keeps the saved output. An answer that mentions `NO_REPLY`
-among other text is delivered as usual. This applies to every scheduled run,
-including tasks without a messaging destination. To report only when something
-changed since the last run, keep the last value in a [task note](#task-notes).
+Results and notices are standalone posts. They never change the destination's
+session binding, history, or name.
 
 ### Failure notices
 
@@ -317,237 +275,24 @@ A failed occurrence with a messaging destination posts one fixed message:
 Scheduled task "<name>" failed (<reason code>). Inspect it with: poppet tasks show <task-id>
 ```
 
-The reason code is the failed run's saved reason, or `before-start` when the
-occurrence failed before a run existed. The notice never includes model output or
-error text. Interrupted, cancelled, and expired occurrences post nothing.
+The reason is the run's saved reason, or `before-start` when no run exists. A
+notice never includes model output or error text. It posts once per failure
+streak: a failure right after another failure posts nothing. Failures that
+finished more than 24 hours ago post nothing, and neither do interrupted,
+cancelled, or expired occurrences. A notice uses the run ID
+`notice:<occurrence-id>:<finished-at>` in the delivery queue. The delivery queue
+stops failure text that older versions queued under a failed run.
 
-Each failure streak posts once. If the task's previous finished occurrence also
-failed, the new failure is recorded without a post; a failure after a success
-posts again. Failures that finished more than 24 hours ago post nothing, so
-upgrading does not announce old failures. Notices use the same destination checks,
-retries, quiet hours, and uncertain-send handling as results. In the `delivery` array a notice
-appears with the run ID `notice:<occurrence-id>:<finished-at>`.
+## Logs and status
 
-Results and notices are standalone posts. They do not change the destination's conversation
-history, session binding, or name. A stopped gateway resumes queued delivery when
-it starts again. Already queued replies remain queued if task history is cleared.
+The worker logs starts, completions, failures, interruptions, cancellation,
+skipped intervals, task and provider pauses, and task endings, with the task name
+and occurrence ID. Failures log reason codes. Prompts and answers stay in the
+store. An idle worker logs nothing.
 
-`--to <gateway>` selects the gateway's home channel.
-`--to <gateway>:<conversation-id>` selects an explicit destination. Only the first
-colon is a separator; any remaining colons belong to the conversation ID.
-Omit `--to` to keep results local. This replaces the former `--channel` and
-`--conversation` flags.
-The selected adapter validates its conversation ID and access before the task is saved.
-Existing Discord task destinations keep their stored format. Tasks for removed adapters
-retain their history and results but cannot deliver until that adapter is available again.
-
-## Task notes
-
-Each task can keep one note: plain UTF-8 text of at most 4096 bytes that its
-scheduled runs carry from one occurrence to the next. A new task has no note.
-A note lets a task report only changes. The run compares what it finds with the
-note, saves the new value, and answers `NO_REPLY` when nothing changed:
-
-Bash / Zsh:
-
-```sh
-poppet tasks add release-watch --cron "0 9 * * *" --tz Europe/London --to discord "Read https://example.com/releases and find the newest release version. The task note holds the version you last reported. If there is no note or the version differs, save the new version as the note and tell me the new version. Otherwise reply NO_REPLY."
-```
-
-fish:
-
-```fish
-poppet tasks add release-watch --cron "0 9 * * *" --tz Europe/London --to discord "Read https://example.com/releases and find the newest release version. The task note holds the version you last reported. If there is no note or the version differs, save the new version as the note and tell me the new version. Otherwise reply NO_REPLY."
-```
-
-Each occurrence receives the task's current note in its instructions, marked as
-data an earlier occurrence saved. Its runs can call `poppet_tasks.save_note`,
-which replaces the note, or clears it when given `null`. The tool is offered only
-to that task's scheduled runs. Interactive chat and messaging do not get it, and
-it takes no task ID, so a run can write only its own task's note. Calls from
-anywhere else fail the normal permission check.
-
-A saved note takes effect only when the occurrence completes. The tool records
-the value in the run's tool journal, and completion commits the last value saved
-in the run. The run itself keeps the note it started with.
-
-| Occurrence outcome              | Note                                                                                                                                                           |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Completed, including `NO_REPLY` | The last value saved is committed.                                                                                                                             |
-| Failed                          | Unchanged.                                                                                                                                                     |
-| Interrupted                     | Unchanged. If the worker process ended after the run completed but before recording the occurrence, startup recovery marks it completed and commits its value. |
-| Cancelled                       | Unchanged, even if the run finishes after the cancellation.                                                                                                    |
-| Retried                         | The retry starts with the task's current note. Values saved by the earlier attempt are discarded; the retry's own value commits.                               |
-| Expired or skipped              | Never ran; unchanged.                                                                                                                                          |
-
-Saving the text the note already holds records nothing. A note over 4096 bytes is
-refused with a tool result that gives its size and the limit, so the run can save
-a shorter one; the previous note stays. The worker adds `note-updated` to the
-completed log line when an occurrence changes its note.
-
-The note grants nothing, and it is not [memory](memory.md): it belongs to one
-task, only that task's scheduled runs see it, and it never changes saved facts.
-URLs in a note do not count as supplied by the task prompt, so `fetch_page` will
-not read them. Bash and reviewed MCP actions are checked against the task prompt
-alone.
-Unlike task, memory, and MCP tools, `save_note` stays available after a page,
-search result, or MCP result enters the run, because change detection has to save
-values derived from that content. Page text can therefore reach the next
-occurrence through the note, but only as data, and that occurrence keeps its own
-scheduled tool restrictions.
-
-Editing a task's name, prompt, schedule, or end time keeps its note; occurrence
-snapshots do not include it. Removing or clearing tasks deletes their notes.
-
-`tasks show` prints the current note with the occurrence that saved it and when,
-or `cli` for an owner clear. JSON output has `note`, the latest change with its
-`text`, `origin` (`occurrence` or `cli`), `occurrenceId`, `runId`, and
-`createdAt`, or `null` when the task never had a note. A cleared note has a null
-`text`. `noteHistory` lists every change, newest first.
-
-Clear a note from the CLI:
-
-```sh
-poppet tasks clear-note <task-id>
-```
-
-This works with the worker running or stopped. It rejects a task with a running
-occurrence; wait for it to finish or cancel it first. Clearing a task without a
-note changes nothing. The note is task state rather than part of the definition,
-so clearing is its own command instead of a `tasks edit` flag. Owners cannot
-write note text, and chat cannot clear notes.
-
-## Select a skill
-
-Pass `--skill <name>` before the prompt to save a [local Markdown procedure](skills.md)
-with a new task. Each occurrence copies the task's saved name and text into its
-fresh session. File edits and deletion do not change existing tasks, including
-explicit retries. Create a replacement task to use updated instructions.
-`tasks show` includes the snapshot. Scheduled runs can use reviewed Bash commands. Memory writes and task management
-remain unavailable, including when a selected skill requests them. A `$name` in a
-task prompt is ordinary text; scheduled runs do not load skills from it.
-
-## Recurring schedules
-
-Use a five-field cron expression and explicit timezone, or set
-[`timeZone`](configuration.md#time-zone), for a recurring task:
-
-```sh
-poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London "Summarize recent conversations"
-```
-
-One-off timestamps require `Z` or an explicit UTC offset. Cron schedules retain
-local wall time across timezone changes. A missing local time during spring DST
-shifts forward; a repeated time during autumn DST runs once. The database stores
-times as UTC milliseconds. `show` includes final answers, run/session IDs, failures,
-and skipped intervals. Each occurrence has a fresh session, current profile and
-facts, conversation search/recall, and page reading. Returned memory calls are rejected.
-
-Scheduled runs can use `poppet_history.read_session` after a conversation search
-to read saved context around a match, or page forward with stable message IDs.
-Results are sized from the fixed 16 KiB tool-output budget, may run slightly over
-it, and mark shortened or omitted content. Recalled
-statements remain historical data and should be cited by session/message IDs.
-They cannot authorize memory or task changes, or page fetches. Reading does not resume the saved session or
-import its provider continuation. See [conversation context](chat.md#conversation-recall).
-
-## Read a supplied URL
-
-A saved task prompt can explicitly supply a public URL for `poppet_web.fetch_page`:
-
-```sh
-poppet tasks add page-summary --cron "0 9 * * *" --tz Europe/London "Summarize https://example.com/ and cite the source"
-```
-
-Each occurrence may read that URL through the same bounded [page reader](chat.md#page-reading)
-as chat. URLs mentioned only by a skill, prior conversation, or fetched page
-are not authorized. The task retains its scheduled tool restrictions; Bash commands are reviewed separately. No page cache
-or additional credentials are needed.
-
-## Missed work, pauses, and retries
-
-Catch-up follows the same forward schedule across daylight saving transitions.
-If Poppet cannot advance a saved schedule, it pauses that task and logs the
-failure while continuing to process other tasks.
-
-The worker executes one occurrence at a time. A recurring task whose most recent
-due time is within the catch-up window, 60 minutes by default, runs that time once;
-earlier and older missed times are skipped (see [worker](worker.md#sleep-and-missed-schedules)).
-When `tasks.catchUpMinutes` is `0`, missed recurring slots are also skipped after
-host sleep/wake rather than running stale occurrences.
-An overdue one-off runs once. A recurring task keeps at most one pending
-or running occurrence; additional due times are recorded as skipped intervals.
-Pending recurring summaries expire after 24 hours. One-off work never expires.
-Pausing cancels pending work and keeps previous results. An active run needs an
-explicit cancellation:
-
-```sh
-poppet tasks cancel <task-id>
-poppet tasks retry <task-id>
-```
-
-These commands take a task ID. Older CLI versions took an occurrence ID directly.
-Restart an already-running worker after upgrading to use the task-based commands.
-
-Cancel selects the task's pending or running occurrence. If none exists, it fails
-without changing the schedule. Retry selects the latest
-occurrence by scheduled time, then revision and insertion order. It fails if that
-occurrence succeeded or is still active; it never searches backward for a failure.
-Use `--occurrence <occurrence-id>` with either command to select a particular
-occurrence belonging to the task. For example:
-
-Bash / Zsh:
-
-```sh
-poppet tasks retry '<task-id>' --occurrence '<occurrence-id>'
-```
-
-fish:
-
-```fish
-poppet tasks retry '<task-id>' --occurrence '<occurrence-id>'
-```
-
-Quota failures pause scheduled requests for that provider indefinitely. The CLI
-has no command to clear a quota pause. Inspect provider pauses with `worker status`.
-Temporary and rate-limit failures delay subsequent work by 30 seconds, doubling
-after further failures up to five minutes. Status shows provider holds until
-they expire. A failed occurrence is never retried
-automatically. `retry` creates a fresh session for an unsuccessful occurrence;
-earlier runs remain available through chat inspection. Resume a paused task before
-retrying it. A cancelled one-off needs `retry`, since it has no future occurrences.
-
-## Remove a task
-
-To permanently remove one task by its ID:
-
-```sh
-poppet tasks remove <task-id>
-```
-
-This works with the worker running or stopped. It removes the selected task, its
-note, and its occurrence/skip history, including pending work, and retains conversations
-and runs. Other tasks are unaffected. If the task has a running occurrence,
-wait for it to finish or use `poppet tasks cancel <task-id>` first.
-An unknown task ID returns an error.
-
-## Clear tasks
-
-To remove every task and its occurrence/skip history:
-
-```sh
-poppet tasks clear
-```
-
-This works with the worker running or stopped. A running worker interrupts active
-work before clearing and continues serving commands. Saved chat sessions and runs,
-facts, credentials, and provider quota pauses are retained. The command
-returns the number of tasks removed, and repeating it on an empty list is safe.
-
-See [worker documentation](worker.md#foreground-worker) to run scheduling with messaging, and [task architecture](architecture.md#unattended-operation) for package ownership and execution contracts.
-
-## Occurrence session titles
-
-Each occurrence uses the task name as its session title, shortened to the same
-80-character limit as chat titles. Scheduled runs skip title inference and have
-no extra naming usage. The task prompt and scheduled tool policy stay the same.
+The task package owns status data and recent occurrence summaries. The host
+supplies `WorkerConnections` from its provider layers. Status keeps only safe
+metadata and caches it before model resolution, so it stays readable while a run
+holds ChatGPT credentials. The cached status records when it was observed. It
+reports local credentials and consent, not a live account check. The provider set
+comes from the configured provider and saved tasks.

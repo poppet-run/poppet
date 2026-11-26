@@ -344,98 +344,6 @@ their inputs without replaying them. A hard crash releases the OS-held SQLite lo
 leftover PID marker through the shared scoped lock helper. Credentials, facts, jobs, context
 assembly, and model execution are outside this store's record APIs.
 
-## Scheduled delivery
-
-Failed occurrences log a reason code and retain details in task history
-without changing their recurring schedule. Completed results and fixed failure
-notices enter the durable delivery queue. Pending failure text queued under a
-failed run by older versions is stopped before delivery. Delivery is unique per
-occurrence and run, so a successful retry can deliver its result to the task's
-saved destination. Scheduled instructions let a run with a conditional prompt
-answer with exactly `NO_REPLY` when its condition is not met. `isNoReply` from
-`@poppet/agent` matches only a whole trimmed answer. Such a run completes with a
-`completed no-action` log line and `noAction` in `tasks show`, where its saved
-output stays inspectable.
-
-## Chat task management
-
-`agent/task-tools.ts` defines `poppet_tasks.manage_tasks`, strict model arguments,
-and the narrow `ChatTasks` capability. The host supplies `ChatTasksLive` from `tasks/chat-tools.ts` to
-the agent using the existing repository, store, skills, clock, and result budget.
-The agent does not import `@poppet/tasks`, which already depends on agent skills.
-Provider packages and channel transports remain unchanged.
-
-Only interactive runs advertise the tool. All model calls, including task
-preparation, pass whole-batch validation before any tool executes. Preparation
-checks action-specific fields, existing IDs, schedules, future one-off times,
-selected skill files, and delivery authorization. The current run supplies the provider and model. Gateway code rechecks the accepted owner and resolves the
-current conversation, home channel, or an explicitly selected channel or thread ID
-through the same destination and access checks. Model arguments cannot select
-another gateway or supply account identities or permission flags. The host
-clock supplies a current UTC timestamp to help resolve relative dates. Current
-explicit user intent remains an instruction requirement, without a keyword or
-model-based permission classifier.
-
-The task service recovers state when built under the new store owner, before
-agent or scheduler work starts. Its repository command lock is also used by
-worker commands and occurrence claiming. Chat executes directly in that process
-and never reacquires the agent permit or calls its own worker socket. The existing
-timer reconciles new work. Pause and resume retain repository semantics.
-
-Task controls act on the task's current definition and, for skip/snooze/run-now,
-its current next execution: the pending occurrence if one exists, otherwise the
-unqueued `next_at` slot. Neither chat nor the CLI inspects the task first.
-`task-controls.ts` checks paused/running state, holds, expiry, and future times
-inside the same transaction as the mutation. `task-records.ts` shares
-record access with the scheduler on the owned connection. A lost worker response
-never falls back to local mutation.
-
-Each occurrence saves its definition and revision. Claiming/retrying uses that
-snapshot; a pending edit cancels and replaces the original without rewriting
-history. Snooze changes persisted `available_at`, not the cron schedule or
-logical slot, and run-now queues through normal permissions/provider holds.
-See [task controls](tasks.md#edit-and-control-the-next-execution).
-
-A recurring task's optional end time is the nullable `jobs.end_at`. `nextSlot` in
-`task-schema.ts` is the single rule: a cron slot later than the end time does not
-exist, and one exactly at it does. Every place that advances `next_at` goes
-through it (creation, reconciliation, resume, the controls, and schedule edits),
-so `next_at` is never later than `end_at` and a null `next_at` on a cron task
-means it has ended. The end time is not part of an occurrence's definition:
-changing it keeps the revision, and occurrences already queued run regardless.
-Reconciliation returns the tasks that just ran out of slots so the worker logs
-each ending once. See [end a recurring task](tasks.md#end-a-recurring-task).
-
-`Store.commitToolCall` runs the synchronous task operation and completion of its
-tool journal/message in one SQLite transaction. A tool result failure rolls back
-the mutation. Completed calls, keyed by run and call ID, return their saved result
-without executing again; this is the only replay protection for task changes.
-Committed changes survive later inference failure, and uncertain storage outcomes remain inspectable
-without automatic replay. List uses bounded ID-cursor queries; show limits recent
-occurrences and shortens prompts within the serialized tool budget. No model
-answers or unbounded occurrence history are returned by inspection.
-
-## Task notes
-
-`agent/task-note.ts` defines `poppet_tasks.save_note`, its 4096-byte limit, and the
-instructions that carry the current note. `SendOptions.taskNote` supplies the note
-text; the conversation offers the tool and adds the note only when that option is
-set on a scheduled run. `executeOccurrence` reads the task's latest `job_notes`
-row and passes it. The note goes into the instructions as JSON, not into the user
-message, so it never grants `fetch_page` URLs or reaches the Bash reviewer.
-
-The tool writes nothing itself. Its arguments and result are the run's tool
-journal entry. `TaskRepository.finish` commits the note in the same transaction
-that moves a running occurrence to completed: it reads the run's last completed
-built-in `save_note` call and appends a `job_notes` row unless the text is
-unchanged. Failed, interrupted, and cancelled occurrences never reach that path.
-Startup recovery completes an occurrence whose run completed through the same
-function, so its note commits too. The tool is not withdrawn after untrusted
-content, since change detection saves values derived from fetched pages.
-
-`tasks clear-note` appends a `cli` row under the same running-occurrence check as
-other task controls. See [task notes](tasks.md#task-notes).
-
 ## Current authentication flow
 
 `CredentialStoreLive` owns the shared storage lock while any of its builds in the
@@ -536,23 +444,6 @@ acquired, a leftover regular marker is replaced without checking PID liveness,
 including when its PID has been reused. Invalid marker files fail closed. Lock
 databases are protected and are never removed while an owner might hold them.
 They contain no user credentials or records.
-
-The task package owns status data and recent occurrence summaries. The host
-supplies `WorkerConnections` through its registered provider layers. Status
-whitelists safe metadata and caches it before model resolution so it remains
-available while ChatGPT credentials are owned by an active run. Cached status
-includes its observation time. This reports local credentials and consent, not
-live account verification. Running and stopped status derive their provider set
-from the configured provider and saved tasks. Task results and tool permissions use the existing
-store and agent behavior. No second runner or service implementation is added.
-
-Scheduling uses wall-clock UTC times and a one-second wake timer. With the default
-60-minute catch-up window, a delayed timer or restart queues the most recent missed cron
-slot once if it is still within the window, and records earlier slots as skipped.
-Setting `tasks.catchUpMinutes` to zero makes startup skip missed cron work and
-a delayed timer queue the earliest due slot. Overdue one-offs run once. Expiry,
-quota pauses, and explicit retry rules remain in the task package. Native startup and physical sleep/wake need manual
-validation in addition to injected lifecycle and clock tests.
 
 ## Worker host
 
