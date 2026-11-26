@@ -480,59 +480,6 @@ content, since change detection saves values derived from fetched pages.
 `tasks clear-note` appends a `cli` row under the same running-occurrence check as
 other task controls. See [task notes](tasks.md#task-notes).
 
-## Explicit memory
-
-`@poppet/memory` owns the `Memory` service, fact and snapshot schemas, and
-`MemoryError`. Its operations are `snapshot`, `list`, `remember`, `replace`, and
-`forget`. `LocalMemoryLive` implements these operations by appending to
-`memory_revisions`, reading current facts from the `memories` view, and using editable `<data directory>/profile.md` and `soul.md` files.
-It retains up to 128 facts of at most 4096 UTF-8 bytes each.
-
-The store owns database acquisition; the memory package owns its schema. `StoreLive`
-also exposes the shared Effect `SqlClient`, allowing the CLI to supply one connection and
-owner lock to conversation storage and local memory. The memory implementation
-owns fact SQL; the conversation `Store` has no memory operations or dependency on
-the memory package.
-
-The CLI manages facts through `Memory` without constructing a model provider or
-requiring a model. The agent asks for one snapshot at run start, passing the chat
-policy's personality, profile, and fact limits. The local implementation enforces
-these limits while reading data and returns personality and profile text and keyed
-values without provenance.
-Context files are optional, bounded, and reject non-regular files, symlinks, invalid
-UTF-8, and NUL bytes. All three budgets default to 8 KiB; exceeding them fails before
-model-provider resolution. Empty memory preserves the base instructions.
-
-`soul.md` is included as personality and tone guidance, subject to the base tool
-and file access rules. Missing, empty, or whitespace-only personality files preserve
-the default personality. The profile and keyed values are serialized into the
-prompt as personal context. Metadata such as source runs and timestamps stays in
-the store. This prompt is
-kept throughout the tool loop and included in every context-size estimate. The
-next run reads fresh memory even when continuing an existing session. Tool-capable chat can use `poppet_memory.memory`
-for explicitly requested remember, replace, and forget operations. Forgetting affects future memory
-snapshots; it does not erase prior messages.
-
-`agent/memory-tools.ts` validates the namespaced model arguments using the shared
-key/value schemas and dispatches through `Memory`. A fixed object schema requires
-`action`, `key`, and nullable `value`; the decoder checks their action-specific
-relationship and rejects extra properties, including forged provenance. The host
-supplies the active run ID for remember/replace, preflights the next fact snapshot,
-and returns a compact acknowledgement within the tool-result budget. Instructions
-require an explicit current-user request; semantic intent is interpreted by the
-model rather than a keyword scanner or an extra confirmation interface.
-
-The existing tool journal records memory calls before dispatch. A mutation and
-its durable result finish together under graceful cancellation. Storage uncertainty
-or failure to persist a committed result never causes automatic replay. A completed
-fact change survives a later run failure. `origin: "scheduled"` removes memory writes from scheduled requests; fabricated calls fail the normal permission
-check before execution. This extends the existing policy without changing storage
-schemas, provider code, or the worker protocol.
-
-Prompt formatting and overall context limits stay in the agent. The CLI selects
-the local memory layer directly; an alternate implementation can supply `Memory`
-without changing the agent or command handlers. No memory-provider registry is needed.
-
 ## Current authentication flow
 
 `CredentialStoreLive` owns the shared storage lock while any of its builds in the

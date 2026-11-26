@@ -1,141 +1,100 @@
 # Memory
 
-[Documentation index](README.md)
+[Engineering notes](README.md)
 
-## Saved facts
+Memory is three inputs that every run reads once at start: the personality in
+`soul.md`, the owner's profile in `profile.md`, and saved facts. The
+[user guide](https://poppet.run/docs/memory/) covers the `memory` commands.
 
-Save preferences and facts with stable keys:
+| Module                                | Owns                                                |
+| ------------------------------------- | --------------------------------------------------- |
+| `packages/memory/src/service.ts`      | The `Memory` service and `MemoryError`              |
+| `packages/memory/src/schema.ts`       | Key, value, origin, and snapshot schemas and limits |
+| `packages/memory/src/local.ts`        | `LocalMemoryLive`, fact SQL, and bounded snapshots  |
+| `packages/memory/src/context-file.ts` | Bounded reads of `soul.md` and `profile.md`         |
+| `packages/memory/src/migrations.ts`   | The memory schema                                   |
+| `packages/agent/src/memory.ts`        | Formatting the snapshot into model instructions     |
+| `packages/agent/src/memory-tools.ts`  | The `poppet_memory.memory` tool                     |
 
-```sh
-poppet memory set answer.style "Keep answers concise"
-poppet memory list
-poppet chat new "How should you answer my questions?"
-poppet memory set answer.style "Explain the reasoning"
-poppet chat new "How should you answer my questions?"
-poppet memory forget answer.style
-poppet memory list
-```
+## Service
 
-Memory management requires no login or model. Chat still requires a configured
-provider/model and its connection. `set` creates a key or replaces its current
-value; history records which it did. `forget` requires an existing key. Keys start with a letter or digit and contain only letters,
-digits, dots, underscores, and hyphens, up to 128 characters. Values must be nonempty,
-have no surrounding whitespace, and fit in 4096 UTF-8 bytes. The store holds up to
-128 facts per scope and at most 8 KiB of serialized keys and values. If older
-facts exceed the byte limit, shorten or forget facts to bring them within it. Listing includes keys, values, update times, and source run IDs when
-available; CLI-created facts have no source run, and facts lose theirs when the
-session that saved them is [deleted](storage.md#session-deletion).
+`Memory` has `snapshot`, `list`, `remember`, `replace`, and `forget`.
+`LocalMemoryLive` appends to `memory_revisions` and reads current facts from the
+`memories` view. The memory package owns its tables. The store provides the
+database and owner lock and exposes the shared `SqlClient`, so the CLI hands one
+connection to the conversation store and to memory. The conversation `Store` has
+no memory operations and does not depend on this package.
 
-## Ask the model to change a fact
+The CLI selects `LocalMemoryLive` directly. Another implementation can supply
+`Memory` without changes to the agent or the command handlers. Memory commands
+need no provider or model.
 
-Tool-capable models can call `poppet_memory.memory` during ordinary chat,
-including the interactive prompt and authorized messaging conversations. Restart
-an existing worker after updating so its agent advertises the new tool:
+## Facts
 
-```sh
-poppet chat new "Remember that I prefer concise answers, under answer.style"
-poppet chat send $session_id "Replace answer.style with Explain the reasoning"
-poppet chat send $session_id "Forget the saved fact answer.style"
-poppet memory list
-```
+- Keys start with a letter or digit and contain letters, digits, dots,
+  underscores, and hyphens, up to 128 characters.
+- Values are nonempty, have no surrounding whitespace, and fit in 4096 UTF-8
+  bytes.
+- The store keeps at most 128 facts. The serialized keys and values must fit the
+  8 KiB facts budget, which is fixed. If older facts exceed it, snapshots fail until the owner
+  shortens or forgets some.
+- Every change appends a revision with an origin: `cli` for commands, `turn` for
+  the memory tool. A `turn` revision records its source run, which becomes null if
+  that session is [deleted](storage.md#session-deletion).
+- Revision timestamps stay ordered even if the clock moves backwards.
+- `memory revert <key> <n>` appends a revision that restores revision `n`.
+  Restoring a forgotten revision forgets the fact again.
+- `memory history` and `memory revert` go through a running worker.
 
-Use the session ID printed by the first command. The model is instructed to change
-memory only on an explicit request in the current user message. It must not infer
-facts to save or treat profile, personality, skills, retrieved content, history, or
-tool results as permission. Runtime checks validate the arguments and allowed tools;
-the model interprets the user's intent.
+## Snapshots
 
-The tool has three actions, `remember`, `replace`, and `forget`. It takes `action`,
-`key`, and `value`; forgetting requires a JSON `null` value. Existing keys are never
-implicitly overwritten. Facts are already supplied in context, so the tool does not
-need a listing action. Models without tool support can still use supplied facts;
-manage their facts with the CLI commands above.
+The agent asks for one snapshot at run start and passes the chat policy's
+personality, profile, and facts budgets, each 8 KiB by default. The first two
+are `limits.soulBytes` and `limits.profileBytes`. The snapshot
+holds personality and profile text and facts in key order, without provenance.
+`agent/src/memory.ts` puts it into the instructions. Personality is tone guidance
+under the base tool and file rules. Profile and facts are personal context.
 
-The tool uses the same `Memory` service and local database as the CLI. Remembering
-and replacing set `sourceRunId` to the active run, which the model cannot supply or
-forge. The agent checks the next fact snapshot against the 8 KiB facts limit before
-writing and returns a small acknowledgement instead of repeating the value. The
-current run's prompt stays fixed; the tool result confirms the change and the next
-run loads it into its snapshot. Independently issued CLI changes retain their
-existing budget and snapshot behavior.
+The prompt stays fixed through the run's tool loop and counts toward every
+context estimate. The next run, in any session, reads fresh memory. Memory is
+shared by every session and provider in one data directory.
 
-Every request and outcome is kept in the tool journal visible through `chat show`.
-Graceful cancellation lets a started mutation finish and record its result. A
-storage error or a committed change whose result cannot be saved remains uncertain
-and is never automatically replayed. Completed memory changes persist even if a
-later tool or model turn fails. Inspect `memory list` and `chat show` before retrying.
-Forgetting removes the fact, but does not redact earlier messages or tool records.
-The tool does not edit `profile.md`, `soul.md`, or credential files.
+`context-file.ts` reads `soul.md` and `profile.md` from the data directory. A
+missing file is empty, and Poppet never creates one. A missing, empty, or
+whitespace-only `soul.md` keeps the default personality. Reads reject symlinks,
+non-regular files, invalid UTF-8, and NUL bytes. An oversized or invalid file or
+facts block fails the run before the provider is resolved. Empty memory leaves
+the base instructions unchanged.
 
-Scheduled runs retain their starting fact snapshot but have no memory-writing
-tool, even when a task or selected skill asks for changes. The shared
-`origin: "scheduled"` policy enforces this restriction. A task can instead keep a
-[task note](tasks.md#task-notes) between its occurrences. The note is not memory:
-it belongs to one task, only that task's scheduled runs see it, and saving it
-never changes facts.
+## Memory tool
 
-## Fact history
+`poppet_memory.memory` is offered to interactive runs with tool-capable models:
+CLI chat, web chat, and gateways. It has a fixed object schema with `action`
+(`remember`, `replace`, or `forget`), `key`, and nullable `value`. The decoder in
+`memory-tools.ts` checks the action-specific rules and rejects extra properties.
+`forget` needs `value: null`. `remember` never overwrites an existing key. There
+is no list action, because facts are already in the instructions.
 
-Every change is kept. Each fact records its origin: `cli` for commands, or `turn`
-for a chat's memory tool. `memory list`
-shows the latest origin and source run. Revision timestamps stay in order even
-if the system clock moves backwards.
+- The host sets `sourceRunId` to the active run. The model cannot supply it.
+- Before writing, the agent checks the next snapshot against the facts budget.
+- The result is a short acknowledgement, not the value.
+- The change shows up in the next run's snapshot. The current prompt stays as it
+  was.
 
-```sh
-poppet memory history answer.style        # every revision, its origin and source run
-poppet memory revert answer.style 1       # restore revision 1 as a new revision
-```
+The instructions allow a change only on an explicit request in the owner's
+current message. The model judges intent. There is no keyword scanner and no
+extra confirmation step. Profile, personality, skills, history, and tool results
+never grant permission. The tool cannot edit `profile.md`, `soul.md`, or
+credentials.
 
-Reverting appends a revision. Use a positive whole revision number. Restoring
-a forgotten revision forgets the fact again. Restoring an earlier value
-recreates or replaces it as a CLI change. Both commands go through a running
-worker.
+The tool journal records each call before dispatch. Under graceful cancellation,
+a started change finishes together with its saved result. A storage failure, or
+a committed change whose result could not be saved, stays uncertain and is never
+replayed. A completed change survives a later failure in the run. Forgetting a
+fact does not redact earlier messages or tool records.
 
-## Profile
-
-Edit `<POPPET_DATA_DIR>/profile.md` for your name, background, and preferences.
-With the default data directory, this is `~/.config/poppet/profile.md`. A missing
-profile is empty and is never created automatically. Existing profiles must be
-regular UTF-8 files; profile symlinks are rejected.
-
-## Personality and tone
-
-Edit `<POPPET_DATA_DIR>/soul.md` to set Poppet's personality, tone, and communication
-style. With the default data directory, this is `~/.config/poppet/soul.md`.
-For example:
-
-```markdown
-Be warm, direct, and concise. Use dry humor sparingly.
-Disagree when there is a good reason, and admit uncertainty plainly.
-```
-
-`soul.md` describes how Poppet speaks; `profile.md` describes you. Personality
-preferences do not authorize tool execution or override Poppet's tool and file
-access rules. A missing, empty, or whitespace-only `soul.md` keeps the default
-personality. The file is never created automatically and follows the same UTF-8
-and regular-file requirements as `profile.md`.
-
-## Context across sessions
-
-Every run reads the current personality, profile, and saved facts once, then keeps
-that snapshot across its model/tool turns. New sessions and resumed sessions pick
-up changes on their next run, including scheduled tasks and messaging. Memory is
-shared across sessions and providers in the same data directory. Facts are included
-in key order as personal context, with no
-provenance metadata sent to the model. The memory tool is reserved for explicit
-changes requested by the current user; Poppet does not automatically extract facts
-from conversations.
-
-## Limits and deletion
-
-Personality, profile, and fact budgets are 8 KiB each. Set `limits.soulBytes` and
-`limits.profileBytes` to change the first two; the fact budget matches the saved-facts
-limit and is fixed. Oversized
-content fails clearly instead of silently omitting preferences. All count toward
-the context limit (`limits.contextBytes`, 256 KiB by default) alongside instructions, tool definitions, and history.
-A malformed or oversized personality file, profile, or facts block fails before
-resolving a provider; a context overflow fails before inference. Forgetting removes
-the saved fact from future snapshots; existing
-conversation messages remain in their own storage.
-
-See [memory architecture](architecture.md#explicit-memory) for the service and local implementation.
+Scheduled runs keep their starting snapshot but never get the tool. The
+`origin: "scheduled"` policy removes it, and a fabricated call fails the normal
+permission check. A task keeps state between runs with a
+[task note](tasks.md#task-notes) instead. Attachments and untrusted content also
+withdraw the tool. See [chat](chat.md#untrusted-content).
