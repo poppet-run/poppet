@@ -1,59 +1,63 @@
 # Development
 
-[Documentation index](README.md)
+[Engineering notes](README.md)
 
 ## Commands and tooling
 
-Use Bun 1.4.4, pinned in `mise.toml` and `package.json`.
+Bun 1.4.4 is pinned in `mise.toml` and `package.json`.
 
 ```sh
 bun install --frozen-lockfile
 bun link
 poppet --help
-poppet config
 bun run check
 ```
 
 `bun link` adds `poppet` to Bun's global bin directory and points it at this
 checkout, so source changes take effect without linking again. Bun must be on
-`PATH` outside the checkout. With mise and no global Bun, run `mise use -g
-bun@1.4.4` once. Use a disposable `POPPET_DATA_DIR` while developing so your own
-data stays untouched. `bun unlink` removes the command.
+`PATH` outside the checkout. With mise and no global Bun, run
+`mise use -g bun@1.4.4` once. Use a disposable `POPPET_DATA_DIR` while developing
+so your own data stays untouched. `bun unlink` removes the command.
 
-The workspaces and their responsibilities are listed in
-[architecture](architecture.md#workspaces). Skills live inside `@poppet/agent`.
-`bun run format` formats files with Oxfmt.
-`bun run lint:fix` applies safe Oxlint fixes. `bun run check` checks formatting,
-linting, types, the production web build, and Bun tests. GitHub Actions runs the
-same checks on pushes and pull requests. Bun's built-in type checker covers the root
-tooling configs and `@poppet/web`. The CLI and workspace packages run the Effect-patched
-TypeScript compiler from `@effect/tsgo` (`effect-tsgo tsc`), so TypeScript errors, floating
-Effects, Effect warnings, and Effect errors all fail the check. The plugin options live in
-`tsconfig.base.json`; suggestions are left to the
-editor, and the unstable `effect/cli`, `effect/sql`, `effect/Terminal`, `effect/reactivity`,
-`@effect/platform-bun`, and `@effect/sql-sqlite-bun` modules are allowed because Poppet is
-built on them. TypeScript stays installed for editor support. To check one
-workspace, use `bun run --filter '@poppet/config' typecheck`
-or `bun run --filter '@poppet/provider-openai' test`.
+| Command                                           | Does                                                           |
+| ------------------------------------------------- | -------------------------------------------------------------- |
+| `bun run check`                                   | Format check, lint, types, the production web build, and tests |
+| `bun run format`                                  | Formats files with Oxfmt                                       |
+| `bun run lint:fix`                                | Applies safe Oxlint fixes                                      |
+| `bun run test <path>`                             | Runs focused tests                                             |
+| `bun run --filter '@poppet/config' typecheck`     | Type-checks one workspace                                      |
+| `bun run --filter '@poppet/provider-openai' test` | Tests one workspace                                            |
+
+GitHub Actions runs `bun run check` on pushes and pull requests. The CLI and the
+packages type-check with the Effect-patched compiler from `@effect/tsgo`
+(`effect-tsgo tsc`), so TypeScript errors, floating Effects, and Effect warnings
+and errors all fail the check. Bun's type checker covers `@poppet/web` and the
+root tooling configs. The plugin options live in `tsconfig.base.json`. Editor
+suggestions are not enforced. The unstable `effect/cli`, `effect/sql`,
+`effect/Terminal`, `effect/reactivity`, `@effect/platform-bun`, and
+`@effect/sql-sqlite-bun` modules are allowed, because Poppet is built on them.
+TypeScript stays installed for editor support. The workspaces are listed in
+[architecture](architecture.md#workspaces).
 
 ## Commit hook and agent guard
 
-`bun install` runs `lefthook install` in local Git checkouts (skipped when `CI` is set or
-`.git` is absent), which adds a pre-commit hook that runs
-`bun run check` (see `lefthook.yml`). A failing check blocks the commit.
+`bun install` runs `lefthook install` in a Git checkout, unless `CI` is set or
+`.git` is missing. The pre-commit hook in `lefthook.yml` runs `bun run check`,
+and a failing check blocks the commit.
 
-`tools/hooks/hook-bypass.ts` refuses shell commands that skip or disable that hook:
-`--no-verify` and its abbreviations on any Git command, `git commit -n`, `LEFTHOOK=0`,
-`LEFTHOOK_EXCLUDE`, `HUSKY=0`, `core.hooksPath` overrides through `git -c`, `git config`,
-or `GIT_CONFIG_*` variables, `lefthook uninstall`, and writes under `.git/hooks`, including
-inside `sh -c`, `bash -c`, `eval`, and command substitutions. Claude Code
-(`.claude/settings.json`), Cursor (`.cursor/hooks.json`), and Codex (`.codex/hooks.json`)
-run it before each shell command. Cursor and Codex run project hooks only in a trusted
-workspace, and Codex asks you to review new or changed hooks with `/hooks`.
+`tools/hooks/hook-bypass.ts` refuses shell commands that skip or disable the hook:
 
-The guard only stops agents inside those harnesses. A terminal still honours every
-bypass, so CI runs the same checks on every pull request. To check the guard, pipe a
-command into it:
+- `--no-verify` and its abbreviations on any Git command, and `git commit -n`;
+- `LEFTHOOK=0`, `LEFTHOOK_EXCLUDE`, and `HUSKY=0`;
+- `core.hooksPath` overrides through `git -c`, `git config`, or `GIT_CONFIG_*`;
+- `lefthook uninstall`, and writes under `.git/hooks`;
+- any of these inside `sh -c`, `bash -c`, `eval`, or command substitution.
+
+Claude Code (`.claude/settings.json`), Cursor (`.cursor/hooks.json`), and Codex
+(`.codex/hooks.json`) run it before each shell command. Cursor and Codex run
+project hooks only in a trusted workspace, and Codex asks for review of new or
+changed hooks with `/hooks`. The guard stops agents only. A terminal still honours
+every bypass, which is why CI runs the same checks. To try the guard:
 
 ```sh
 echo '{"tool_input":{"command":"git commit --no-verify"}}' | bun tools/hooks/hook-bypass.ts
@@ -63,29 +67,28 @@ It prints the refusal and exits with status 2.
 
 ## Isolated tests
 
-Use `bun run test` for the suite or `bun run test <path>` for focused tests.
-The test runner starts Bun with an empty environment, a temporary home, and dotenv
-loading disabled. It blocks external HTTP requests and system commands, and passes
-the same guards to CLI subprocesses. Workspace test scripts use this runner too.
-Direct `bun test` is rejected unless the isolation runner started it.
+`bun run test` runs the suite, and `bun run test <path>` runs focused tests.
+`tools/testing/run.ts` starts Bun with an empty environment, a temporary home,
+and dotenv loading off. It blocks external HTTP requests and system commands, and
+passes the same guards to CLI subprocesses. Workspace test scripts use it too,
+and a direct `bun test` is rejected. The root command runs four workers with at
+most two concurrent tests each.
 
-Name each test file after an existing source module. Test current functions and
-services through behavior users rely on, including permissions, saved data,
-cancellation, and recovery. Keep shared protocol contract tests at the public
-entry point. Avoid tests of test scaffolding or dependency bookkeeping.
+- Name each test file after an existing source module.
+- Use `describe` for the exact source file, function, method, or type under test.
+- Name each `test` as `when <condition>, <expected result>`. Keep parameter
+  values in table-driven names so a failure names its case.
+- Test behaviour that callers rely on, such as permissions, saved data,
+  cancellation, and recovery, through package services with explicit inputs and
+  local fixtures. Keep shared protocol contract tests at the public entry point.
+- CLI tests call `makeCLI` in-process for routing and output. Use subprocess tests
+  only for process behaviour: stdin, terminal requirements, exit codes, signals,
+  and worker ownership.
+- Do not test test scaffolding or dependency bookkeeping.
 
-Use `describe` for the exact source filename, function, method, or type under test.
-Name each `test` as `when <condition>, <expected result>`, keeping parameter values
-in table-driven names so failures identify the case.
-
-Prefer testing behaviour through package services with explicit inputs and local
-fixtures. CLI tests call `makeCLI` in-process for command routing and output.
-Keep subprocess tests for process behaviour such as stdin, terminal requirements,
-exit codes, signals, and worker ownership. The isolation runner applies to all
-tests, including package tests that launch subprocesses.
-
-The root test command uses four workers and at most two concurrent tests per
-worker.
+Provider suites share local OAuth and model servers in
+`packages/provider-openai/src/test/fixtures`, with signed test identities and
+fake model streams. Storage tests use temporary SQLite databases.
 
 ## Store migrations
 
@@ -101,34 +104,39 @@ migrations run.
 
 The Oxfmt config is based on
 [Memoir's configuration](https://github.com/tombell/memoir-app). Oxlint extends
-[`@cloudflare/oxlint-config`](https://github.com/cloudflare/oxlint-config), which disables
-category defaults and enables rules explicitly as errors. Type checking also covers the
-configuration files.
+[`@cloudflare/oxlint-config`](https://github.com/cloudflare/oxlint-config), which
+turns off category defaults and enables rules one by one as errors. Oxlint runs
+type-aware rules through `oxlint-tsgolint` with each workspace's `tsconfig.json`.
+Type checking also covers the configuration files.
 
-Oxlint runs type-aware rules through `oxlint-tsgolint`, using each workspace's
-`tsconfig.json`. A few preset rules are adjusted for this stack: `react/no-unknown-property` and
-`react/immutability` stay off because `apps/web` uses Preact without React Compiler,
-`react-hooks/rules-of-hooks` and JSX attribute `typescript/no-misused-promises` are scoped to
-`apps/web`, `unicorn/prefer-top-level-await` stays off because it flags `Effect.catch()`,
-`@nkzw/no-instanceof` stays off for Web API and error/transport narrowing, and
-`unicorn/catch-error-name` allows `cause` alongside `error`. Test files turn off
-`typescript/await-thenable` (Bun types async matchers as returning `void`) and the remaining
-`typescript/no-unsafe-*` rules.
+Rules adjusted for this stack:
+
+| Rule                                               | Setting and reason                                  |
+| -------------------------------------------------- | --------------------------------------------------- |
+| `react/no-unknown-property`, `react/immutability`  | Off. `apps/web` uses Preact without React Compiler. |
+| `react-hooks/rules-of-hooks`                       | Scoped to `apps/web`.                               |
+| `typescript/no-misused-promises` on JSX attributes | Scoped to `apps/web`.                               |
+| `unicorn/prefer-top-level-await`                   | Off. It flags `Effect.catch()`.                     |
+| `@nkzw/no-instanceof`                              | Off, for Web API, error, and transport narrowing.   |
+| `unicorn/catch-error-name`                         | Allows `cause` as well as `error`.                  |
+| `typescript/await-thenable` in tests               | Off. Bun types async matchers as returning `void`.  |
+| `typescript/no-unsafe-*` in tests                  | Off.                                                |
 
 Oxlint also enforces the generic and Effect rules from
 [anti-slop](https://github.com/dmmulroy/anti-slop), vendored under
-`tools/oxlint/anti-slop/`. These rules are errors. Rules that `@nkzw/oxlint-config` already
-ships as `quality/*` come from that config instead, so only the rest are vendored. Keep
-`@oxlint/plugins` and Oxlint at the same pinned version. See the
-[upstream record](../tools/oxlint/anti-slop/UPSTREAM.md)
-for the source revision and update notes. Vendored code and agent tooling are
-excluded from linting and formatting.
+`tools/oxlint/anti-slop/`, as errors. Rules that `@nkzw/oxlint-config`, which the
+Cloudflare preset builds on, already ships as `quality/*` come from there, so
+only the rest are vendored. Keep `@oxlint/plugins` and Oxlint on the same pinned
+version. The [upstream record](../tools/oxlint/anti-slop/UPSTREAM.md) has the
+source revision and update notes. Vendored code and agent tooling are excluded
+from linting and formatting.
 
 ## Source layout
 
-Commands with supporting modules live under `src/commands/<command>/`, with
-`command.ts` defining the command tree and tests alongside the modules they cover.
-Shared CLI code stays in `src/`; shared command helpers stay in `src/commands/`.
+Commands with supporting modules live in `src/commands/<command>/`, where
+`command.ts` defines the subcommands and tests sit beside the modules they cover.
+Shared CLI code is in `src/`, and shared command helpers are in `src/commands/`.
+Each package's `src/index.ts` lists its exports.
 
 ```text
 apps/
@@ -272,20 +280,6 @@ tools/
   oxlint/anti-slop/         Vendored lint rules
   testing/                  Isolated test runner
 ```
-
-Each workspace declares its own dependencies. Imports between workspaces use
-package names and their explicit exports. Internal imports use `#src/*`, mapped
-to `./src/*.ts` by each workspace's `package.json`. For example,
-`#src/auth/service` resolves to that workspace's `src/auth/service.ts`.
-Shared TypeScript options live in `tsconfig.base.json`. Formatting,
-linting, CI, and the lockfile remain at the root.
-
-Auth tests use a local OAuth server with signed test identities and fake model
-streams. Tests sit beside each capability. Provider suites share fixtures under
-`packages/provider-openai/src/test/fixtures`.
-They do not access a ChatGPT account. Storage tests use temporary SQLite databases.
-See the
-[architecture notes](architecture.md) for the service boundaries.
 
 ## Adding a provider
 
