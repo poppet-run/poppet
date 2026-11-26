@@ -41,6 +41,7 @@ const settledColor = (state: ApprovalState) => {
       return DENIED_COLOR;
     case "expired":
     case "cancelled":
+    case "superseded":
     case "unavailable":
       return SETTLED_COLOR;
   }

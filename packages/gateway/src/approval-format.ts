@@ -65,6 +65,8 @@ export const formatApprovalStatus = (state: ApprovalState) => {
       return "Expired";
     case "cancelled":
       return "Cancelled";
+    case "superseded":
+      return "Superseded by a newer message";
     case "unavailable":
       return "No longer available";
   }

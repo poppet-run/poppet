@@ -114,8 +114,11 @@ The gateway checks every message and control against the configured owner and
 scope before it creates a session or calls the model. Bot and webhook messages
 are ignored. `/status`, `/cancel`, `/approve`, and `/deny` are control messages:
 they resolve at once, outside the inbox, and only for the current conversation.
-`/cancel` stops the conversation's queued and active requests that were accepted
-before it, and releases their slots. `/new` goes through the inbox. See
+`/approve`, `/deny`, and native approval buttons record the owner's decision in
+the store and wake the dispatcher without running the model in the control
+handler. `/cancel` stops the conversation's queued, waiting, and active requests
+that were accepted before it, ends any pending approval, and releases their
+slots. `/new` goes through the inbox. See
 [skills](skills.md#gateway-sessions).
 
 Accepted messages are deduplicated by adapter, bot account, and external message
@@ -144,12 +147,21 @@ no earlier entry in its conversation is queued or executing. It runs up to
 `chat.maxConcurrentRequests` requests in a fiber set and reserves no slots of its
 own. Each finished request wakes the dispatcher.
 
-On restart, recovery reads the saved run. An input that never started can run. An
-interrupted run follows the store's no-replay rule and needs a new message. A
-completed answer is recovered without another request. Shutdown interrupts active
-requests and leaves them `executing` for recovery. A disconnect does not cancel
-accepted work. An adapter that fails restarts on its own, and a storage failure
-stops the worker.
+When a run parks for owner approval, its inbox entry moves to `waiting` and
+holds no slot, and the gateway posts the approval prompt. Once the owner answers,
+the entry returns to `queued` and the dispatcher calls `Agent.resume` under the
+usual slots, delivering the answer through the entry's chunked delivery. A new
+owner message in the same session supersedes a waiting run, interrupts it, and
+updates its prompt to say so.
+
+On restart, recovery reads the saved run. An input that never started can run. A
+waiting run stays `waiting`, and reconciliation posts any unsent prompt for a
+live approval, requeues any decided approval that has not resumed yet, and
+updates prompts for settled approvals. An interrupted run follows the store's
+no-replay rule and needs a new message. A completed answer is recovered without
+another request. Shutdown interrupts active requests and leaves them `executing`
+for recovery. A disconnect does not cancel accepted work. An adapter that fails
+restarts on its own, and a storage failure stops the worker.
 
 Adapter timeouts come from `io/src/settings.ts`: platform API requests
 (`timeouts.gatewayRequestSeconds`, 10), the wait before reconnecting

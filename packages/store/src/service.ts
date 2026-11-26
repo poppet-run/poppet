@@ -143,9 +143,11 @@ export const StoreLive = Layer.effect(
     const records = storeRecords(sql);
     const { transaction } = records;
 
-    // Waiting runs and their calls survive a new owner, which can still resume them.
+    // Waiting runs, and decided runs not yet resumed, survive a new owner with their calls.
     const parked = (column: string) =>
-      sql`${sql(column)} NOT IN (SELECT run_id FROM approvals WHERE state = 'pending')`;
+      sql`${sql(column)} NOT IN (SELECT a.run_id FROM approvals a JOIN tool_calls c
+        ON c.run_id = a.run_id AND c.call_id = a.call_id
+        WHERE a.state = 'pending' OR (a.state IN ('approved', 'denied') AND c.status = 'pending'))`;
 
     yield* transaction(
       Effect.gen(function* () {

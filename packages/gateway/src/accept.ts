@@ -38,7 +38,15 @@ const controlReply = (
 
       yield* claims.withPermit(
         Effect.gen(function* () {
-          yield* repo.cancel(adapter.id, entry.account, message.scopeId, conversation, entry.id);
+          for (const runId of yield* repo.cancel(
+            adapter.id,
+            entry.account,
+            message.scopeId,
+            conversation,
+            entry.id,
+          )) {
+            yield* controls.approvals.end(runId, "cancelled");
+          }
 
           for (const request of requests.values()) {
             if (

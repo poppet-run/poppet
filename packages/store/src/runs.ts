@@ -153,7 +153,8 @@ export const runOperations = (sql: SqlClient.SqlClient, records: StoreRecords) =
         const finishedAt = Math.max(at, run.createdAt, run.startedAt ?? 0);
 
         if (terminal.status !== "completed") {
-          yield* sql`UPDATE approvals SET state = 'cancelled', decided_at = ${finishedAt}
+          yield* sql`UPDATE approvals SET decided_at = ${finishedAt},
+              state = ${terminal.reason === "superseded" ? "superseded" : "cancelled"}
               WHERE run_id = ${id} AND state = 'pending'`;
           yield* interruptTools(id, finishedAt, terminal.reason);
           yield* sql`UPDATE runs SET status = ${terminal.status}, finished_at = ${finishedAt},

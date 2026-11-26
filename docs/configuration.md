@@ -70,9 +70,10 @@ Timeouts and size limits are in their own sections. See
 provider and model when these defaults change. The retired `browser` key is
 ignored. `webSearch` and `webSearchProvider` are unknown fields and fail.
 
-A request waiting for owner approval keeps its slot until the approval expires.
-Concurrent ChatGPT requests share one credential lock, so `provider login` and
-`logout` in another terminal report the store as busy until no request runs.
+A request waiting for owner approval parks and releases its slot until the owner
+answers. Concurrent ChatGPT requests share one credential lock, so
+`provider login` and `logout` in another terminal report the store as busy until
+no request runs.
 
 ## Time zone
 
@@ -98,26 +99,26 @@ are in seconds, and `Bytes` fields count bytes.
 }
 ```
 
-| Field                                | Default | Range      | Purpose                                                                                |
-| ------------------------------------ | ------- | ---------- | -------------------------------------------------------------------------------------- |
-| `timeouts.inferenceSeconds`          | 60      | 5 to 3600  | Absolute deadline for one model inference request                                      |
-| `timeouts.providerRequestSeconds`    | 45      | 5 to 3600  | HTTP timeout for OpenAI-compatible provider requests                                   |
-| `timeouts.modelCatalogSeconds`       | 30      | 1 to 300   | Provider model-list request                                                            |
-| `timeouts.modelCatalogCacheSeconds`  | 60      | 0 to 86400 | How long a fetched model list is reused. 0 refetches every time                        |
-| `timeouts.actionReviewSeconds`       | 30      | 1 to 600   | Automatic review of a Bash command or MCP action                                       |
-| `timeouts.sessionTitleSeconds`       | 10      | 1 to 300   | Generating a chat session title                                                        |
-| `timeouts.conversationNamingSeconds` | 10      | 1 to 300   | Renaming a Discord or Slack conversation                                               |
-| `timeouts.pageFetchSeconds`          | 15      | 1 to 300   | Reading a public page, including redirects                                             |
-| `timeouts.mcpConnectSeconds`         | 5       | 1 to 300   | Connecting to an MCP server and each tool-list request                                 |
-| `timeouts.mcpStartupSeconds`         | 8       | 1 to 600   | Starting an MCP server, including discovery                                            |
-| `timeouts.mcpToolCallSeconds`        | 10      | 1 to 3600  | One MCP tool call                                                                      |
-| `timeouts.taskOperationSeconds`      | 8       | 1 to 300   | Creating or changing a task through the worker, and checking its messaging destination |
-| `timeouts.approvalSeconds`           | 120     | 10 to 3600 | How long an approval request stays open                                                |
-| `timeouts.attachmentDownloadSeconds` | 30      | 1 to 600   | Downloading one messaging attachment                                                   |
-| `timeouts.gatewayRequestSeconds`     | 10      | 1 to 300   | Discord, Slack, and Telegram API requests                                              |
-| `timeouts.gatewayRetrySeconds`       | 30      | 1 to 3600  | Wait before a messaging adapter reconnects after a failure                             |
-| `timeouts.gatewayRestartMaxSeconds`  | 300     | 1 to 3600  | Longest wait between messaging adapter restarts                                        |
-| `timeouts.telegramPollSeconds`       | 30      | 1 to 50    | Telegram long-poll duration                                                            |
+| Field                                | Default | Range       | Purpose                                                                                |
+| ------------------------------------ | ------- | ----------- | -------------------------------------------------------------------------------------- |
+| `timeouts.inferenceSeconds`          | 60      | 5 to 3600   | Absolute deadline for one model inference request                                      |
+| `timeouts.providerRequestSeconds`    | 45      | 5 to 3600   | HTTP timeout for OpenAI-compatible provider requests                                   |
+| `timeouts.modelCatalogSeconds`       | 30      | 1 to 300    | Provider model-list request                                                            |
+| `timeouts.modelCatalogCacheSeconds`  | 60      | 0 to 86400  | How long a fetched model list is reused. 0 refetches every time                        |
+| `timeouts.actionReviewSeconds`       | 30      | 1 to 600    | Automatic review of a Bash command or MCP action                                       |
+| `timeouts.sessionTitleSeconds`       | 10      | 1 to 300    | Generating a chat session title                                                        |
+| `timeouts.conversationNamingSeconds` | 10      | 1 to 300    | Renaming a Discord or Slack conversation                                               |
+| `timeouts.pageFetchSeconds`          | 15      | 1 to 300    | Reading a public page, including redirects                                             |
+| `timeouts.mcpConnectSeconds`         | 5       | 1 to 300    | Connecting to an MCP server and each tool-list request                                 |
+| `timeouts.mcpStartupSeconds`         | 8       | 1 to 600    | Starting an MCP server, including discovery                                            |
+| `timeouts.mcpToolCallSeconds`        | 10      | 1 to 3600   | One MCP tool call                                                                      |
+| `timeouts.taskOperationSeconds`      | 8       | 1 to 300    | Creating or changing a task through the worker, and checking its messaging destination |
+| `timeouts.approvalSeconds`           | 3600    | 10 to 86400 | How long an approval request stays open                                                |
+| `timeouts.attachmentDownloadSeconds` | 30      | 1 to 600    | Downloading one messaging attachment                                                   |
+| `timeouts.gatewayRequestSeconds`     | 10      | 1 to 300    | Discord, Slack, and Telegram API requests                                              |
+| `timeouts.gatewayRetrySeconds`       | 30      | 1 to 3600   | Wait before a messaging adapter reconnects after a failure                             |
+| `timeouts.gatewayRestartMaxSeconds`  | 300     | 1 to 3600   | Longest wait between messaging adapter restarts                                        |
+| `timeouts.telegramPollSeconds`       | 30      | 1 to 50     | Telegram long-poll duration                                                            |
 
 | Field                            | Default | Range             | Purpose                                                          |
 | -------------------------------- | ------- | ----------------- | ---------------------------------------------------------------- |

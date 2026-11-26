@@ -3,7 +3,7 @@ import type { Agent, ChatFailure } from "@poppet/agent";
 import { StoreError } from "@poppet/store";
 import { Cause, Deferred, Effect, Exit, Fiber, FiberSet, Option, Stream } from "effect";
 
-import type { GatewayError } from "#src/adapter";
+import { GatewayError } from "#src/adapter";
 import type { ActionApprovals } from "#src/approvals";
 import { authorized, finish, mark, wake } from "#src/context";
 import type { GatewayContext, RunningRequest } from "#src/context";
@@ -21,7 +21,7 @@ export interface Execution {
   readonly running: RunningRequest;
 }
 
-export const recover = (context: GatewayContext) =>
+export const recover = (context: GatewayContext, approvals: ActionApprovals) =>
   Effect.gen(function* () {
     const { adapter, repo, store } = context;
     const account = yield* adapter.accountId;
@@ -35,10 +35,23 @@ export const recover = (context: GatewayContext) =>
         continue;
       }
 
+      // A run that survived the store's recovery is waiting or ready to resume.
+      if (run.status === "waiting") {
+        yield* repo.state(entry.id, "waiting");
+        continue;
+      }
+
+      if (run.status === "running") {
+        yield* repo.state(entry.id, "queued");
+        continue;
+      }
+
       const completed = run.status === "completed";
       yield* finish(context, entry.id, answer(run), completed ? "completed" : "failed");
       yield* mark(context, entry.message, completed ? "completed" : "stopped");
     }
+
+    yield* approvals.reconcile;
   });
 
 const settleFailure = (
@@ -54,15 +67,21 @@ const settleFailure = (
       return;
     }
 
-    const { retryAfterMs, reply } = failureDecision(
-      Option.getOrNull(Cause.findErrorOption(cause)),
-      entry.attempts,
-    );
+    const error = Option.getOrNull(Cause.findErrorOption(cause));
+    const { retryAfterMs, reply } = failureDecision(error, entry.attempts);
+    const run = yield* store.run(entry.runId);
 
-    if (retryAfterMs !== null && (yield* store.run(entry.runId)) === null) {
+    if (retryAfterMs !== null && run === null) {
       yield* repo.retry(entry, clock.currentTimeMillisUnsafe() + retryAfterMs);
 
       return;
+    }
+
+    if (run?.status === "running" || run?.status === "waiting") {
+      yield* store.finishRun(entry.runId, {
+        status: "failed",
+        reason: error instanceof GatewayError ? `gateway:${error.reason}` : "gateway:failed",
+      });
     }
 
     const saved = yield* repo.item(entry.id);
@@ -76,32 +95,42 @@ const settleFailure = (
 
 const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
   Effect.gen(function* () {
-    const { adapter, store } = context;
+    const { adapter, repo, store } = context;
     const { agent, approvals, running } = execution;
     yield* mark(context, entry.message, "working");
 
-    const prepared = yield* prepareSession(
-      context,
-      execution.setup,
-      entry,
-      (conversation, sessionId) => {
-        const own = running.requests.get(entry.id);
+    // A request whose run already exists is resuming after the owner answered its approval.
+    const resuming = (yield* store.run(entry.runId)) !== null;
 
-        if (own !== undefined) {
-          own.entry = {
-            ...own.entry,
-            conversationId: conversation,
-            ...(sessionId !== undefined && { sessionId }),
-          };
-        }
-      },
-    );
+    const prepared = resuming
+      ? null
+      : yield* prepareSession(context, execution.setup, entry, (conversation, sessionId) => {
+          const own = running.requests.get(entry.id);
 
-    if (prepared === null) {
+          if (own !== undefined) {
+            own.entry = {
+              ...own.entry,
+              conversationId: conversation,
+              ...(sessionId !== undefined && { sessionId }),
+            };
+          }
+        });
+
+    if (!resuming && prepared === null) {
       return;
     }
 
-    const { conversation, session, prompt, attachments } = prepared;
+    const conversation = prepared?.conversation ?? entry.conversationId;
+
+    if (conversation === null) {
+      return yield* Effect.die(new Error("A resumed request has no conversation."));
+    }
+
+    if (resuming) {
+      yield* adapter.checkAccess(entry.message, conversation);
+    } else if (prepared !== null) {
+      yield* approvals.supersede(prepared.session.id);
+    }
 
     const taskDestination = (requested: string | null = null) =>
       Effect.gen(function* () {
@@ -129,22 +158,46 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
           Effect.forever,
           Effect.forkScoped,
         );
+
+        const options = {
+          approvalRequester: {
+            surface: "gateway",
+            adapter: adapter.id,
+            account: entry.account,
+            conversationId: conversation,
+            inboxId: entry.id,
+          },
+          home: taskDestination(),
+          here: taskDestination(conversation),
+          destination: taskDestination,
+        };
+
         yield* Stream.runDrain(
-          agent.send(session.id, prompt, {
-            runId: entry.runId,
-            attachments,
-            approveAction: (request, recordAnswer) =>
-              approvals.request(entry.message, conversation, entry.runId, request, recordAnswer),
-            home: taskDestination(),
-            here: taskDestination(conversation),
-            destination: taskDestination,
-          }),
+          prepared === null
+            ? agent.resume(entry.runId, options)
+            : agent.send(prepared.session.id, prepared.prompt, {
+                ...options,
+                runId: entry.runId,
+                attachments: prepared.attachments,
+              }),
         );
       }),
     );
     const run = yield* store.run(entry.runId);
+    const approval = run?.status === "waiting" ? yield* store.latestApproval(run.id) : null;
 
-    if (run !== null) {
+    if (approval !== null) {
+      yield* repo.state(entry.id, "waiting");
+      yield* approvals
+        .post(entry, conversation, approval)
+        .pipe(
+          Effect.catchTag("GatewayError", (error) =>
+            Effect.logWarning("approval prompt post failed; will retry on reconcile").pipe(
+              Effect.annotateLogs({ error: error.message }),
+            ),
+          ),
+        );
+    } else if (run !== null) {
       yield* finish(context, entry.id, answer(run));
       yield* mark(context, entry.message, run.status === "completed" ? "completed" : "stopped");
     }

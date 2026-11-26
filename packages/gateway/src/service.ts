@@ -37,7 +37,7 @@ const gateway = Effect.gen(function* () {
 
   const running = runningRequests();
   const { maxConcurrentRequests, imageBytes, textFileBytes } = yield* ChatSettings;
-  const approvals = actionApprovals(adapter, context.repo);
+  const approvals = actionApprovals(context);
 
   const execution: Execution = {
     agent,
@@ -72,7 +72,8 @@ const gateway = Effect.gen(function* () {
     deliverNext: deliverNext(context),
     nameNext,
     externalNameChange,
-    recover: recover(context).pipe(Effect.andThen(approvals.recover)),
+    recover: recover(context, approvals),
+    sweepApprovals: approvals.sweep,
     connectionStatus: adapter.status.pipe(
       Effect.map((connection) => Object.assign({}, connection, { rejected })),
     ),
@@ -119,6 +120,7 @@ const gateway = Effect.gen(function* () {
         ),
         FiberSet.join(active),
         loop(service.deliverNext, context.wakes.delivery, "1 second"),
+        approvals.sweep.pipe(Effect.andThen(Effect.sleep("5 seconds")), Effect.forever),
         loop(nameNext, context.wakes.naming, "5 seconds"),
         Stream.runForEach(adapter.naming.changes, externalNameChange),
       ],

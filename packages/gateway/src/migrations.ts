@@ -88,4 +88,25 @@ export const gatewaySchema = packageSchema("gateway_migrations", {
     `CREATE INDEX pending_gateway_approvals ON gateway_approvals (adapter, account)
       WHERE state = 'pending'`,
   ],
+  // Nothing references gateway_approvals, so rebuilding it to allow 'superseded' is safe.
+  "5_superseded_approvals": [
+    `CREATE TABLE gateway_approvals_next (
+      id TEXT PRIMARY KEY,
+      adapter TEXT NOT NULL,
+      account TEXT NOT NULL,
+      conversation_id TEXT NOT NULL,
+      parent_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('bash', 'mcp')),
+      message_id TEXT,
+      state TEXT NOT NULL CHECK (state IN ('pending', 'approved', 'denied', 'expired',
+        'cancelled', 'superseded', 'unavailable')),
+      expires_at INTEGER NOT NULL
+    ) STRICT`,
+    `INSERT INTO gateway_approvals_next SELECT * FROM gateway_approvals`,
+    `DROP TABLE gateway_approvals`,
+    `ALTER TABLE gateway_approvals_next RENAME TO gateway_approvals`,
+    `CREATE INDEX pending_gateway_approvals ON gateway_approvals (adapter, account)
+      WHERE state = 'pending'`,
+  ],
 });
