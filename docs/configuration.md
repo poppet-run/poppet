@@ -13,7 +13,7 @@ running any Poppet command. Credentials stay in protected files outside this fil
 
 Run `poppet setup` to choose a provider and model, optionally configure Discord and Slack,
 and offer worker startup. It preserves settings outside those choices. See
-[getting started](getting-started.md#run-setup) for the interactive flow.
+[`poppet setup`](cli.md#configuration-and-storage) for the interactive flow.
 
 A minimal configuration is:
 

@@ -14,6 +14,12 @@ poppet config
 bun run check
 ```
 
+`bun link` adds `poppet` to Bun's global bin directory and points it at this
+checkout, so source changes take effect without linking again. Bun must be on
+`PATH` outside the checkout. With mise and no global Bun, run `mise use -g
+bun@1.4.4` once. Use a disposable `POPPET_DATA_DIR` while developing so your own
+data stays untouched. `bun unlink` removes the command.
+
 The workspaces and their responsibilities are listed in
 [architecture](architecture.md#workspaces). Skills live inside `@poppet/agent`.
 `bun run format` formats files with Oxfmt.
