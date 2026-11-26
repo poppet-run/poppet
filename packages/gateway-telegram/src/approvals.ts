@@ -45,6 +45,7 @@ export const telegramSettlementHtml = (
     case "expired":
       return `⏱️ <b>${label}</b>`;
     case "cancelled":
+    case "superseded":
     case "unavailable":
       return `<b>${label}</b>`;
   }

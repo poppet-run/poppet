@@ -2,7 +2,7 @@ import type { Tool } from "@poppet/provider";
 import { Context, Effect, Schema } from "effect";
 import type { Scope } from "effect";
 
-import { ParkRequest, escapedApprovalJSON, ownerDenied } from "#src/action-approval";
+import { ParkRequest, escapedApprovalJSON } from "#src/action-approval";
 import { MCPReview, reviewAction } from "#src/action-review";
 import type {
   AgentTool,
@@ -168,8 +168,6 @@ const prepareExternal = (entry: ExternalTool, call: ToolCall, context: ToolConte
           }
 
           if (result.decision === "needs_approval") {
-            const approve = context.approveAction;
-
             const approval = {
               kind: "mcp" as const,
               invocation: exactInvocation,
@@ -182,21 +180,15 @@ const prepareExternal = (entry: ExternalTool, call: ToolCall, context: ToolConte
               return yield* new ParkRequest({ approval });
             }
 
-            if (approve === null || context.origin === "scheduled") {
-              return yield* Effect.fail(
-                new AgentError({
-                  reason: "mcp-approval-required",
-                  message: `MCP action needs approval: ${result.reason}. Nothing was executed. ${context.origin === "scheduled" ? "This occurrence has stopped." : "Retry in a messaging conversation that supports approvals."}`,
-                }),
-              );
-            }
-
-            if (!(yield* approve(approval, (answer) => record({ ...result, approval: answer })))) {
-              return yield* Effect.fail(ownerDenied("mcp"));
-            }
+            return yield* Effect.fail(
+              new AgentError({
+                reason: "mcp-approval-required",
+                message: `MCP action needs approval: ${result.reason}. Nothing was executed. ${context.origin === "scheduled" ? "This occurrence has stopped." : "Retry in a messaging conversation that supports approvals."}`,
+              }),
+            );
           }
 
-          return { execute: execute(result.decision === "needs_approval" ? "owner" : "reviewer") };
+          return { execute: execute("reviewer") };
         }),
     } satisfies ReviewableCall;
   });

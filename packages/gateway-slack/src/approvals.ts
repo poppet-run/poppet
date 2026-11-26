@@ -45,6 +45,7 @@ export const slackSettlementText = (
     case "expired":
       return `:hourglass: ${settlement?.text ?? formatApprovalStatus(state)}`;
     case "cancelled":
+    case "superseded":
     case "unavailable":
       return settlement?.text ?? formatApprovalStatus(state);
   }

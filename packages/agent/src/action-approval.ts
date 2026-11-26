@@ -1,6 +1,5 @@
-import type { StoreError, ToolApproval } from "@poppet/store";
 import { Data } from "effect";
-import type { Effect, Schema } from "effect";
+import type { Schema } from "effect";
 
 import type { BashArguments } from "#src/bash";
 import { AgentError } from "#src/errors";
@@ -14,11 +13,6 @@ export type ActionApproval =
       readonly effects: string;
       readonly reason: string;
     };
-
-export type ApproveAction = (
-  approval: ActionApproval,
-  recordAnswer?: (answer: ToolApproval) => Effect.Effect<void, StoreError>,
-) => Effect.Effect<boolean, AgentError | StoreError>;
 
 // Keep data on one line and prevent code-span breaks or invisible directional changes.
 export const escapedApprovalJSON = (value: Schema.Json) =>

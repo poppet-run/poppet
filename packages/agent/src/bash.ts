@@ -5,7 +5,7 @@ import type { ModelOperations } from "@poppet/provider";
 import type { Run } from "@poppet/store";
 import { Context, Effect, Option, Schema } from "effect";
 
-import { ParkRequest, ownerDenied } from "#src/action-approval";
+import { ParkRequest } from "#src/action-approval";
 import { BashReview, reviewAction } from "#src/action-review";
 import type {
   AgentTool,
@@ -123,14 +123,7 @@ export const reviewCommand = (
 const prepareBash = (
   call: ToolCall,
   runner: Bash["Service"],
-  {
-    model,
-    run,
-    text: ownerRequest,
-    origin,
-    approveAction: approve,
-    approvalRequester: requester,
-  }: ToolContext,
+  { model, run, text: ownerRequest, origin, approvalRequester: requester }: ToolContext,
   maxBytes: number,
 ) =>
   Effect.gen(function* () {
@@ -167,21 +160,15 @@ const prepareBash = (
               return yield* new ParkRequest({ approval });
             }
 
-            if (origin === "scheduled" || approve === null) {
-              return yield* Effect.fail(
-                new AgentError({
-                  reason: "command-approval-required",
-                  message: `Command needs approval: ${review.reason}. Nothing was executed. ${origin === "scheduled" ? "This occurrence has stopped." : "Retry in a messaging conversation that supports approvals."}`,
-                }),
-              );
-            }
-
-            if (!(yield* approve(approval, (answer) => record({ ...review, approval: answer })))) {
-              return yield* Effect.fail(ownerDenied("bash"));
-            }
+            return yield* Effect.fail(
+              new AgentError({
+                reason: "command-approval-required",
+                message: `Command needs approval: ${review.reason}. Nothing was executed. ${origin === "scheduled" ? "This occurrence has stopped." : "Retry in a messaging conversation that supports approvals."}`,
+              }),
+            );
           }
 
-          return { execute: execute(review.decision === "needs_approval" ? "owner" : "reviewer") };
+          return { execute: execute("reviewer") };
         }),
     } satisfies ReviewableCall;
   });

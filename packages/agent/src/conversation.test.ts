@@ -5,7 +5,7 @@ import { ProviderError } from "@poppet/provider";
 import type { Completion, ModelOperations, ModelRequest, Output } from "@poppet/provider";
 import { responsesModel } from "@poppet/provider/protocol";
 import { SessionReadResult, SessionSearchMatch, Store } from "@poppet/store";
-import { Deferred, Effect, Fiber, Schema, Stream } from "effect";
+import { Effect, Fiber, Schema, Stream } from "effect";
 import OpenAI from "openai";
 
 import { Bash, commandReviewInstructions } from "#src/bash";
@@ -229,214 +229,89 @@ describe.concurrent("conversation", () => {
     },
   );
 
-  test.each([
-    "deny",
-    "invalid",
-    "unavailable",
-    "scheduled",
-    "approved",
-    "approved-nonzero",
-    "rejected",
-    "approved-unsaved",
-  ])("when Bash review is %s, enforces the decision without model retries", async (mode) => {
-    let executions = 0;
-    let approvals = 0;
-    const args = { command: "change-service", cwd: "/tmp", timeoutSeconds: 5 };
-    const approved = mode === "approved" || mode === "approved-nonzero";
+  test.each(["deny", "invalid", "unavailable", "scheduled", "needs-approval"])(
+    "when Bash review is %s, journals the decision and runs nothing",
+    async (mode) => {
+      let executions = 0;
+      const args = { command: "change-service", cwd: "/tmp", timeoutSeconds: 5 };
 
-    const receipt = {
-      status: "completed",
-      approvedBy: "owner",
-      stdout: "",
-      stderr: mode === "approved-nonzero" ? "Service change failed" : "",
-      exitCode: mode === "approved-nonzero" ? 7 : 0,
-      truncated: false,
-    };
-
-    const state = await fixture(
-      (request) => {
-        if (request.instructions === commandReviewInstructions) {
-          if (mode === "unavailable") {
-            return Stream.fail(
-              new ProviderError({
-                provider: "test-provider",
-                reason: "temporary",
-                message: "offline",
-              }),
-            );
-          }
-
-          return completed([
-            {
-              type: "text",
-              text:
-                mode === "invalid"
-                  ? "not JSON"
-                  : JSON.stringify({
-                      decision: mode === "deny" ? "deny" : "needs_approval",
-                      reason: "Service change",
-                    }),
-            },
-          ]);
-        }
-
-        const last = request.messages.at(-1);
-
-        if (last?.role === "tool") {
-          expect(approved).toBe(true);
-          expect(JSON.parse(last.output)).toEqual(receipt);
-
-          return final();
-        }
-
-        return completed([tool("bash", JSON.stringify(args), "bash-1", "poppet_system")]);
-      },
-      {
-        bash: {
-          run: () =>
-            Effect.sync(() => {
-              executions++;
-
-              return {
-                stdout: receipt.stdout,
-                stderr: receipt.stderr,
-                exitCode: receipt.exitCode,
-                truncated: false,
-              };
-            }),
-        },
-      },
-    );
-
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const store = yield* Store;
-          const session = yield* store.createSession("test-provider", "test-model");
-          yield* Stream.runDrain(
-            (yield* Agent).send(session.id, "Restart my service", {
-              origin: mode === "scheduled" ? "scheduled" : "interactive",
-              approveAction: (request, recordAnswer) =>
-                Effect.gen(function* () {
-                  approvals++;
-                  expect(request).toEqual({ kind: "bash", ...args, reason: "Service change" });
-
-                  if (mode === "approved-unsaved") {
-                    return true;
-                  }
-
-                  yield* (
-                    recordAnswer?.({
-                      decision: approved ? "approved" : "denied",
-                      adapter: "discord",
-                      senderId: "owner",
-                      at: 0,
-                    }) ?? Effect.void
-                  );
-
-                  return approved;
+      const state = await fixture(
+        (request) => {
+          if (request.instructions === commandReviewInstructions) {
+            if (mode === "unavailable") {
+              return Stream.fail(
+                new ProviderError({
+                  provider: "test-provider",
+                  reason: "temporary",
+                  message: "offline",
                 }),
-            }),
-          ).pipe(Effect.result);
-          const run = (yield* store.runs(session.id))[0]!;
-          expect(run.status).toBe(approved ? "completed" : "failed");
-          const calls = yield* store.toolCalls(run.id);
-          expect(calls).toHaveLength(1);
-          expect(calls[0]!.status).toBe(
-            approved ? "completed" : mode === "approved-unsaved" ? "interrupted" : "failed",
-          );
-
-          expect(calls[0]!.review?.decision).toBe(
-            mode === "deny"
-              ? "deny"
-              : mode === "invalid" || mode === "unavailable"
-                ? "unavailable"
-                : "needs_approval",
-          );
-          expect(calls[0]!.review?.approval).toEqual(
-            approved || mode === "rejected"
-              ? {
-                  decision: approved ? "approved" : "denied",
-                  adapter: "discord",
-                  senderId: "owner",
-                  at: 0,
-                }
-              : undefined,
-          );
-
-          if (approved) {
-            expect(JSON.parse(calls[0]!.output!)).toEqual(receipt);
-          } else {
-            expect(calls[0]!.startedAt).toBeNull();
-            expect(JSON.parse(calls[0]!.arguments)).toEqual(args);
-
-            if (mode === "approved-unsaved") {
-              return;
+              );
             }
 
-            const messages = yield* store.messages(session.id);
+            return completed([
+              {
+                type: "text",
+                text:
+                  mode === "invalid"
+                    ? "not JSON"
+                    : JSON.stringify({
+                        decision: mode === "deny" ? "deny" : "needs_approval",
+                        reason: "Service change",
+                      }),
+              },
+            ]);
+          }
+
+          return completed([tool("bash", JSON.stringify(args), "bash-1", "poppet_system")]);
+        },
+        {
+          bash: {
+            run: () =>
+              Effect.sync(() => {
+                executions++;
+
+                return { stdout: "", stderr: "", exitCode: 0, truncated: false };
+              }),
+          },
+        },
+      );
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const session = yield* store.createSession("test-provider", "test-model");
+            yield* Stream.runDrain(
+              (yield* Agent).send(session.id, "Restart my service", {
+                origin: mode === "scheduled" ? "scheduled" : "interactive",
+              }),
+            ).pipe(Effect.result);
+            const run = (yield* store.runs(session.id))[0]!;
+            expect(run.status).toBe("failed");
+            const calls = yield* store.toolCalls(run.id);
+            expect(calls).toHaveLength(1);
+            expect(calls[0]).toMatchObject({ status: "failed", startedAt: null });
+            expect(calls[0]!.review?.decision).toBe(
+              mode === "deny"
+                ? "deny"
+                : mode === "invalid" || mode === "unavailable"
+                  ? "unavailable"
+                  : "needs_approval",
+            );
+            expect(calls[0]!.review?.approval).toBeUndefined();
             expect(
-              messages.some(
+              (yield* store.messages(session.id)).some(
                 (entry) => entry.message.role === "tool" && entry.message.output.length > 0,
               ),
             ).toBe(true);
-          }
-        }),
-      );
-      expect(executions).toBe(approved ? 1 : 0);
-      expect(approvals).toBe(
-        approved || mode === "rejected" || mode === "approved-unsaved" ? 1 : 0,
-      );
-    } finally {
-      await state.close();
-    }
-  });
-
-  test("when a run is cancelled while waiting for Bash approval, records interruption before dispatch", async () => {
-    const approval = Deferred.makeUnsafe<void>();
-    const args = { command: "printf hello", cwd: "/tmp", timeoutSeconds: 5 };
-
-    const state = await fixture(
-      (request) =>
-        request.instructions === commandReviewInstructions
-          ? completed([
-              {
-                type: "text",
-                text: JSON.stringify({ decision: "needs_approval", reason: "Confirm" }),
-              },
-            ])
-          : completed([tool("bash", JSON.stringify(args), "bash-1", "poppet_system")]),
-      { bash: { run: () => Effect.die("Bash should still be waiting for approval") } },
-    );
-
-    try {
-      await state.run(
-        Effect.gen(function* () {
-          const store = yield* Store;
-          const session = yield* store.createSession("test-provider", "test-model");
-          const agent = yield* Agent;
-
-          const fiber = yield* Stream.runDrain(
-            agent.send(session.id, "Print hello", {
-              approveAction: () =>
-                Deferred.succeed(approval, undefined).pipe(Effect.andThen(Effect.never)),
-            }),
-          ).pipe(Effect.forkChild);
-
-          yield* Deferred.await(approval);
-          yield* Fiber.interrupt(fiber);
-
-          const [run] = yield* store.runs(session.id);
-          expect((yield* store.toolCalls(run!.id))[0]).toMatchObject({
-            status: "interrupted",
-            startedAt: null,
-          });
-        }),
-      );
-    } finally {
-      await state.close();
-    }
-  });
+          }),
+        );
+        expect(executions).toBe(0);
+      } finally {
+        await state.close();
+      }
+    },
+  );
 
   test.each([false, true])(
     "when a run finishes with scheduled=%j, closes its external resources",

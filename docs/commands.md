@@ -31,9 +31,9 @@ timeout. It has no tools, history, or continuation. It must return a valid
 decision within `timeouts.actionReviewSeconds`, 30 seconds by default:
 
 - `allow` runs this exact invocation once.
-- `needs_approval` asks the owner in the originating gateway conversation. A run
-  that can wait for the owner [parks instead](chat.md#waiting-runs). Runs with
-  neither stop. CLI, web chat, and scheduled runs have neither.
+- `needs_approval` parks the run and asks the owner in the originating gateway
+  conversation. See [waiting runs](chat.md#waiting-runs). CLI, web chat, and
+  scheduled runs cannot wait and stop instead.
 - `deny` ends the run without running the command. The model cannot retry it in
   the same run.
 
@@ -73,17 +73,21 @@ run, but Bash stays available because each later command is reviewed again.
 
 ## Owner approval
 
-The gateway waits for an answer in memory for `timeouts.approvalSeconds`, two
-minutes by default, setting `expiresAt` before the prompt is sent. Bash commands
-and [reviewed MCP actions](mcp.md#reviewed-actions) share the same IDs. A request
-ends when it expires, when the run is cancelled, or when the worker restarts. An
-expired ID cannot come back.
+When a gateway run needs approval, it parks in the store and stays open for
+`timeouts.approvalSeconds`, one hour by default (up to 24 hours). Waiting holds
+no session permit, request slot, or run deadline. Bash commands and
+[reviewed MCP actions](mcp.md#reviewed-actions) share the same IDs. A request
+ends when the owner answers, when it expires, when `/cancel` cancels the
+conversation, or when a newer owner message supersedes the waiting run. An ended
+ID cannot come back.
 
-`gateway_approvals` records each request before its prompt is sent, with its
-conversation, run, prompt message, and final state. When a gateway starts, it
-marks requests left pending by an earlier worker as expired and updates their
-native prompts to say so, best effort. A late answer to a known request gets a
-reply that says how it ended instead of "No matching pending approval".
+`gateway_approvals` records each prompt's conversation, run, prompt message, and
+display state alongside the store's `approvals` table. Waiting approvals survive
+a worker restart: on start, the gateway posts any unsent prompt for a live
+approval (reusing deterministic nonces), requeues decided approvals that have
+not resumed yet, and updates native prompts for settled approvals, best effort.
+A late answer to a known request gets a reply that says how it ended instead of
+"No matching pending approval".
 
 `approval-format.ts` builds a structured view model and Markdown fallback for
 each request. It escapes control characters, bidi characters, and code fences so

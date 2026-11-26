@@ -28,7 +28,7 @@ export const timeoutSettings = {
   mcpStartupSeconds: setting(8, 1, 600),
   mcpToolCallSeconds: setting(10, 1, 3600),
   taskOperationSeconds: setting(8, 1, 300),
-  approvalSeconds: setting(120, 10, 3600),
+  approvalSeconds: setting(3600, 10, 86_400),
   attachmentDownloadSeconds: setting(30, 1, 600),
   gatewayRequestSeconds: setting(10, 1, 300),
   gatewayRetrySeconds: setting(30, 1, 3600),

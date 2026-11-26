@@ -19,7 +19,6 @@ import {
 } from "effect";
 import type { Schema, Scope } from "effect";
 
-import type { ApproveAction } from "#src/action-approval";
 import type { RunContext } from "#src/agent-tool";
 import { prepareAttachments } from "#src/attachments";
 import type { AttachmentInput } from "#src/attachments";
@@ -53,8 +52,7 @@ export type ChatFailure = AgentError | ProviderError | StoreError;
 
 export interface SendOptions {
   readonly origin?: RunContext["origin"];
-  readonly approveAction?: ApproveAction;
-  // Parks the run for the owner with this route instead of calling approveAction.
+  // Lets a call that needs the owner park the run with this route. Without it, the run stops.
   readonly approvalRequester?: Schema.JsonObject;
   readonly runId?: string;
   readonly reasoningLog?: (line: string) => Effect.Effect<void>;
@@ -310,7 +308,6 @@ export const AgentLive = Layer.effect(
                   selectedSkill: session.skill?.name ?? null,
                   mentionedSkills,
                   taskNote: options.taskNote ?? null,
-                  approveAction: options.approveAction ?? null,
                   approvalRequester: options.approvalRequester ?? null,
                   resume,
                   here: options.here ?? null,

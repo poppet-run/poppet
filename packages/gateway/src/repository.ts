@@ -18,7 +18,14 @@ import type { ApprovalState } from "#src/adapter";
 import { gatewaySchema } from "#src/migrations";
 import { isControl } from "#src/request";
 
-const InboxState = Schema.Literals(["queued", "executing", "completed", "cancelled", "failed"]);
+const InboxState = Schema.Literals([
+  "queued",
+  "executing",
+  "waiting",
+  "completed",
+  "cancelled",
+  "failed",
+]);
 
 export type InboxState = typeof InboxState.Type;
 
@@ -79,7 +86,15 @@ const SavedApproval = Schema.Struct({
   conversationId: Schema.String,
   parentId: Schema.String,
   messageId: Schema.NullOr(Schema.String),
-  state: Schema.Literals(["pending", "approved", "denied", "expired", "cancelled", "unavailable"]),
+  state: Schema.Literals([
+    "pending",
+    "approved",
+    "denied",
+    "expired",
+    "cancelled",
+    "superseded",
+    "unavailable",
+  ]),
 });
 
 export type SavedApproval = typeof SavedApproval.Type;
@@ -414,12 +429,28 @@ const repository = Effect.gen(function* () {
     state: operation((id: number, state: InboxState) =>
       sql`UPDATE gateway_inbox SET state = ${state} WHERE id = ${id}`.pipe(Effect.asVoid),
     ),
+    // Cancels queued and waiting requests, returning the run IDs that may still need ending.
     cancel: operation(
       (adapter: string, account: string, scope: string, conversation: string, before: number) =>
         sql`UPDATE gateway_inbox SET state = 'cancelled' WHERE adapter = ${adapter}
           AND account = ${account} AND json_extract(payload, '$.scopeId') = ${scope}
-          AND conversation_id = ${conversation} AND state = 'queued'
-          AND id < ${before}`.pipe(Effect.asVoid),
+          AND conversation_id = ${conversation} AND state IN ('queued', 'waiting')
+          AND id < ${before} RETURNING run_id`.pipe(
+          decodeRows(Schema.Struct({ runId: Schema.String })),
+          Effect.map((rows) => rows.map((row) => row.runId)),
+        ),
+    ),
+    waiting: operation((adapter: string, account: string) =>
+      sql`${inbox} WHERE adapter = ${adapter} AND account = ${account} AND state = 'waiting'
+        ORDER BY id`.pipe(decodeRows(Inbox)),
+    ),
+    byRun: operation((runId: string) =>
+      sql`${inbox} WHERE run_id = ${runId}`.pipe(decodeRow(Inbox)),
+    ),
+    // Queues a waiting request again so the dispatcher resumes its run.
+    requeue: operation((runId: string) =>
+      sql`UPDATE gateway_inbox SET state = 'queued', retry_at = 0
+        WHERE run_id = ${runId} AND state = 'waiting'`.pipe(Effect.asVoid),
     ),
     complete: operation(
       (
@@ -491,9 +522,8 @@ const repository = Effect.gen(function* () {
       ),
     ),
     openApproval: operation((approval: OpenApproval) =>
-      sql`INSERT INTO gateway_approvals ${sql.insert({ ...approval, state: "pending" })}`.pipe(
-        Effect.asVoid,
-      ),
+      sql`INSERT INTO gateway_approvals ${sql.insert({ ...approval, state: "pending" })}
+        ON CONFLICT DO NOTHING`.pipe(Effect.asVoid),
     ),
     promptedApproval: operation((id: string, messageId: string) =>
       sql`UPDATE gateway_approvals SET message_id = ${messageId} WHERE id = ${id}`.pipe(
@@ -508,10 +538,9 @@ const repository = Effect.gen(function* () {
       sql`SELECT id, conversation_id, parent_id, message_id, state FROM gateway_approvals
         WHERE id = ${id}`.pipe(decodeRow(SavedApproval)),
     ),
-    expireApprovals: operation((adapter: string, account: string) =>
-      sql`UPDATE gateway_approvals SET state = 'expired'
-        WHERE adapter = ${adapter} AND account = ${account} AND state = 'pending'
-        RETURNING id, conversation_id, parent_id, message_id, state`.pipe(
+    openPrompts: operation((adapter: string, account: string) =>
+      sql`SELECT id, conversation_id, parent_id, message_id, state FROM gateway_approvals
+        WHERE adapter = ${adapter} AND account = ${account} AND state = 'pending'`.pipe(
         decodeRows(SavedApproval),
       ),
     ),

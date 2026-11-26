@@ -588,7 +588,7 @@ describe.concurrent("Gateway", () => {
           Effect.gen(function* () {
             const gateway = yield* Gateway;
             yield* gateway.accept(message("start", "thread", "Restart the service"));
-            const running = yield* gateway.processNext.pipe(Effect.forkChild);
+            expect(yield* gateway.processNext).toBe(true);
             const id = yield* Deferred.await(requested);
             yield* TestClock.adjust(0);
 
@@ -641,7 +641,8 @@ describe.concurrent("Gateway", () => {
             expect(executed).toBe(0);
 
             if (action === "timeout") {
-              yield* TestClock.adjust("2 minutes");
+              yield* TestClock.adjust("1 hour");
+              yield* gateway.sweepApprovals;
             } else if (transport === "button" && action !== "cancel") {
               yield* gateway.answerApproval(
                 click(undefined, action === "deny" ? "deny" : "approve"),
@@ -658,19 +659,20 @@ describe.concurrent("Gateway", () => {
               );
             }
 
-            yield* Fiber.join(running);
+            if (action !== "timeout" && action !== "cancel") {
+              expect(yield* gateway.processNext).toBe(true);
+            }
+
             const approved = action === "approve" || action === "update-failed";
             expect(executed).toBe(approved ? 1 : 0);
             expect(updates).toEqual([
-              approved
+              approved || action === "revoked"
                 ? "approved"
                 : action === "deny"
                   ? "denied"
                   : action === "cancel"
                     ? "cancelled"
-                    : action === "timeout"
-                      ? "expired"
-                      : "unavailable",
+                    : "expired",
             ]);
 
             if (kind === "mcp") {
@@ -702,7 +704,7 @@ describe.concurrent("Gateway", () => {
             yield* gateway.accept(message("replay", "thread", `/approve ${id}`));
             yield* gateway.answerApproval(click());
             expect(replies.at(-1)).toStartWith(
-              approved || action === "deny"
+              approved || action === "deny" || action === "revoked"
                 ? "This approval was already answered"
                 : "This approval has ended",
             );
@@ -715,6 +717,252 @@ describe.concurrent("Gateway", () => {
       }
     },
   );
+
+  test("when the worker restarts with a waiting approval, keeps it live and resumes after the owner decides", async () => {
+    let executed = 0;
+    let promptAttempts = 0;
+    const prompts: Array<{ readonly text: string; readonly nonce?: string }> = [];
+    const updates: Array<ApprovalState> = [];
+
+    const state = await fixture(
+      {
+        send: (_conversation, text, nonce) =>
+          Effect.suspend(() => {
+            prompts.push({ text, ...(nonce !== undefined && { nonce }) });
+
+            return Effect.succeed("sent");
+          }),
+        approvals: {
+          actions: Stream.never,
+          send: (_conversation, prompt, nonce) =>
+            Effect.suspend(() => {
+              promptAttempts++;
+
+              if (promptAttempts === 1) {
+                return Effect.fail(new GatewayError({ reason: "unavailable", message: "Offline" }));
+              }
+
+              prompts.push({ text: prompt.fallbackText, ...(nonce !== undefined && { nonce }) });
+
+              return Effect.succeed("approval-message");
+            }),
+          update: (_conversation, _messageId, _id, resultState) =>
+            Effect.sync(() => {
+              updates.push(resultState);
+            }),
+        },
+      },
+      (request) => {
+        if (request.settings.toolChoice === "none") {
+          return response('{"decision":"needs_approval","reason":"Restart a service"}');
+        }
+
+        if (request.messages.at(-1)?.role === "tool") {
+          return response("Resumed and done");
+        }
+
+        return Stream.make({
+          type: "completed",
+          response: {
+            output: [
+              {
+                type: "tool-call",
+                namespace: "poppet_system",
+                name: "bash",
+                callId: "restart-1",
+                arguments: JSON.stringify({
+                  command: "restart-service",
+                  cwd: "/tmp",
+                  timeoutSeconds: 5,
+                }),
+              },
+            ],
+            continuation: {
+              version: 1,
+              provider: "test-provider",
+              model: "test-model",
+              data: {},
+            },
+            finishReason: "tool-calls",
+            usage: null,
+          },
+        });
+      },
+      true,
+      {},
+      undefined,
+      {
+        run: () =>
+          Effect.sync(() => {
+            executed++;
+
+            return { stdout: "done", stderr: "", exitCode: 0, truncated: false };
+          }),
+      },
+    );
+
+    try {
+      let approvalId = "";
+
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* gateway.accept(message("start", "thread", "Restart the service"));
+          expect(yield* gateway.processNext).toBe(true);
+          expect(executed).toBe(0);
+          expect(prompts).toHaveLength(0);
+        }),
+      );
+
+      // Restarting recovers the waiting run and posts the unsent prompt.
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* gateway.recover;
+          expect(prompts).toHaveLength(1);
+          approvalId = /\/approve ([a-f0-9-]{36})/.exec(prompts[0]!.text)![1]!;
+          expect(updates).toEqual([]);
+
+          // A second recover does not repost the already-sent prompt.
+          yield* gateway.recover;
+          expect(prompts).toHaveLength(1);
+
+          yield* gateway.accept(message("approve", "thread", `/approve ${approvalId}`));
+          expect(updates).toEqual(["approved"]);
+          expect(yield* gateway.processNext).toBe(true);
+          expect(executed).toBe(1);
+
+          while (yield* gateway.deliverNext) {
+            // Drain replies.
+          }
+
+          expect(prompts.some((entry) => entry.text.includes("Resumed and done"))).toBe(true);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when a new owner message arrives in a session with a waiting run, supersedes the approval and runs the new message", async () => {
+    let executed = 0;
+    const updates: Array<ApprovalState> = [];
+    const replies: Array<string> = [];
+    let approvalId = "";
+
+    const state = await fixture(
+      {
+        approvals: {
+          actions: Stream.never,
+          send: (_conversation, prompt) =>
+            Effect.sync(() => {
+              approvalId = /\/approve ([a-f0-9-]{36})/.exec(prompt.fallbackText)![1]!;
+
+              return "approval-message";
+            }),
+          update: (_conversation, _messageId, _id, resultState) =>
+            Effect.sync(() => {
+              updates.push(resultState);
+            }),
+        },
+      },
+      (request) => {
+        if (request.settings.toolChoice === "none") {
+          return response('{"decision":"needs_approval","reason":"Restart a service"}');
+        }
+
+        const last = request.messages.at(-1);
+
+        if (last?.role === "user" && last.text === "Never mind, say hi") {
+          return response("Hi there");
+        }
+
+        return Stream.make({
+          type: "completed",
+          response: {
+            output: [
+              {
+                type: "tool-call",
+                namespace: "poppet_system",
+                name: "bash",
+                callId: "restart-1",
+                arguments: JSON.stringify({
+                  command: "restart-service",
+                  cwd: "/tmp",
+                  timeoutSeconds: 5,
+                }),
+              },
+            ],
+            continuation: {
+              version: 1,
+              provider: "test-provider",
+              model: "test-model",
+              data: {},
+            },
+            finishReason: "tool-calls",
+            usage: null,
+          },
+        });
+      },
+      true,
+      {},
+      undefined,
+      {
+        run: () =>
+          Effect.sync(() => {
+            executed++;
+
+            return { stdout: "done", stderr: "", exitCode: 0, truncated: false };
+          }),
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const store = yield* Store;
+
+          yield* gateway.accept(message("first", "thread", "Restart the service"));
+          expect(yield* gateway.processNext).toBe(true);
+          expect(approvalId).not.toBe("");
+          expect(executed).toBe(0);
+
+          yield* TestClock.adjust("1 second");
+          yield* gateway.accept(message("second", "thread", "Never mind, say hi"));
+          expect(yield* gateway.processNext).toBe(true);
+          expect(executed).toBe(0);
+          expect(updates).toEqual(["superseded"]);
+
+          while (yield* gateway.deliverNext) {
+            // Drain replies.
+          }
+
+          expect(state.sent.some((entry) => entry.text === "Hi there")).toBe(true);
+
+          const [session] = yield* store.sessions;
+          const runs = yield* store.runs(session!.id);
+          expect(runs.map((run) => run.status)).toEqual(["interrupted", "completed"]);
+          expect(runs[0]?.failureReason).toBe("superseded");
+
+          yield* gateway.answerApproval({
+            requestId: approvalId,
+            decision: "approve",
+            source: message("approval-message", "thread"),
+            reply: (text) =>
+              Effect.sync(() => {
+                replies.push(text);
+              }),
+          });
+          expect(replies).toEqual([
+            "This approval has ended: Superseded by a newer message. Nothing was executed; request the operation again.",
+          ]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
 
   test("when a scheduled MCP action needs approval, only delivers the fixed failure notice", async () => {
     const definition = {
@@ -3290,7 +3538,7 @@ describe.concurrent("Gateway concurrent requests", () => {
           yield* gateway.accept(message("cancel", "thread-a", "/cancel"));
           yield* settledInbox("a1");
           expect(executed).toEqual([]);
-          expect(yield* inboxStates).toMatchObject({ a1: "cancelled", b1: "executing" });
+          expect(yield* inboxStates).toMatchObject({ a1: "cancelled", b1: "waiting" });
 
           yield* gateway.accept(
             message("right", "thread-b", `/approve ${prompts.get("thread-b")}`),

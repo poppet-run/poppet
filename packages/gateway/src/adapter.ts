@@ -38,7 +38,13 @@ export interface GatewayPolicy {
   readonly scopeId: string;
 }
 
-export type ApprovalState = "approved" | "denied" | "expired" | "cancelled" | "unavailable";
+export type ApprovalState =
+  | "approved"
+  | "denied"
+  | "expired"
+  | "cancelled"
+  | "superseded"
+  | "unavailable";
 
 export interface ApprovalSettlement {
   readonly senderId?: string;
