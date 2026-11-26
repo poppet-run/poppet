@@ -1,71 +1,57 @@
 # Telegram
 
-[Documentation index](../README.md)
+[Engineering notes](../README.md)
 
-The Telegram channel talks to the Bot API directly with long polling, so it needs
-no SDK and no public webhook.
+`@poppet/gateway-telegram` calls the Bot API with `fetch` and long polling, holding each poll for
+`timeouts.telegramPollSeconds`, 30 by default. It
+has no SDK dependency and needs no public webhook. The
+[user guide](https://poppet.run/docs/gateways/telegram/) covers bot setup. See
+[gateways](../gateways.md) for the shared contract.
 
-## Chats and conversations
+| Module            | Owns                                                       |
+| ----------------- | ---------------------------------------------------------- |
+| `registration.ts` | The registration entry                                     |
+| `settings.ts`     | `channels/telegram.json` and conversation ID parsing       |
+| `api.ts`          | Bot API calls and error mapping                            |
+| `adapter.ts`      | Polling, conversations, sends, reactions, and topic naming |
 
-The channel serves one configured chat and one owner. Only the owner can invoke
-Poppet; everyone in the chat can read its replies.
+## Settings
 
-| Chat                           | Conversation                                                                                   |
-| ------------------------------ | ---------------------------------------------------------------------------------------------- |
-| Your private chat with the bot | The whole chat is one conversation. Every message is addressed to the bot.                     |
-| Group or non-forum supergroup  | The whole chat is one conversation. Mention the bot or reply to it to start.                   |
-| Forum supergroup               | Mention the bot in General to open a new topic for that request. Each topic is a conversation. |
+All settings, including the token, live in `channels/telegram.json` with `0600`
+permissions. There is no `config.json` section. The home conversation defaults
+to the configured chat. API errors are classified without exposing the token.
+
+## Conversations
+
+The gateway serves one configured chat and one owner.
+
+| Chat                          | Conversation                                                          |
+| ----------------------------- | --------------------------------------------------------------------- |
+| Private chat with the bot     | The whole chat. Every message is addressed to the bot.                |
+| Group or non-forum supergroup | The whole chat. A mention or a reply to the bot starts it.            |
+| Forum supergroup              | A mention in General opens a new topic. Each topic is a conversation. |
 
 Conversation IDs are the chat ID, or `<chat-id>:<topic-id>` for a forum topic.
-Use them as the home conversation or as a delivery destination.
+The adapter strips `@BotName` mentions and command suffixes such as
+`/status@BotName` before the gateway sees the text, so the shared controls work
+unchanged. Approvals are text only. Progress shows 👀 while working and 👍 when
+finished.
 
-Mentions such as `@YourBot` and command suffixes such as `/status@YourBot` are
-removed before the gateway sees the text, so `/status`, `/cancel`, `/new`,
-`/approve`, and `/deny` work as they do in Discord. Poppet reacts with 👀 while
-working and 👍 when finished.
+## Topic names
 
-Poppet names the topics it creates after the session title. Telegram has no
-method for reading a topic's name, so the channel learns names from the topics it
-creates and from topic edit events. After a worker restart, renaming stops for
-topics whose names have not been seen since. An edit by anyone else also stops
-Poppet from renaming that topic.
-
-## Bot setup
-
-1. Create a bot with [@BotFather](https://t.me/BotFather) and copy its token.
-2. Find your numeric user ID, for example from the `from.id` field of
-   `https://api.telegram.org/bot<token>/getUpdates` after messaging the bot.
-3. For a private chat, the chat ID is your user ID. For a group, add the bot and
-   read `chat.id` from `getUpdates`; supergroup IDs start with `-100`.
-4. For a forum, make the bot an administrator with Manage Topics. Administrators
-   receive every message, so you can continue a topic without mentioning the bot.
-   In other groups, either make the bot an administrator or disable privacy mode
-   in BotFather.
-
-Do not set a webhook for the bot, and run only one worker per token. Telegram
-allows a single `getUpdates` client.
-
-## Setup
-
-Save the settings with named flags:
-
-```fish
-read --silent --prompt-str 'Telegram bot token: ' telegram_token
-poppet gateway telegram setup --owner-id <id> --chat-id <id> --bot-token "$telegram_token"
-set -e telegram_token
-poppet worker run
-```
-
-Add `--home-conversation-id <chat-id>:<topic-id>` to use a forum topic as home.
-The home conversation defaults to the chat itself. All settings, including the
-token, are stored in `<POPPET_DATA_DIR>/channels/telegram.json` with `0600`
-permissions. Restart the worker after changing them.
+The adapter renames the topics it creates. The Bot API cannot read a topic's
+name, so the adapter learns names from topics it created and from topic edit
+events. After a restart, renaming stops for topics whose names it has not seen
+since. An edit by anyone else stops renaming that topic.
 
 ## Limits
 
-- Replies are sent as plain text, so Markdown from the model is shown as written.
-- Telegram has no idempotency key. If a send or topic creation fails without a
-  clear answer, the gateway records it as uncertain, and a retry may duplicate it.
-- Updates waiting on Telegram's side (up to 24 hours) are processed when the
-  worker starts. The gateway ignores messages it has already accepted.
-- Only text messages are read.
+- Only one `getUpdates` client may run per token, so one worker per token and no
+  webhook.
+- Updates queued on Telegram's side, for up to 24 hours, are processed at start.
+  The inbox ignores messages it already accepted.
+- Only text messages are read. There is no `download`, so a message with files
+  gets a reply saying it cannot take them.
+- Replies are plain text, so Markdown shows as written.
+- Telegram has no idempotency key. A send or topic creation with no clear answer
+  is uncertain, and a retry can duplicate it.

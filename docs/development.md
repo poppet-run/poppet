@@ -293,77 +293,9 @@ See [adding a provider](providers.md#adding-a-provider).
 
 ## Adding a gateway
 
-Discord, Slack, and Telegram are bundled gateways. External packages implement `GatewayRegistration`
-from `@poppet/gateway` and export it as the default export of a lightweight entry point.
-Install the package in `<POPPET_DATA_DIR>/gateways`, then list its entry point in
-`config.json`, for example:
-
-```json
-{
-  "gatewayPackages": ["@example/poppet-chat/registration"]
-}
-```
-
-The example is a placeholder, not a published adapter. Poppet resolves packages
-from that directory, independently of the working directory. The install directory
-and package entry points must be owned by the Poppet user and writable only by
-that user. Entry points resolve inside its local `node_modules` directory.
-Package names and
-package subpaths are accepted; file paths and URLs are rejected. Nothing is
-automatically discovered or installed. Discord, Slack, and Telegram are always registered; duplicate
-or reserved IDs and malformed registrations stop gateway startup with an error.
-Restart the worker after changing the list or installed packages.
-
-Gateway commands and messaging worker startup load the same registrations.
-Help shows the bundled gateways without importing external adapter code.
-External modules run with the host's privileges. Use the host's compatible
-`@poppet/gateway` and Effect versions; these packages are currently private
-workspaces, so publishing a standalone adapter still requires packaging those
-shared dependencies. The loader does not provide dependency isolation.
-
-The registration supplies its ID, display name, setup usage, setup operation, and
-lazy configuration loader. The CLI generates setup help and dispatches
-`gateway <id> setup ...` through that registration.
-Lint restricts concrete gateway imports to registration modules.
-
-The optional `promptSetup` operation collects interactive choices and returns a
-save effect, or `null` when skipped. The host runs that effect after collecting
-the remaining choices. `poppet setup` uses the bundled Discord and Slack
-registrations and does not load external adapters.
-
-The host supplies `GatewayEnvironment` with the data directory and `GatewayInput`
-with bounded, redacted secret input. The package owns argument validation,
-credential storage, setup messages, and connection construction. `load` returns
-`null` when unconfigured or a scoped `GatewayAdapter` layer when configured;
-loading settings must not connect to the platform. Use a lightweight registration
-entry point and import heavy SDK code only when its layer is built.
-
-The messaging host builds a gateway per configured registration, sharing the
-existing store and agent request slots. Requests within one session stay ordered. Configuration errors appear per channel and
-do not prevent other configured channels from running. All resources close with
-the worker. Discord keeps ordinary settings in `config.json` and only its token
-in `channels/discord.json`. Its `accountId` effect resolves when Discord reports
-the authenticated bot identity; status remains available while login retries.
-The channel policy limits incoming requests to one owner and scope. Adapters
-validate platform permissions in `checkAccess`. An optional `homeConversationId`
-supplies the default proactive destination; `destination` resolves its parent.
-
-To receive files, an adapter lists them in `IncomingMessage.attachments` and
-implements `download`. Each attachment has the platform's ID, a display name, an
-optional size the platform reports before download, and `ref`, the adapter's own
-locator such as a URL or file ID; the gateway never reads it. The gateway calls
-`download(attachment, maxBytes)` when the request runs, so `ref` must still
-resolve then. `download` must stop at `maxBytes` bytes received, and fail with
-`unavailable` or `uncertain` to retry or with any other reason to refuse the file
-with a reply. Without `download`, a message with files gets a reply that the
-channel cannot receive them. The agent identifies file types and applies limits
-for every channel. A platform that delivers file bytes inline with the message,
-with nothing to fetch later, is not yet supported.
-Shared `loadGatewaySettings` and `saveGatewaySettings` preserve
-bounded reads, ownership checks, atomic replacement, and protected file modes
-while adapters own their schemas.
-
-See [messaging package boundaries](architecture.md#package-boundaries) for the gateway contract.
+See [registration](gateways.md#registration) and the
+[adapter contract](gateways.md#adapter-contract). Add a page under
+`docs/gateways/` and to the website.
 
 ## Validation
 

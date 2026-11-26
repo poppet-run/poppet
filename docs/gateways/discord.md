@@ -1,171 +1,104 @@
 # Discord
 
-[Documentation index](../README.md)
+[Engineering notes](../README.md)
 
-## Bot setup
+`@poppet/gateway-discord` connects one Discord server through an outbound Gateway
+connection with discord.js 14.28.1, so no public webhook is needed. discord.js
+owns heartbeats, reconnect and resume, and API encoding. It does not retry
+ambiguous REST failures. The [user guide](https://poppet.run/docs/gateways/discord/)
+covers bot setup. See [gateways](../gateways.md) for the shared contract.
 
-Create a bot in the [Discord Developer Portal](https://discord.com/developers/applications).
-Enable its Message Content intent and install it in your server with the bot
-scope. In the text channels where you want to use it, give it View Channel, Read Message
-History, Send Messages, Create Public Threads, Send Messages in Threads, and Add Reactions permissions. It
-does not need Administrator. Use Discord's Developer Mode to copy your user,
-server, and home channel IDs. Poppet gets the bot's identity after login.
+| Module            | Owns                                                            |
+| ----------------- | --------------------------------------------------------------- |
+| `registration.ts` | The lightweight registration entry                              |
+| `settings.ts`     | The `discord` section of `config.json` and the token file       |
+| `setup.ts`        | Interactive setup                                               |
+| `adapter.ts`      | Events, mentions, threads, sends, reactions, typing, and naming |
+| `attachments.ts`  | Attachment listing and downloads                                |
+| `approvals.ts`    | Approval buttons                                                |
 
-Choose a private home channel that only trusted people can read. The
-configured user is the only person who can invoke Poppet, but everyone with
-channel access can read replies containing personal memory and conversation content.
+## Settings
 
-Run `poppet setup` to choose an assistant-capable provider and model, then configure
-Discord with token input masked by asterisks. Reruns can reuse the saved token while editing IDs.
+Owner, server, and home channel IDs live under `discord` in `config.json`.
+`channels/discord.json` holds only the token, `0600` in a `0700` directory.
+Setup merges settings atomically under the ownership locks, and loading never
+rewrites either file. Removing the `discord` section turns the gateway off.
+Discord reports the bot identity after login, and status stays available while
+login retries.
 
-For separate gateway setup, pass the Discord settings as named flags and pipe the bot token on stdin (or pass `--bot-token <bot-token>`). Flags can appear in any order. This command works in Bash, POSIX sh, and fish:
+## Threads as sessions
 
-```sh
-printf '%s\n' "$DISCORD_BOT_TOKEN" | poppet gateway discord setup --owner-id <your-user-id> --guild-id <server-id> --home-channel-id <home-channel-id>
-poppet worker run
-```
+- A real mention of the bot ID in an accessible text channel starts a thread from
+  that message. Its text becomes the first input of a new session.
+- An owner mention inside an existing thread attaches a session to it. It never
+  creates a nested thread or imports earlier messages.
+- Later messages in a bound thread continue its session without a mention.
+- Mentions match by bot ID, not display name.
 
-Piping the token on stdin or using `poppet setup` avoids putting the token in command arguments or shell history.
+The binding key is adapter, bot account, guild, and thread. If Discord stops
+allowing access, the local history stays and the failure is reported locally.
+The Message Content intent is needed for follow-ups without a mention. See
+Discord's [thread permissions](https://docs.discord.com/developers/topics/threads#permissions)
+and [message content rules](https://docs.discord.com/developers/events/gateway#message-content-intent).
 
-Replace the angle-bracket placeholders with Discord IDs and the bot token before running the
-setup command. The home channel receives proactive messages and is the default
-destination for scheduled results. It does not restrict where you can use the bot. Ordinary
-settings are merged into the `discord` section of `config.json`. The token stays in `<POPPET_DATA_DIR>/channels/discord.json`, protected with `0600`
-file and `0700` directory permissions. Removing the `discord` section disables
-Discord. Model-provider credentials remain separate. Restart an existing worker
-after changing channel settings;
-on macOS or Linux with systemd, use `worker restart`. The installed worker reads
-the saved settings without placing the bot token in its service environment.
+`@Poppet /status` and `@Poppet /cancel` are text controls, not registered slash
+commands. `/status` reports the session, the selected skill, the title, and the
+latest saved run.
 
-## Thread sessions
+## Progress
 
-Mention `@Poppet` with a message in any accessible text channel in the configured
-server. The bot starts a thread and replies there. You can also mention it in an
-existing thread to attach a session. Once attached, your follow-ups need no mention. Each thread keeps its own history and selected model
-across worker restarts, renames, and archiving. Start a new thread for a new
-session. Earlier messages in an existing thread are not imported.
-
-Use `@Poppet /new --skill weekly-review Review Acorn` to start a fresh session
-with a saved [local skill](../skills.md#gateway-sessions), in a new thread or an
-existing one. `/new <message>` starts without a skill.
-Previous session history is retained; ordinary follow-ups keep the skill snapshot.
-Any message can also [name a skill](../skills.md#mentions) with
-`$name` to load it for that message.
-Options precede the prompt; selection errors leave the active session unchanged.
-
-## Progress and controls
-
-The bot shows Discord's typing indicator while working, including during tool
-calls. It refreshes every eight seconds and stops refreshing when the request
-finishes, fails, or is cancelled. Discord clears it after a reply or within ten
-seconds of the last refresh. Indicator failures do not interrupt the request.
-
-Poppet also reacts to the original message with 👀 when processing starts, then
-replaces it with ✅ after a successful run. Failed or cancelled requests clear
-the bot's 👀 without adding ✅. These markers are best effort; missing reaction
-permissions do not stop chat, and a crash or network error can leave a stale marker.
-
-In an attached thread, `@Poppet /status` reports the session, selected skill, and
-latest saved run, including one with no messages. `@Poppet /cancel` interrupts its
-active request and cancels its queued requests.
-With `chat.maxConcurrentRequests` above 1, threads and channel mentions run at the
-same time, and messages within one thread are answered in order. Cancelling one
-thread does not affect requests in another, and an approval reply settles only a
-request in its own thread.
-These are text messages, not registered Discord slash commands. Controls and
-approval replies can have surrounding whitespace. The bot ignores
-other users, bots, and webhooks. DMs, forums, voice, and streaming message edits
-are not supported.
+The adapter refreshes the typing indicator every eight seconds while a request
+runs and stops on completion, failure, or cancellation. Discord clears it after a
+reply or ten seconds after the last refresh. It reacts with 👀 when work starts
+and replaces it with ✅ after success. Failure and cancellation remove the 👀.
+Reactions and typing are best effort, and their failures never change execution
+or delivery, so a crash can leave a stale marker. Replies are split to Discord's
+limit with automatic mentions turned off.
 
 ## Attachments
 
-Attach images or text files to a mention or a thread message; a message with
-files needs no text, and `/new` or `/new --skill <name>` with files needs no prompt.
-The supported types and limits are in [chat](../chat.md#attachments).
+`attachments.ts` lists image and text files on a mention or thread message. A
+message with files needs no text, and neither does `/new` with files. Downloads
+happen when the request runs:
 
-Files download when the request runs, not when the message arrives. Downloads
-come only from Discord's CDN over HTTPS, follow no redirects, stop at 5 MiB
-whatever size Discord reports, and have a 30-second deadline. A temporary
-download failure retries with the request's usual backoff. A refused or rejected
-file gets one reply naming it and the reason, and the model is not run. A request
-that waits more than a day in the queue can find Discord's file link expired;
-send the files again.
+- only from Discord's CDN over HTTPS, with no redirects;
+- stopping at the largest attachment limit whatever size Discord reports;
+- with a 30-second deadline (`timeouts.attachmentDownloadSeconds`).
 
-## Status and delivery
+A temporary failure retries with the request's backoff. A request that waits
+longer than a day can find the file link expired. See
+[attachments](../chat.md#attachments) for types and limits.
 
-Use `poppet worker status` for connection state, rejected/dropped event
-counts while running, and persisted queue/delivery counts, under `worker.messaging`.
-Each registration has an entry in `channels`, including its ID, display name, enabled state, connection
-metadata, or configuration error. A later successful connection or request
-clears a stale error. Persisted queue/delivery totals remain at the
-top level and are counted once across channels. When stopped, status inspects
-settings without opening messaging connections. Completed answers
-are saved before sending; a delivery retry never repeats model or tool work.
-Uncertain sends are recorded without automatic resending, since Discord may
-already have posted them. Use the session ID and `chat show <session>` to inspect
-the saved answer before manually reposting it. No reply is redirected to another
-channel when a thread becomes inaccessible. [Scheduled tasks](../tasks.md#delivery) default to the home
-channel with `--to discord`. Use `--to discord:<channel-or-thread-id>` to
-select another destination. Use the worker to execute and deliver
-them. Scheduled results use the same queue and do not alter thread sessions.
-During [quiet hours](../configuration.md#quiet-hours) scheduled results and
-failure notices wait until the window ends; replies to you are not held.
-A scheduled run that answers with exactly `NO_REPLY` posts nothing; its saved
-output stays inspectable in `tasks show`.
-Discord and [Slack](slack.md) are bundled adapters. Additional adapters can use the
-[external package contract](../development.md#adding-a-gateway).
+## Approvals
 
-## Action approval
-
-The [Bash tool](../commands.md) can manage the host machine. If command review
-requires a person, Poppet posts the exact command, working directory, timeout,
-and reason in the original thread. Reply `/approve <id>` or `/deny <id>` using
-the ID in that message. [Reviewed MCP actions](../mcp.md#reviewed-actions)
-show the target, expected effects, and exact arguments. Only the configured
-owner in that same authorized
-conversation can answer. Each ID permits one invocation and expires after two
-minutes, cancellation, or worker restart. `/cancel` also cancels the pending run.
-If a reviewed MCP action stops a run, the reply includes the approval or review
-guidance.
-
-Approval controls bypass the model queue. Unknown, expired, and reused IDs never
-start actions. Cron jobs do not create approval prompts; their occurrence fails,
-logs a reason code, and retains the details in `tasks show`. A failed occurrence
-posts one short [failure notice](../tasks.md#failure-notices) to the task's
-configured destination, without model output or error text.
-Successful cron results go to each task's configured destination.
+`approvals.ts` adds **Approve once** and **Deny** buttons after the full
+invocation, even when it spans several messages. Clicks are confirmed privately,
+and the buttons are replaced with the outcome when the request ends. After a
+crash, an old prompt may still show buttons, and clicking one reports that the
+request is gone.
 
 ## Thread names
 
-New threads use a fallback derived from the initiating message. After the answer
-has been delivered, Poppet may generate a concise session title and synchronize
-it to the managed thread. `chat rename` also updates a managed thread while the
-gateway is running. `/status` includes the local session title.
+The adapter implements `naming`. A new thread starts with a fallback name from
+the first message. It is managed only when source-message identity and bot
+ownership prove the bot created it, which also lets a lost creation
+acknowledgement recover. Attached existing threads keep their names. Before each
+rename the adapter checks access and compares the current name with the last name
+the bot set. Any recognized external edit stops synchronization, even if the old
+name comes back. Names fit Discord's 100 UTF-16 unit limit without splitting a
+character. Discord has no compare-and-rename, so an edit between the fetch and
+the rename can still race the bot. Permission, rate-limit, and deleted or locked
+thread failures leave chat results intact.
 
-Poppet manages names only when source-message identity and bot ownership prove
-that it created the thread. This also allows recovery after a lost creation
-acknowledgement. Attached existing threads keep their names. Before each rename,
-the adapter checks current access and compares the remote name with the last
-confirmed bot-applied name. A recognized external edit disables synchronization,
-even if the user later restores the old name. Discord names also respect its
-100 UTF-16-unit limit without splitting a Unicode character.
+## Destinations
 
-The saved answer is delivered before optional model naming starts. Naming and
-remote updates have separate bounded scopes. Failed permissions, rate limits,
-disconnects, or deleted/locked threads leave chat results intact. A lost rename
-acknowledgement is checked against the current name, without resending the rename.
-Failures can stop synchronization while the local session title stays usable.
-Discord has no atomic compare-and-rename operation, so a user edit between the
-last fetch and update can still race the bot.
+A scheduled destination is a channel or thread ID in the configured server, and
+`--to discord` uses the home channel. Chat task creation accepts a channel
+mention or numeric ID, and needs one of those for a plain channel name. The
+adapter checks the bot account, owner, server, parent, and current permissions
+before saving and again before sending. Existing Discord destinations keep their
+stored format.
 
-## Schedule through chat
+## Not supported
 
-With a tool-capable model, ask to create, inspect, pause, or resume a task in this
-authorized conversation. Scheduled results default to the configured home channel.
-Request delivery here to save the current thread instead, or local delivery to
-keep results on the machine. To deliver to another channel or thread, include its
-Discord channel mention or numeric ID in the request. The destination must be in
-the configured server and pass the bot's access checks. A plain channel name
-requires a mention or ID before the task can be created.
-See [task management](../tasks.md#chat-task-management) for time,
-receipt, and recovery behavior. Scheduled runs cannot manage other tasks.
+DMs, forum channels, voice, and progressive message edits.

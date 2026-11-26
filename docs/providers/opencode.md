@@ -3,9 +3,9 @@
 [Engineering notes](../README.md)
 
 `@poppet/provider-opencode` registers two providers on one adapter: `opencode`
-for pay-as-you-go workspace credit and `opencode-go` for the Go subscription. The
-user guides cover [OpenCode Go](https://poppet.run/docs/providers/opencode-go/)
-setup. See [providers](../providers.md) for the shared contract.
+for pay-as-you-go workspace credit and `opencode-go` for the Go subscription. The user guides
+cover [OpenCode](https://poppet.run/docs/providers/opencode/) and
+[OpenCode Go](https://poppet.run/docs/providers/opencode-go/). See [providers](../providers.md) for the shared contract.
 
 | Provider      | Catalog                                             | Key variable                 | Key file                |
 | ------------- | --------------------------------------------------- | ---------------------------- | ----------------------- |
