@@ -1,6 +1,7 @@
 import { InsufficientScopeError } from "@modelcontextprotocol/client";
 import type { FetchLike } from "@modelcontextprotocol/client";
 import { ApiKeyStore } from "@poppet/credentials";
+import { timeout, timeoutAfter } from "@poppet/io";
 import { Clock, Context, Effect, Layer, Ref, Semaphore } from "effect";
 
 import { containsSecret } from "#src/catalog";
@@ -10,6 +11,7 @@ import {
   closeConnection,
   diagnostic,
   discoverTools,
+  discoveryLimits,
   failed,
   fetchHTTP,
   hydrateConnection,
@@ -167,11 +169,16 @@ export const makeMCPLive = (toolBytes: number) =>
               },
             );
 
+            const limits = yield* discoveryLimits;
+
             const discovered = yield* Effect.tryPromise({
               try: async (signal) => {
-                await resources.client.connect(resources.transport, { signal, timeout: 5000 });
+                await resources.client.connect(resources.transport, {
+                  signal,
+                  timeout: limits.requestMs,
+                });
 
-                return discoverTools(config, resources.client, signal);
+                return discoverTools(config, resources.client, signal, limits);
               },
               catch: (cause) => startupFailure(config, cause),
             });
@@ -211,7 +218,7 @@ export const makeMCPLive = (toolBytes: number) =>
             if (skippedMessage !== null) {
               yield* logDiagnostic(config.id, skippedMessage);
             }
-          }).pipe(Effect.timeout("8 seconds"));
+          }).pipe(timeoutAfter("mcpStartupSeconds"));
 
           yield* startup.pipe(
             Effect.catch((error) =>
@@ -382,11 +389,14 @@ export const probeServer = (config: MCPServer) =>
       clock.currentTimeMillisUnsafe(),
     );
 
+    const limits = yield* discoveryLimits;
+    const startup = yield* timeout("mcpStartupSeconds");
+
     return yield* Effect.tryPromise({
       try: async (signal) => {
-        await resources.client.connect(resources.transport, { signal, timeout: 5000 });
+        await resources.client.connect(resources.transport, { signal, timeout: limits.requestMs });
 
-        return (await listTools(resources.client, signal)).map((tool) => tool.name);
+        return (await listTools(resources.client, signal, limits)).map((tool) => tool.name);
       },
       catch: (cause) =>
         challenged && oauth === null
@@ -394,7 +404,7 @@ export const probeServer = (config: MCPServer) =>
           : startupFailure(config, cause),
     }).pipe(
       Effect.timeoutOrElse({
-        duration: "8 seconds",
+        duration: startup,
         orElse: () => Effect.fail(failed(`MCP ${config.id}: startup timed out.`)),
       }),
       Effect.ensuring(

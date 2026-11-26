@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { TaskNoteArguments, taskNoteBytes, taskNoteDefinition } from "@poppet/agent";
 import { taskCatchUpMinutes } from "@poppet/config";
+import { limit } from "@poppet/io";
 import type { SkillSnapshot } from "@poppet/store";
 import { DeliveryDestination, Run, decodeRow, decodeRows, migrate, reportAs } from "@poppet/store";
 import { Clock, Context, Effect, Layer, Option, Result, Schema, Semaphore } from "effect";
@@ -37,8 +38,6 @@ interface TaskEnd {
 }
 
 const Count = Schema.Struct({ count: Schema.Natural });
-
-export const maxTasks = 64;
 
 const operation =
   <Args extends ReadonlyArray<unknown>, A, E, R>(run: (...args: Args) => Effect.Effect<A, E, R>) =>
@@ -223,6 +222,7 @@ export const makeTaskStore = (sql: SqlClient.SqlClient, catchUpMs = 0) => {
 
         const valid = yield* Schema.decodeUnknownEffect(NewTask)(input);
         const existing = yield* sql`SELECT COUNT(*) AS count FROM jobs`.pipe(decodeRow(Count));
+        const maxTasks = yield* limit("tasks");
 
         if ((existing?.count ?? 0) >= maxTasks) {
           return yield* new TaskError({

@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { acquireOwnerLock, OwnerLockError } from "@poppet/credentials/lock";
-import { readProtectedFile, writeFileAtomic } from "@poppet/io";
+import { LimitSettings, readProtectedFile, TimeoutSettings, writeFileAtomic } from "@poppet/io";
 import { MCPServers, mcpFileValue } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Layer, Schedule, Schema } from "effect";
 
@@ -53,6 +53,8 @@ const FileSettings = Schema.Struct({
       maxConcurrentRequests: Schema.optionalKey(Schema.Int),
     }),
   ),
+  timeouts: Schema.optionalKey(TimeoutSettings),
+  limits: Schema.optionalKey(LimitSettings),
 }).check(
   Schema.makeFilter(
     (file) =>
@@ -130,6 +132,8 @@ export const loadConfigSource = Effect.gen(function* () {
     outputTokens: file.chat?.outputTokens,
     runDeadlineSeconds: file.chat?.runDeadlineSeconds,
     maxConcurrentRequests: file.chat?.maxConcurrentRequests,
+    timeouts: file.timeouts,
+    limits: file.limits,
   };
 
   const environmentOverrides =
@@ -153,7 +157,7 @@ export const loadConfigSource = Effect.gen(function* () {
     Context.add(
       ConfigProvider.ConfigProvider,
       ConfigProvider.make((key) =>
-        key.length === 1 && Object.hasOwn(values, String(key[0]))
+        key.length > 0 && Object.hasOwn(values, String(key[0]))
           ? saved.load(key)
           : environment.load(key),
       ),

@@ -104,7 +104,7 @@ export const makeOpenCodeProvider = (
       }
 
       const client = key.pipe(
-        Effect.map((token) =>
+        Effect.flatMap((token) =>
           openAIClient({ key: token, baseUrl, http, headers: { "User-Agent": userAgent } }),
         ),
       );

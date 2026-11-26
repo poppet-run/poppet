@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { basename, extname } from "node:path";
 
+import { readableSize } from "@poppet/io";
 import type { AttachmentType } from "@poppet/provider";
 
 import { AgentError } from "#src/errors";
@@ -107,11 +108,6 @@ const rejected = (name: string, reason: string) =>
     reason: "attachment",
     message: `Cannot attach ${JSON.stringify(name)}: ${reason}`,
   });
-
-const readableSize = (bytes: number) =>
-  bytes >= 1024 * 1024
-    ? `${Math.round((bytes / 1024 / 1024) * 10) / 10} MiB`
-    : `${Math.round((bytes / 1024) * 10) / 10} KiB`;
 
 export const identifyAttachment = (input: AttachmentInput, policy: ChatPolicy) => {
   const name = displayName(input.name);

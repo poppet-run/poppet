@@ -10,6 +10,7 @@ import {
   GatewayRepositoryLive,
 } from "@poppet/gateway";
 import type { GatewayRegistration } from "@poppet/gateway";
+import { timeoutSeconds } from "@poppet/io";
 import type { DeliveryDestination } from "@poppet/store";
 import { StoreError } from "@poppet/store";
 import type { Schema } from "effect";
@@ -59,8 +60,6 @@ export interface AdapterHealth {
   lastError: string | null;
 }
 
-const maxRestartDelay = 300_000;
-
 const healthyAfter = 600_000;
 
 export const superviseAdapter = <E>(
@@ -76,7 +75,8 @@ export const superviseAdapter = <E>(
         Effect.gen(function* () {
           const ranFor = (yield* Clock.currentTimeMillis) - startedAt;
           const attempts = ranFor >= healthyAfter ? 0 : failures;
-          const delay = Math.min(1000 * 2 ** attempts, maxRestartDelay);
+          const maxDelay = (yield* timeoutSeconds("gatewayRestartMaxSeconds")) * 1000;
+          const delay = Math.min(1000 * 2 ** attempts, maxDelay);
 
           health.restarts++;
           health.lastError = message;

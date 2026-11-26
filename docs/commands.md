@@ -67,7 +67,7 @@ Poppet confirms button clicks privately and replaces the buttons with the outcom
 when the request ends. Text replies update the buttons too. Updating the
 message is best effort; a failed update cannot reopen a settled request.
 
-Requests expire after two minutes or when the run is cancelled or the worker
+Requests expire after two minutes (`timeouts.approvalSeconds`) or when the run is cancelled or the worker
 restarts. Expired IDs cannot be revived. After a crash, an old prompt may still
 show buttons, but clicking them reports that the request is no longer available.
 Ask for the operation again to obtain a new reviewed invocation. CLI and web chat

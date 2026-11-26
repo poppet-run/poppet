@@ -3,18 +3,11 @@ import { open } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { styleText } from "node:util";
 
-import {
-  Agent,
-  AgentError,
-  defaultPolicy,
-  logChatDiagnostic,
-  Skills,
-  sessionTitle,
-} from "@poppet/agent";
+import { Agent, AgentError, logChatDiagnostic, Skills, sessionTitle } from "@poppet/agent";
 import type { ChatEvent, SendOptions } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { gatewaySchema } from "@poppet/gateway";
-import { readFileBounded } from "@poppet/io";
+import { limit, limitSettings, readableSize, readFileBounded } from "@poppet/io";
 import { memorySchema } from "@poppet/memory";
 import { migrate, Session, SessionSearchQuery, SkillName, Store } from "@poppet/store";
 import type { StoredMessage, Run } from "@poppet/store";
@@ -33,7 +26,9 @@ const ChatAttachment = Schema.Struct({
 });
 
 const ChatAttachments = Schema.optionalKey(
-  Schema.Array(ChatAttachment).check(Schema.isMaxLength(defaultPolicy.attachmentsPerMessage)),
+  Schema.Array(ChatAttachment).check(
+    Schema.isMaxLength(limitSettings.attachmentsPerMessage.maximum),
+  ),
 );
 
 export const ChatSubmission = Schema.Union([
@@ -159,7 +154,7 @@ export const removeSessions = <A, E, R>(remove: Effect.Effect<A, E, R>) =>
 
 const dayMs = 24 * 60 * 60 * 1000;
 
-export const inspectChat = (command: ChatInspection, toolBytes = defaultPolicy.toolBytes) =>
+export const inspectChat = (command: ChatInspection, toolBytes?: number) =>
   Effect.gen(function* () {
     const store = yield* Store;
 
@@ -175,7 +170,7 @@ export const inspectChat = (command: ChatInspection, toolBytes = defaultPolicy.t
     }
 
     if (command.action === "search") {
-      return yield* store.searchSessions(command.query, toolBytes);
+      return yield* store.searchSessions(command.query, toolBytes ?? (yield* limit("toolBytes")));
     }
 
     if (command.action === "rename") {
@@ -212,9 +207,7 @@ const showSession = (id: string) =>
     };
   });
 
-const attachmentLimit = Math.max(defaultPolicy.imageBytes, defaultPolicy.textFileBytes);
-
-const readAttachment = (path: string) =>
+const readAttachment = (path: string, attachmentLimit: number) =>
   Effect.tryPromise({
     try: async () => {
       const name = basename(path);
@@ -233,7 +226,7 @@ const readAttachment = (path: string) =>
         () =>
           new AgentError({
             reason: "attachment",
-            message: `Cannot attach ${JSON.stringify(name)}: the file is larger than ${attachmentLimit / 1024 / 1024} MiB.`,
+            message: `Cannot attach ${JSON.stringify(name)}: the file is larger than ${readableSize(attachmentLimit)}.`,
           }),
       );
 
@@ -252,17 +245,24 @@ export const prepareChat = (
   command: Extract<ChatCommand, { action: "new" | "send" }>,
 ): Effect.Effect<ChatSubmission, AgentError, AppConfig> =>
   Effect.gen(function* () {
-    if ((command.attachments?.length ?? 0) > defaultPolicy.attachmentsPerMessage) {
+    const attachmentsPerMessage = yield* limit("attachmentsPerMessage");
+
+    if ((command.attachments?.length ?? 0) > attachmentsPerMessage) {
       return yield* Effect.fail(
         new AgentError({
           reason: "attachment",
-          message: `Attach at most ${defaultPolicy.attachmentsPerMessage} files to one message.`,
+          message: `Attach at most ${attachmentsPerMessage} files to one message.`,
         }),
       );
     }
 
+    const attachmentLimit = Math.max(yield* limit("imageBytes"), yield* limit("textFileBytes"));
     const read = command.attachments ?? [];
-    const attachments = yield* Effect.forEach(read, readAttachment);
+
+    const attachments = yield* Effect.forEach(read, (path) =>
+      readAttachment(path, attachmentLimit),
+    );
+
     const attached = attachments.length === 0 ? {} : { attachments };
 
     if (command.action === "send") {

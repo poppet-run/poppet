@@ -2,9 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { AgentError, escapedApprovalJSON } from "@poppet/agent";
 import type { ActionApproval, ApproveAction } from "@poppet/agent";
+import { timeoutSeconds } from "@poppet/io";
 import { StoreError } from "@poppet/store";
 import type { ToolApproval } from "@poppet/store";
-import { Cause, Clock, Deferred, Effect, Exit } from "effect";
+import { Cause, Clock, Deferred, Duration, Effect, Exit } from "effect";
 
 import type { ApprovalAction, ApprovalState, GatewayAdapter, IncomingMessage } from "#src/adapter";
 import { authorized } from "#src/context";
@@ -86,7 +87,14 @@ export const actionApprovals = (adapter: GatewayAdapter["Service"]) => {
 
         const heading = headingParts.join("\n");
         const details = `${heading} \`${invocation}\``;
-        const controls = `Reply \`/approve ${id}\` or \`/deny ${id}\`. Expires in two minutes; permits one execution only.`;
+        const expiresAfter = yield* timeoutSeconds("approvalSeconds");
+
+        const expiry =
+          expiresAfter % 60 === 0
+            ? `${expiresAfter / 60} ${expiresAfter === 60 ? "minute" : "minutes"}`
+            : `${expiresAfter} seconds`;
+
+        const controls = `Reply \`/approve ${id}\` or \`/deny ${id}\`. Expires in ${expiry}; permits one execution only.`;
 
         const parts =
           `${details}\n${controls}`.length <= adapter.textLimit
@@ -110,11 +118,11 @@ export const actionApprovals = (adapter: GatewayAdapter["Service"]) => {
           }
         }
 
-        entry.expiresAt = (yield* Clock.currentTimeMillis) + 120_000;
+        entry.expiresAt = (yield* Clock.currentTimeMillis) + expiresAfter * 1000;
         yield* Deferred.succeed(entry.ready, undefined);
 
         const answer = yield* Deferred.await(decision).pipe(
-          Effect.timeout("2 minutes"),
+          Effect.timeout(Duration.seconds(expiresAfter)),
           Effect.tapError(() =>
             Effect.sync(() => {
               expired = true;

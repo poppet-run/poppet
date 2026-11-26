@@ -1,3 +1,4 @@
+import { limit } from "@poppet/io";
 import { measureTiming, recordTiming } from "@poppet/provider";
 import type {
   AttachmentContent,
@@ -31,7 +32,7 @@ import { ExternalTools, externalAgentTool } from "#src/external-tools";
 import { memoryTool } from "#src/memory-tools";
 import { noReply } from "#src/no-reply";
 import { fetchPageTool, suppliedPageURLs } from "#src/pages";
-import { maxTextBytes, streamReply } from "#src/reply";
+import { streamReply } from "#src/reply";
 import { sessionReadTool, sessionSearchTool } from "#src/search";
 import { ChatSettings } from "#src/settings";
 import { skillIndex, skillIndexGuidance } from "#src/skill-index";
@@ -97,6 +98,7 @@ const withdrawnError = (tool: AgentTool) =>
 export const conversation = Effect.gen(function* () {
   const store = yield* Store;
   const policy = yield* ChatSettings;
+  const replyTextBytes = yield* limit("replyTextBytes");
   const external = Option.getOrNull(yield* Effect.serviceOption(ExternalTools));
   const skills = Option.getOrNull(yield* Effect.serviceOption(Skills));
   const clock = yield* Clock.Clock;
@@ -133,7 +135,7 @@ export const conversation = Effect.gen(function* () {
         model.description.capabilities.tools && skills !== null && policy.skillIndexBytes > 0;
 
       const skillsIndex = skillTools
-        ? yield* measureTiming("skill-index", skillIndex(skills, policy.skillIndexBytes))
+        ? yield* measureTiming("skill-index", skillIndex(skills, policy))
         : null;
 
       const tools: ReadonlyArray<AgentTool> = model.description.capabilities.tools
@@ -396,7 +398,7 @@ export const conversation = Effect.gen(function* () {
 
             reasoningBytes += byteSize(event.text);
 
-            if (reasoningBytes > maxTextBytes) {
+            if (reasoningBytes > replyTextBytes) {
               return Stream.fail(
                 new AgentError({
                   reason: "output-limit",
@@ -411,7 +413,7 @@ export const conversation = Effect.gen(function* () {
           if (event.type === "text-delta") {
             outputBytes += byteSize(event.text);
 
-            return outputBytes > maxTextBytes
+            return outputBytes > replyTextBytes
               ? Stream.fail(
                   new AgentError({
                     reason: "output-limit",

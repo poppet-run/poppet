@@ -1,27 +1,37 @@
 import { timeZone } from "@poppet/config";
+import { limit, limitSettings } from "@poppet/io";
 import { savedFactsBytes } from "@poppet/memory";
-import { Config, Context, Effect, Layer, Schema } from "effect";
+import { Config, Context, Effect, Layer, Record, Schema, Struct } from "effect";
 
-export interface ChatPolicy {
+const chatLimits = Struct.pick(limitSettings, [
+  "contextBytes",
+  "historyTurns",
+  "modelTurns",
+  "toolCalls",
+  "toolBytes",
+  "soulBytes",
+  "profileBytes",
+  "skillIndexBytes",
+  "skillIndexEntries",
+  "skillDescriptionBytes",
+  "skillMentions",
+  "attachmentsPerMessage",
+  "imageBytes",
+  "textFileBytes",
+  "imagesPerRequest",
+  "imageContextBytes",
+  "pageBytes",
+]);
+
+type ChatLimits = { readonly [K in keyof typeof chatLimits]: number };
+
+export interface ChatPolicy extends ChatLimits {
   readonly logReasoning: boolean;
   readonly logTimings: boolean;
-  readonly contextBytes: number;
-  readonly historyTurns: number;
   readonly outputTokens: number;
-  readonly modelTurns: number;
-  readonly toolCalls: number;
-  readonly toolBytes: number;
-  readonly soulBytes: number;
-  readonly profileBytes: number;
   readonly factsBytes: number;
-  readonly skillIndexBytes: number;
   readonly runDeadlineSeconds: number;
   readonly maxConcurrentRequests: number;
-  readonly attachmentsPerMessage: number;
-  readonly imageBytes: number;
-  readonly textFileBytes: number;
-  readonly imagesPerRequest: number;
-  readonly imageContextBytes: number;
   readonly timeZone: string | null;
 }
 
@@ -30,25 +40,13 @@ export class ChatSettings extends Context.Service<ChatSettings, ChatPolicy>()(
 ) {}
 
 export const defaultPolicy: ChatPolicy = {
+  ...Record.map(chatLimits, (value) => value.fallback),
   logReasoning: false,
   logTimings: false,
-  contextBytes: 262_144,
-  historyTurns: 20,
   outputTokens: 2048,
-  modelTurns: 16,
-  toolCalls: 16,
-  toolBytes: 16_384,
-  soulBytes: 8192,
-  profileBytes: 8192,
   factsBytes: savedFactsBytes,
-  skillIndexBytes: 8192,
   runDeadlineSeconds: 300,
   maxConcurrentRequests: 3,
-  attachmentsPerMessage: 4,
-  imageBytes: 5 * 1024 * 1024,
-  textFileBytes: 64 * 1024,
-  imagesPerRequest: 8,
-  imageContextBytes: 6144,
   timeZone: null,
 };
 
@@ -74,8 +72,9 @@ export const ChatSettingsLive = Layer.effect(
           Config.withDefault(defaultPolicy.maxConcurrentRequests),
         ),
         timeZone,
+        ...Record.map(chatLimits, (_, name) => limit(name)),
       },
       { concurrency: 1 },
-    ).pipe(Effect.map((settings) => Object.assign({}, defaultPolicy, settings))),
+    ).pipe(Effect.map((settings): ChatPolicy => ({ ...defaultPolicy, ...settings }))),
   ),
 );

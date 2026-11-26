@@ -3,6 +3,7 @@ import { chmod, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { limit, timeoutSeconds } from "@poppet/io";
 import { mcpServers } from "@poppet/mcp/config";
 import { Config, ConfigProvider, Context, Effect, Schema } from "effect";
 
@@ -45,6 +46,8 @@ describe("loadConfigSource", () => {
           quietHours: { start: "22:00", end: "07:30", timeZone: "Europe/London" },
         },
         chat: { outputTokens: 4096 },
+        timeouts: { mcpToolCallSeconds: 20 },
+        limits: { toolBytes: 4096 },
         browser: { enabled: true, command: "bin/browser", allowedDomains: ["example.com"] },
         mcpServers: [
           {
@@ -91,6 +94,10 @@ describe("loadConfigSource", () => {
           mcp: mcpServers,
           output: Config.schema(Schema.Int, "outputTokens"),
           secret: Config.String("POPPET_OPENROUTER_API_KEY"),
+          toolCallSeconds: timeoutSeconds("mcpToolCallSeconds"),
+          pageSeconds: timeoutSeconds("pageFetchSeconds"),
+          toolBytes: limit("toolBytes"),
+          contextBytes: limit("contextBytes"),
         }).pipe(Effect.provide(loaded.context)),
       );
 
@@ -101,6 +108,10 @@ describe("loadConfigSource", () => {
         output: 4096,
         secret: "secret-key",
         mcp: [{ cwd: join(directory, "local") }],
+        toolCallSeconds: 20,
+        pageSeconds: 15,
+        toolBytes: 4096,
+        contextBytes: 262_144,
       });
       expect(JSON.stringify(loaded.source)).not.toContain("secret-key");
     } finally {
@@ -117,6 +128,10 @@ describe("loadConfigSource", () => {
     ],
     ["unknown setting", '{"token":"must-not-appear"}'],
     ["unknown chat setting", '{"chat":{"outputToken":1024}}'],
+    ["unknown timeout", '{"timeouts":{"searchSeconds":20}}'],
+    ["timeout below its minimum", '{"timeouts":{"mcpToolCallSeconds":0}}'],
+    ["limit above its maximum", '{"limits":{"toolBytes":1048576}}'],
+    ["fractional limit", '{"limits":{"historyTurns":2.5}}'],
     ["data directory in file", '{"dataDirectory":"elsewhere"}'],
     ["wrong value type", '{"chat":{"outputTokens":"1024"}}'],
     ["wrong reasoning flag type", '{"chat":{"logReasoning":"true"}}'],

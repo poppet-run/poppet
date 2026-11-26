@@ -60,7 +60,7 @@ results, without changing the thread session. Cancelled, interrupted, and expire
 occurrences post nothing.
 
 Poppet marks Socket Mode offline when the socket closes and retries the
-connection after 30 seconds. Gateway work blocked by temporary channel
+connection after 30 seconds (`timeouts.gatewayRetrySeconds`). Gateway work blocked by temporary channel
 unavailability can retry for about a minute.
 
 `poppet worker status` shows Slack connection and event errors. A reconnect or

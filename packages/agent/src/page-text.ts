@@ -1,12 +1,15 @@
-import { fitText } from "@poppet/io";
+import { fitText, readableSize } from "@poppet/io";
 import { decodeHTML } from "entities/decode";
 
 import { AgentError } from "#src/errors";
-import { maxPageBytes, pageFailure } from "#src/page-network";
+import { pageFailure } from "#src/page-network";
 
-const textPage = (body: Uint8Array, contentType: string | undefined) => {
-  if (body.byteLength > maxPageBytes) {
-    throw new AgentError({ reason: "tool-limit", message: "The decoded page exceeds 1 MiB." });
+const textPage = (body: Uint8Array, contentType: string | undefined, maxBytes: number) => {
+  if (body.byteLength > maxBytes) {
+    throw new AgentError({
+      reason: "tool-limit",
+      message: `The decoded page exceeds ${readableSize(maxBytes)}.`,
+    });
   }
 
   const [mime, ...parameters] = (contentType ?? "").toLowerCase().split(";");
@@ -129,8 +132,9 @@ export const pageResult = (
   body: Uint8Array,
   contentType: string | undefined,
   limit: number,
+  pageBytes: number,
 ) => {
-  const page = textPage(body, contentType);
+  const page = textPage(body, contentType, pageBytes);
 
   if (page.text.trim().length === 0) {
     throw new AgentError({

@@ -335,8 +335,9 @@ Images are PNG, JPEG, WebP, or GIF, identified by their bytes rather than their
 name, and need a model that accepts images. Text files are UTF-8 without NUL
 bytes and need an allowed extension such as `.txt`, `.md`, `.log`, `.csv`,
 `.json`, `.yaml`, or a common source-code extension. PDFs and other files are
-refused. One message holds at most 4 files, each image at most 5 MiB and each
-text file at most 64 KiB. These limits are fixed.
+refused. By default one message holds at most 4 files, each image at most 5 MiB and each
+text file at most 64 KiB (`limits.attachmentsPerMessage`, `limits.imageBytes`, and
+`limits.textFileBytes`; see [timeouts and limits](configuration.md#timeouts-and-limits)).
 
 A rejected file stops the whole message, with a reply naming the file and why;
 the model never answers without a file you sent. Sending an image to a session
@@ -381,8 +382,9 @@ it can explain the problem; there is no automatic retry. `chat show` retains the
 tool call and failure or bounded result.
 
 Destinations must resolve entirely to public addresses on standard HTTP(S) ports.
-Credentials in URLs are rejected. Each read has a 15-second overall deadline,
-at most three redirects, and 1 MiB limits for transferred and decoded bodies.
+Credentials in URLs are rejected. Each read has a 15-second overall deadline
+(`timeouts.pageFetchSeconds`), at most three redirects, and 1 MiB limits for transferred and
+decoded bodies (`limits.pageBytes`).
 Results fit the 16 KiB tool-output limit; truncation keeps the source URL and flag.
 
 ## Provider and model selection
@@ -418,7 +420,7 @@ automatically retried or switched to another provider/model.
 ## Context and run limits
 
 Context retains recent complete exchanges, including tool pairs and continuation,
-up to 20 exchanges within a fixed 256 KiB context budget. When model capacity is known,
+up to 20 exchanges within a 256 KiB context budget. When model capacity is known,
 Poppet also reserves room for output and request overhead. UTF-8 bytes are a
 conservative estimate rather than an exact tokenizer, counting three bytes per
 token of reported capacity; providers can still reject oversized context. A new
@@ -428,7 +430,9 @@ only the request, not saved history. Answers are limited to 128 KiB of text and
 1 MiB including continuation. The runner has a five-minute absolute deadline by default
 (`chat.runDeadlineSeconds`);
 provider inference also retains its 60-second deadline. Each run permits at most
-sixteen model turns and sixteen tool calls, with 16 KiB per tool result.
+sixteen model turns and sixteen tool calls, with 16 KiB per tool result. These are
+defaults; the `limits` and `timeouts` fields are listed under
+[timeouts and limits](configuration.md#timeouts-and-limits).
 
 Tool-capable models receive conversation search,
 page reading, explicit memory, and interactive task management. Models without tool

@@ -15,7 +15,7 @@ export { readBounded, readBoundedText, runBounded, type BoundedRun } from "#src/
 
 export { publicHttpURL, urlHostname, publicAddress, resolveAddresses } from "#src/public-url";
 
-export { clip, fitPrefix, fitText, longestFit } from "#src/budget";
+export { clip, fitPrefix, fitText, longestFit, readableSize } from "#src/budget";
 
 export {
   formatLogLine,
@@ -24,3 +24,18 @@ export {
   writeDiagnostic,
   type LogValue,
 } from "#src/log";
+
+export {
+  LimitSettings,
+  limit,
+  limitSettings,
+  resolvedLimits,
+  resolvedTimeouts,
+  timeout,
+  timeoutAfter,
+  timeoutSeconds,
+  TimeoutSettings,
+  timeoutSettings,
+  type LimitName,
+  type TimeoutName,
+} from "#src/settings";

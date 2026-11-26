@@ -273,7 +273,7 @@ poppet tasks add daily-summary --cron "0 9 * * *" --tz Europe/London --to discor
 
 Use `--to discord:<channel-or-thread-id>` before the prompt to select an
 explicit destination. A running messaging worker validates access before creating the task.
-Creation through the worker must finish within eight seconds, including queue
+Creation through the worker must finish within eight seconds (`timeouts.taskOperationSeconds`), including queue
 waiting and destination validation. An expired lookup cannot save a task afterward.
 
 The worker validates messaging destinations and delivers results through configured

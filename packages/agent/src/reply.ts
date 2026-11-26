@@ -1,3 +1,4 @@
+import { limit } from "@poppet/io";
 import { ModelEvent, outputText } from "@poppet/provider";
 import type { Completion, ModelOperations, ModelRequest, ProviderError } from "@poppet/provider";
 import type { Run } from "@poppet/store";
@@ -5,10 +6,6 @@ import { Effect, Schema, Stream } from "effect";
 
 import { byteSize } from "#src/context";
 import { AgentError } from "#src/errors";
-
-export const maxTextBytes = 131_072;
-
-const maxCompletionBytes = 1_048_576;
 
 const protocolFailure = () =>
   new AgentError({
@@ -27,6 +24,7 @@ const validateCompletion = (
   response: Completion | null,
   run: Pick<Run, "provider" | "model">,
   streamed: string,
+  limits: { readonly textBytes: number; readonly completionBytes: number },
 ) => {
   if (response === null) {
     throw protocolFailure();
@@ -52,8 +50,8 @@ const validateCompletion = (
   }
 
   if (
-    byteSize(finalText) > maxTextBytes ||
-    byteSize(JSON.stringify(response)) > maxCompletionBytes
+    byteSize(finalText) > limits.textBytes ||
+    byteSize(JSON.stringify(response)) > limits.completionBytes
   ) {
     throw outputLimit();
   }
@@ -65,6 +63,19 @@ export const streamReply = (
   model: ModelOperations,
   request: ModelRequest,
   run: Pick<Run, "provider" | "model">,
+): Stream.Stream<ModelEvent, AgentError | ProviderError> =>
+  Stream.unwrap(
+    Effect.all({
+      textBytes: limit("replyTextBytes"),
+      completionBytes: limit("completionBytes"),
+    }).pipe(Effect.map((limits) => replyStream(model, request, run, limits))),
+  );
+
+const replyStream = (
+  model: ModelOperations,
+  request: ModelRequest,
+  run: Pick<Run, "provider" | "model">,
+  limits: { readonly textBytes: number; readonly completionBytes: number },
 ): Stream.Stream<ModelEvent, AgentError | ProviderError> =>
   Stream.suspend(() => {
     let completed: Completion | null = null;
@@ -94,7 +105,7 @@ export const streamReply = (
 
           streamedBytes += byteSize(decoded.text);
 
-          if (streamedBytes > maxTextBytes) {
+          if (streamedBytes > limits.textBytes) {
             return yield* Effect.fail(outputLimit());
           }
 
@@ -108,7 +119,7 @@ export const streamReply = (
 
     const finish = Stream.fromEffect(
       Effect.try({
-        try: () => validateCompletion(completed, run, streamed),
+        try: () => validateCompletion(completed, run, streamed, limits),
         catch: (cause) => (cause instanceof AgentError ? cause : protocolFailure()),
       }),
     ).pipe(

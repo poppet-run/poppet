@@ -134,9 +134,11 @@ from conversations.
 
 ## Limits and deletion
 
-Personality, profile, and fact budgets are fixed at 8 KiB each. Oversized
+Personality, profile, and fact budgets are 8 KiB each. Set `limits.soulBytes` and
+`limits.profileBytes` to change the first two; the fact budget matches the saved-facts
+limit and is fixed. Oversized
 content fails clearly instead of silently omitting preferences. All count toward
-the 256 KiB context limit alongside instructions, tool definitions, and history.
+the context limit (`limits.contextBytes`, 256 KiB by default) alongside instructions, tool definitions, and history.
 A malformed or oversized personality file, profile, or facts block fails before
 resolving a provider; a context overflow fails before inference. Forgetting removes
 the saved fact from future snapshots; existing

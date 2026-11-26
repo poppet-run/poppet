@@ -6,7 +6,10 @@ import { brotliCompressSync, deflateSync, gzipSync } from "node:zlib";
 
 import { Schema } from "effect";
 
-import { maxPageBytes, pageURL, publicAddress, requestPage, resolvePage } from "#src/page-network";
+import { pageURL, publicAddress, requestPage, resolvePage } from "#src/page-network";
+import { defaultPolicy } from "#src/settings";
+
+const maxPageBytes = defaultPolicy.pageBytes;
 
 const certificate = fileURLToPath(new URL("./test/fixtures/pages/cert.pem", import.meta.url));
 
@@ -136,7 +139,7 @@ describe.concurrent("requestPage", () => {
 
     try {
       const url = new URL(`http://unresolvable.invalid:${port}/article?q=one`);
-      const page = await requestPage(url, "127.0.0.1", new AbortController().signal);
+      const page = await requestPage(url, "127.0.0.1", new AbortController().signal, maxPageBytes);
       expect(page.status).toBe(302);
       expect(page.body.byteLength).toBe(0);
       expect(received).toEqual([
@@ -180,11 +183,20 @@ describe.concurrent("requestPage", () => {
 
       try {
         const url = new URL(`http://page.invalid:${port}/small`);
-        const small = await requestPage(url, "127.0.0.1", new AbortController().signal);
+
+        const small = await requestPage(
+          url,
+          "127.0.0.1",
+          new AbortController().signal,
+          maxPageBytes,
+        );
+
         expect(small.body.byteLength).toBe(128);
         url.pathname = "/large";
         expect(
-          await failedRequest(requestPage(url, "127.0.0.1", new AbortController().signal)),
+          await failedRequest(
+            requestPage(url, "127.0.0.1", new AbortController().signal, maxPageBytes),
+          ),
         ).toBeInstanceOf(Error);
       } finally {
         await close(server);
@@ -207,6 +219,7 @@ describe.concurrent("requestPage", () => {
             new URL(`http://page.invalid:${port}/`),
             "127.0.0.1",
             new AbortController().signal,
+            maxPageBytes,
           ),
         ),
       ).toMatchObject({ message: expect.stringContaining("1 MiB") });
@@ -234,6 +247,7 @@ describe.concurrent("requestPage", () => {
         new URL(`http://page.invalid:${port}/`),
         "127.0.0.1",
         controller.signal,
+        maxPageBytes,
       );
 
       const outcome = pending.then(() => null).catch((cause: unknown) => cause);
@@ -273,10 +287,10 @@ describe.concurrent("requestPage", () => {
           `
         import {requestPage} from ${JSON.stringify(fileURLToPath(new URL("./page-network.ts", import.meta.url)))};
         const good = new URL(${JSON.stringify(`https://page.test:${port}/`)});
-        const result = await requestPage(good, '127.0.0.1', new AbortController().signal);
+        const result = await requestPage(good, '127.0.0.1', new AbortController().signal, 1048576);
         if(new TextDecoder().decode(result.body) !== 'trusted') throw new Error('Wrong body');
         good.hostname = 'wrong.test';
-        try { await requestPage(good, '127.0.0.1', new AbortController().signal); }
+        try { await requestPage(good, '127.0.0.1', new AbortController().signal, 1048576); }
         catch { console.log('hostname rejected'); process.exit(0); }
         throw new Error('Accepted incorrect TLS hostname');
       `,
@@ -312,6 +326,7 @@ describe.concurrent("requestPage", () => {
             new URL(`https://page.test:${port}/`),
             "127.0.0.1",
             new AbortController().signal,
+            maxPageBytes,
           ),
         ),
       ).toBeInstanceOf(Error);

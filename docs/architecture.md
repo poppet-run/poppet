@@ -418,7 +418,7 @@ is emitted before committing the answer. The source must end cleanly after one
 validated completion matching the session identity. Malformed, missing, duplicate,
 or trailing events fail. Text is capped at 128 KiB and serialized completion at
 1 MiB. A five-minute absolute deadline includes provider resolution and streaming;
-provider adapters retain their own 60-second inference deadlines.
+provider adapters retain their own 60-second inference deadlines (`timeouts.inferenceSeconds`).
 
 Run finalizers record provider/agent/store failure categories or interruption.
 Only completed inference becomes a saved assistant message, atomically with its
@@ -438,7 +438,8 @@ requests pass through the shared contract; no SDK types enter the agent.
 
 The loop advertises only allowed tools, validates the whole batch, and requires
 another model turn before performing side effects. Default budgets are sixteen
-model turns, sixteen calls, and 16 KiB per tool result. Current-run messages are
+model turns, sixteen calls, and 16 KiB per tool result, configurable under `limits` in
+`config.json`; `@poppet/io` defines every timeout and limit with its default and range. Current-run messages are
 never trimmed independently of their tool pairs. Definitions and tool results
 count toward the context estimate; overflowing the current exchange fails clearly.
 Recorded usage sums all model turns when complete usage data is available.

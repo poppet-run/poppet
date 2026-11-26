@@ -60,12 +60,11 @@ in order. Set it to 1 to answer one request at a time. Simultaneous
 `openai-chatgpt` requests in the worker share one credential lock and refresh an
 expiring token once; `provider login` and `logout` in another terminal report the
 store as busy until no request is running. A provider rate limit fails the request
-with the standard failure reply rather than retrying. A request waiting for command approval keeps its slot for up to two minutes.
+with the standard failure reply rather than retrying. A request waiting for command approval keeps its slot until the approval expires
+(`timeouts.approvalSeconds`, two minutes by default).
 
-Context size, history length, model turns, tool calls, tool output, and memory/skill
-sizes use fixed limits in code. They are not configuration fields. See
-[chat limits](chat.md#context-and-run-limits). `poppet config` shows only editable
-chat settings.
+Timeouts and size limits live in the `timeouts` and `limits` sections; see
+[timeouts and limits](#timeouts-and-limits). `poppet config` prints every resolved value.
 
 The file must be valid JSON, at most 64 KiB, owned by the current user, and not
 writable by group or other users. Symlinks and hard links are rejected. Unknown
@@ -89,6 +88,75 @@ asking. `poppet tasks add` and `tasks edit` use it when `--cron` is given withou
 `--tz`, and [quiet hours](#quiet-hours) use it when they set no `timeZone` of
 their own. One-off `--at` timestamps still need an explicit offset. Unknown zones and UTC offsets such as `+01:00` are
 rejected. Restart the worker after changing it.
+
+## Timeouts and limits
+
+Each field is optional and takes a whole number. Timeouts are in seconds; `Bytes` fields are
+UTF-8 or raw bytes. Values outside the range fail validation like any other invalid setting.
+Restart the worker after changing them.
+
+```json
+{
+  "timeouts": { "inferenceSeconds": 180, "pageFetchSeconds": 30 },
+  "limits": { "toolBytes": 32768, "historyTurns": 40 }
+}
+```
+
+| Field                                | Default | Range   | Purpose                                                                                |
+| ------------------------------------ | ------- | ------- | -------------------------------------------------------------------------------------- |
+| `timeouts.inferenceSeconds`          | 60      | 5–3600  | Absolute deadline for one model inference request                                      |
+| `timeouts.providerRequestSeconds`    | 45      | 5–3600  | HTTP timeout for OpenAI-compatible provider requests                                   |
+| `timeouts.modelCatalogSeconds`       | 30      | 1–300   | Provider model-list request                                                            |
+| `timeouts.modelCatalogCacheSeconds`  | 60      | 0–86400 | How long a fetched model list is reused; 0 refetches every time                        |
+| `timeouts.actionReviewSeconds`       | 30      | 1–600   | Automatic review of a Bash command or MCP action                                       |
+| `timeouts.sessionTitleSeconds`       | 10      | 1–300   | Generating a chat session title                                                        |
+| `timeouts.conversationNamingSeconds` | 10      | 1–300   | Renaming a Discord or Slack conversation                                               |
+| `timeouts.pageFetchSeconds`          | 15      | 1–300   | Reading a public page, including redirects                                             |
+| `timeouts.mcpConnectSeconds`         | 5       | 1–300   | Connecting to an MCP server and each tool-list request                                 |
+| `timeouts.mcpStartupSeconds`         | 8       | 1–600   | Starting an MCP server, including discovery                                            |
+| `timeouts.mcpToolCallSeconds`        | 10      | 1–3600  | One MCP tool call                                                                      |
+| `timeouts.taskOperationSeconds`      | 8       | 1–300   | Creating or changing a task through the worker, and checking its messaging destination |
+| `timeouts.approvalSeconds`           | 120     | 10–3600 | How long an approval request stays open                                                |
+| `timeouts.attachmentDownloadSeconds` | 30      | 1–600   | Downloading one messaging attachment                                                   |
+| `timeouts.gatewayRequestSeconds`     | 10      | 1–300   | Discord, Slack, and Telegram API requests                                              |
+| `timeouts.gatewayRetrySeconds`       | 30      | 1–3600  | Wait before a messaging adapter reconnects after a failure                             |
+| `timeouts.gatewayRestartMaxSeconds`  | 300     | 1–3600  | Longest wait between messaging adapter restarts                                        |
+| `timeouts.telegramPollSeconds`       | 30      | 1–50    | Telegram long-poll duration                                                            |
+
+| Field                            | Default | Range          | Purpose                                                          |
+| -------------------------------- | ------- | -------------- | ---------------------------------------------------------------- |
+| `limits.contextBytes`            | 256 KiB | 16 KiB–16 MiB  | Context budget per model request                                 |
+| `limits.historyTurns`            | 20      | 1–200          | Recent exchanges kept in context                                 |
+| `limits.modelTurns`              | 16      | 1–128          | Model turns per run                                              |
+| `limits.toolCalls`               | 16      | 1–256          | Tool calls per run                                               |
+| `limits.toolBytes`               | 16 KiB  | 1 KiB–64 KiB   | Size of one tool result                                          |
+| `limits.soulBytes`               | 8 KiB   | 1–64 KiB       | `soul.md` size                                                   |
+| `limits.profileBytes`            | 8 KiB   | 1–64 KiB       | `profile.md` size                                                |
+| `limits.skillIndexBytes`         | 8 KiB   | 0–64 KiB       | Skill index size; 0 turns the index and skill tools off          |
+| `limits.skillIndexEntries`       | 64      | 1–512          | Skills considered for the index                                  |
+| `limits.skillDescriptionBytes`   | 240     | 16–4 KiB       | Size of one skill description in the index                       |
+| `limits.skillMentions`           | 4       | 0–32           | `$skill` mentions in one message                                 |
+| `limits.attachmentsPerMessage`   | 4       | 0–10           | Files attached to one message                                    |
+| `limits.imageBytes`              | 5 MiB   | 1 KiB–20 MiB   | Size of one image attachment                                     |
+| `limits.textFileBytes`           | 64 KiB  | 1 KiB–1 MiB    | Size of one text attachment                                      |
+| `limits.imagesPerRequest`        | 8       | 0–64           | Images sent in one model request                                 |
+| `limits.imageContextBytes`       | 6 KiB   | 1 KiB–64 KiB   | Context budget counted for each image                            |
+| `limits.replyTextBytes`          | 128 KiB | 4 KiB–4 MiB    | Answer text, and logged reasoning, per run                       |
+| `limits.completionBytes`         | 1 MiB   | 16 KiB–16 MiB  | Serialized completion, including continuation                    |
+| `limits.pageBytes`               | 1 MiB   | 64 KiB–16 MiB  | Transferred and decoded page body                                |
+| `limits.mcpTools`                | 128     | 1–1024         | Tools discovered from one MCP server                             |
+| `limits.mcpDiscoveryBytes`       | 256 KiB | 16 KiB–4 MiB   | Tool-list JSON from one MCP server                               |
+| `limits.tasks`                   | 64      | 1–1024         | Saved tasks                                                      |
+| `limits.chatTaskCreatesPerRun`   | 5       | 0–64           | Tasks one chat run can create                                    |
+| `limits.chatTaskIntervalMinutes` | 5       | 1–1440         | Shortest interval for a recurring task created or edited in chat |
+| `limits.workerLogBytes`          | 5 MiB   | 64 KiB–256 MiB | Size of each background worker log file before rotation          |
+| `limits.webChatBodyBytes`        | 256 KiB | 64 KiB–16 MiB  | Web chat request body                                            |
+| `limits.webChatStreams`          | 32      | 1–256          | Open web chat event streams                                      |
+
+Larger attachment limits raise the worker request-body limit to match. The saved-facts budget,
+skill-file size, task note and prompt sizes, the Bash tool's 300-second ceiling, and messaging
+platform message lengths stay fixed: they are part of stored data or of contracts with the model
+and messaging platforms.
 
 ## Quiet hours
 
@@ -201,7 +269,7 @@ Set `chat.logReasoning` to `true` to also show readable reasoning in CLI diagnos
 and `<data directory>/logs/worker.log`. It covers chat, messaging, and scheduled
 runs. Answer output and gateway replies contain only the answer. The provider
 must return readable reasoning; encrypted continuation metadata is never logged.
-Logged reasoning is limited to 128 KiB per run and buffered diagnostic entries are
+Logged reasoning is limited to 128 KiB per run (`limits.replyTextBytes`) and buffered diagnostic entries are
 flushed on failure or interruption. Logs can contain private prompt or tool content and
 use the existing protected files and rotation. This setting does not select
 reasoning effort or a reasoning-token budget.
@@ -234,14 +302,14 @@ See [OpenCode Go](providers/opencode-go.md) and [OpenRouter](providers/openroute
 ## Skill files
 
 Skills live in `<POPPET_DATA_DIR>/skills/<name>/SKILL.md`, with no configurable
-path. Each file is limited to 8192 UTF-8 bytes and counts against the fixed context
+path. Each file is limited to 8192 UTF-8 bytes and counts against the context
 budget. See [skills](skills.md).
 
 ## Page reading
 
-Page reading uses the fixed model-turn, tool-call, context, and tool-output limits.
+Page reading uses the model-turn, tool-call, context, and tool-output limits.
 Each request has a 15-second deadline, at most three redirects, and a 1 MiB body
-limit. Only HTTP(S) standard ports are accepted. Ambient proxies and credentials
+limit by default; see [timeouts and limits](#timeouts-and-limits). Only HTTP(S) standard ports are accepted. Ambient proxies and credentials
 are not forwarded. See [page reading](chat.md#read-a-supplied-url).
 
 The retired `browser` configuration key is ignored. Built-in browser automation and

@@ -9,6 +9,7 @@ import {
   ownerOnlySkill,
 } from "@poppet/agent";
 import type { ChatTaskAction, ChatTaskContext } from "@poppet/agent";
+import { limit, timeout } from "@poppet/io";
 import { Store, StoreError } from "@poppet/store";
 import type { Run } from "@poppet/store";
 import { Clock, Cron, Effect, Layer, Match, Option, Schema } from "effect";
@@ -24,12 +25,9 @@ import {
   TaskPatch,
 } from "#src/task-schema";
 import type { Schedule, Task, TaskControl } from "#src/task-schema";
-import { maxTasks, TaskRepository } from "#src/task-store";
+import { TaskRepository } from "#src/task-store";
 
-const maxChatCreatesPerRun = 5;
-const minChatCronIntervalMs = 5 * 60_000;
-
-const checkChatCronCadence = (schedule: Schedule, now: number) => {
+const checkChatCronCadence = (schedule: Schedule, now: number, intervalMinutes: number) => {
   if (schedule.type !== "cron") {
     return;
   }
@@ -45,9 +43,9 @@ const checkChatCronCadence = (schedule: Schedule, now: number) => {
     (minute, index) => (matched[index + 1] ?? (matched[0] ?? minute) + 60) - minute,
   );
 
-  if (Math.min(...gaps) * 60_000 < minChatCronIntervalMs) {
+  if (Math.min(...gaps) * 60_000 < intervalMinutes * 60_000) {
     throw new TaskError({
-      message: "Recurring tasks created or edited in chat must run at least 5 minutes apart.",
+      message: `Recurring tasks created or edited in chat must run at least ${intervalMinutes} ${intervalMinutes === 1 ? "minute" : "minutes"} apart.`,
     });
   }
 };
@@ -90,17 +88,19 @@ const resolveDelivery = (
     );
   }
 
-  return target.pipe(
-    Effect.timeoutOrElse({
-      duration: "8 seconds",
-      orElse: () =>
-        Effect.fail(
-          new AgentError({
-            reason: "tool-permission",
-            message: "Messaging destination validation timed out.",
-          }),
-        ),
-    }),
+  return Effect.flatMap(timeout("taskOperationSeconds"), (duration) =>
+    target.pipe(
+      Effect.timeoutOrElse({
+        duration,
+        orElse: () =>
+          Effect.fail(
+            new AgentError({
+              reason: "tool-permission",
+              message: "Messaging destination validation timed out.",
+            }),
+          ),
+      }),
+    ),
   );
 };
 
@@ -138,6 +138,9 @@ export const ChatTasksLive = Layer.effect(
     const skills = yield* Skills;
     const clock = yield* Clock.Clock;
     const { toolBytes } = yield* ChatSettings;
+    const maxTasks = yield* limit("tasks");
+    const maxChatCreatesPerRun = yield* limit("chatTaskCreatesPerRun");
+    const intervalMinutes = yield* limit("chatTaskIntervalMinutes");
 
     yield* repo.recover(clock.currentTimeMillisUnsafe()).pipe(
       Effect.mapError(
@@ -194,7 +197,7 @@ export const ChatTasksLive = Layer.effect(
             }
 
             nextOccurrence(schedule, now);
-            checkChatCronCadence(schedule, now);
+            checkChatCronCadence(schedule, now, intervalMinutes);
 
             const endAt = action.endAt === null ? null : parseTimestamp(action.endAt);
 
@@ -337,7 +340,7 @@ export const ChatTasksLive = Layer.effect(
 
             if (schedule !== undefined) {
               nextOccurrence(schedule, now);
-              checkChatCronCadence(schedule, now);
+              checkChatCronCadence(schedule, now, intervalMinutes);
 
               if (
                 schedule.type === "once" &&

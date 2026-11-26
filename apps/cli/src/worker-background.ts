@@ -1,10 +1,11 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { readConfigFile } from "@poppet/config";
 import { acquireOwnerLock } from "@poppet/credentials/lock";
 import { Effect } from "effect";
 
-import { openWorkerLog, prepareWorkerLogDirectory } from "#src/commands/worker/log";
+import { openWorkerLog, prepareWorkerLogDirectory, workerLogBytes } from "#src/commands/worker/log";
 
 export const runLoggedWorker = async (command: ReadonlyArray<string>, dataDirectory: string) => {
   const directory = join(dataDirectory, "logs");
@@ -14,6 +15,12 @@ export const runLoggedWorker = async (command: ReadonlyArray<string>, dataDirect
     Effect.scoped(
       Effect.gen(function* () {
         yield* acquireOwnerLock(join(directory, "worker.lock"));
+
+        // An invalid configuration is reported by the worker itself, so the log keeps its default.
+        const logBytes = yield* readConfigFile(dataDirectory).pipe(
+          Effect.map(({ file }) => file.limits?.workerLogBytes ?? workerLogBytes),
+          Effect.orElseSucceed(() => workerLogBytes),
+        );
 
         return yield* Effect.promise(async () => {
           let child: Bun.Subprocess<"ignore", "pipe", "pipe"> | null = null;
@@ -39,7 +46,7 @@ export const runLoggedWorker = async (command: ReadonlyArray<string>, dataDirect
           let log: ReturnType<typeof openWorkerLog> | null = null;
 
           try {
-            log = openWorkerLog(directory);
+            log = openWorkerLog(directory, logBytes);
             const activeLog = log;
 
             if (pendingSignal !== null) {

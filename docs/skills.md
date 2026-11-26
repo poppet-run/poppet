@@ -58,8 +58,9 @@ the model checks the index and calls `poppet_skills.view_skill` to read a
 matching skill. The result is saved in the tool journal, so continuing the
 session uses the text the model saw even if the file later changes.
 
-The index is read once per run, considers at most 64 skills, omits invalid
-files and [manual-only skills](#manual-only-skills), and is bounded by the 8 KiB skill-index limit. When it does
+The index is read once per run, considers at most 64 skills (`limits.skillIndexEntries`), omits invalid
+files and [manual-only skills](#manual-only-skills), and is bounded by the 8 KiB skill-index limit
+(`limits.skillIndexBytes`). When it does
 not fit, it lists names only, then fewer names, and says it was truncated. A skill selected with
 `--skill` stays in the instructions as before and is marked as already supplied.
 
@@ -120,7 +121,7 @@ to be certain.
 
 - A named skill whose file is invalid fails the message with an error, before
   any run is saved. Fix the file, or write the name without `$`.
-- One message can name at most four skills.
+- One message can name at most four skills (`limits.skillMentions`).
 - The skill a session was created with is not loaded again; its saved snapshot
   still applies.
 - [Manual-only skills](#manual-only-skills) can be named, because you named them.

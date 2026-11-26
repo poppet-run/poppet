@@ -87,13 +87,13 @@ export type Fetch = (input: string, init: RequestInit) => Promise<Response>;
 
 /** Calls Bot API methods with JSON bodies; callers decode only the fields they use. */
 export const telegramApi =
-  (token: Redacted.Redacted<string>, fetcher: Fetch) =>
+  (token: Redacted.Redacted<string>, fetcher: Fetch, requestMs: number) =>
   async <S extends Schema.ConstraintDecoder<unknown>>(
     method: string,
     params: Schema.JsonObject,
     schema: S,
     signal: AbortSignal,
-    timeoutMs = 10_000,
+    timeoutMs = requestMs,
   ): Promise<S["Type"]> => {
     const response = await fetcher(
       `https://api.telegram.org/bot${Redacted.value(token)}/${method}`,
