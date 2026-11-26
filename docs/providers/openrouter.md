@@ -1,49 +1,34 @@
 # OpenRouter
 
-[Documentation index](../README.md)
+[Engineering notes](../README.md)
 
-For OpenRouter, discovery uses its public catalog without an API key. A connection drop
-while downloading the catalog is reported as a temporary failure. Select a
-concrete model ID returned by `provider models` and save a key through login:
+`openrouter` reuses the Chat Completions adapter from `@poppet/provider/protocol`.
+The package is `@poppet/provider-openrouter`. The
+[user guide](https://poppet.run/docs/providers/openrouter/) covers setup. See
+[providers](../providers.md) for the shared contract.
 
-Save the provider and model in `config.json`:
+## Discovery
 
-```json
-{
-  "provider": "openrouter",
-  "model": "replace-with-model-id"
-}
-```
+`service.ts` reads the public catalog without a key. It takes tool support, image
+input, temperature, output limits, and context size from catalog metadata. A
+model accepts images when its input modalities include `image`. Discovery leaves
+out models that generate images or audio and dynamic routers such as
+`openrouter/auto` and `openrouter/free`. A malformed entry is skipped when the
+catalog has usable entries. A dropped connection while downloading is a temporary
+failure.
 
-```sh
-poppet provider models openrouter
-poppet provider login openrouter
-```
+## Requests
 
-## Credentials
+Inference loads the key from `POPPET_OPENROUTER_API_KEY` or `auth/openrouter.json`
+only when it starts. `protocol.ts` sets the routing rules:
 
-See [API keys](../configuration.md#api-keys) for protected storage, environment
-overrides, masked terminal input, and logout. OpenRouter uses `POPPET_OPENROUTER_API_KEY`
-and `<POPPET_DATA_DIR>/auth/openrouter.json`.
-
-## Models and requests
-
-Chat requests consume OpenRouter credits. The key is redacted and omitted from `config`.
-The adapter uses Chat Completions.
-It derives tools, image input, temperature, output limits, and context size from
-catalog metadata; a model accepts image attachments when its input modalities
-include `image`. Models that generate images or audio and dynamic model routers such as
-`openrouter/auto` and `openrouter/free` are excluded. A malformed catalog entry
-is skipped when the catalog contains usable entries.
-
-Requests require support for every requested parameter and disable provider
-fallbacks. A stable `session_id` groups the exchange. Plain reasoning and the
-complete structured reasoning sequence survive tool calls. Poppet assembles
-streaming fragments into blocks and preserves their signatures. Credit exhaustion,
-rate limits, upstream failures, and interrupted streams produce typed errors;
-requests are not automatically retried.
-[OpenRouter routing](https://openrouter.ai/docs/guides/routing/provider-selection),
-[reasoning continuation](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens),
-and [stream errors](https://openrouter.ai/docs/api/reference/streaming).
-
-See [provider selection](../cli.md#providers-and-models) for model configuration and [development and validation](../development.md#validation) for test coverage and live-check limits.
+- Requests require support for every parameter they send and turn off provider
+  fallbacks. See [provider selection](https://openrouter.ai/docs/guides/routing/provider-selection).
+- A stable `session_id` groups the exchange.
+- Continuation keeps plain reasoning and the full structured reasoning sequence
+  across tool calls. The adapter joins streaming fragments into blocks, in
+  arrival order, and keeps their signatures and opaque metadata. See
+  [reasoning tokens](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens).
+- Credit exhaustion, rate limits, upstream failures, and mid-stream errors map to
+  typed `ProviderError` reasons. See
+  [stream errors](https://openrouter.ai/docs/api/reference/streaming).

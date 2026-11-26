@@ -289,22 +289,7 @@ See the
 
 ## Adding a provider
 
-Each provider exports a `ProviderRegistration` from its own workspace package.
-Register it in `apps/cli/src/providers.ts` and declare its CLI workspace dependency.
-The registration supplies the ID, display name, authentication capabilities, help,
-and complete live layer. Configuration defaults to the first registered provider.
-
-The CLI consumes shared `Provider` and `ProviderConnection` services and resolved
-`ModelOperations`. Verification keeps provider resources open in its request scope.
-Provider packages own authentication, environment-variable names, protocol choice,
-headers, continuation extensions, and error rules. Shared credentials and protocol
-helpers receive these settings from their owner. Adding a provider needs no changes
-to shared schemas, storage, or command routing. Lint enforces the import boundary.
-See [provider registration and ownership](architecture.md#provider-registration-and-ownership)
-for the contract and integration steps.
-
-`provider models` returns normalized model descriptions for every provider. Wire
-protocol names stay internal to the provider package.
+See [adding a provider](providers.md#adding-a-provider).
 
 ## Adding a gateway
 

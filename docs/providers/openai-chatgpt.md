@@ -1,122 +1,101 @@
 # ChatGPT
 
-[Documentation index](../README.md)
+[Engineering notes](../README.md)
 
-## Sign in
+`openai-chatgpt` signs in with OAuth and runs ChatGPT subscription inference over
+streamed Responses requests. It needs no API key or client secret. The package is
+`@poppet/provider-openai`. The [user guide](https://poppet.run/docs/providers/openai-chatgpt/)
+covers sign-in. See [providers](../providers.md) for the shared contract.
 
-Sign in through the system browser, then inspect available models and connection status:
+| Path                  | Owns                                                       |
+| --------------------- | ---------------------------------------------------------- |
+| `src/registration.ts` | Live composition and connection operations                 |
+| `src/connection.ts`   | Credential schemas, scopes, and redacted secrets           |
+| `src/auth/`           | Login, refresh, status, and `CredentialStoreLive`          |
+| `src/oauth/`          | Discovery, token exchange, and ID token validation         |
+| `src/sign-in/`        | The authorization request and callback checks              |
+| `src/model/`          | The model catalog, the Responses client, and error mapping |
+| `src/test/fixtures/`  | Local OAuth and model servers shared by the tests          |
 
-```sh
-poppet provider login openai-chatgpt
-poppet provider models openai-chatgpt
-poppet provider status openai-chatgpt
-```
+## Sign-in
 
-## Headless and remote machines
+`@poppet/sign-in` owns the browser step, shared with [MCP OAuth](../mcp.md#oauth):
 
-The browser's callback goes to `127.0.0.1` on the machine running that browser.
-On a server or VM, finish sign-in in a browser elsewhere and bring the callback
-back in one of two ways.
+- `callback.ts` runs an ephemeral listener on `127.0.0.1` and closes it on
+  success, failure, timeout, or interruption. Shutdown drains the current
+  response so the browser gets the confirmation page. The callback consumes one
+  attempt and checks `state` before it reads an error or the code.
+- `authorize.ts` opens the browser, or prints the link over SSH (`SSH_CONNECTION`
+  or `SSH_TTY`), on Linux without `DISPLAY` or `WAYLAND_DISPLAY`, or with
+  `--no-browser`. A pasted callback address goes through the same checks as a
+  browser callback and must use this attempt's state and port. An address that
+  does not match is ignored so the user can paste again. Sign-in times out after
+  five minutes. `--callback-port` pins the port for SSH forwarding, and a port in
+  use fails before the link prints.
 
-**Paste the callback address.** Over SSH (`SSH_CONNECTION` or `SSH_TTY` is set),
-on Linux without `DISPLAY` or `WAYLAND_DISPLAY`, or with `--no-browser`, login
-prints the sign-in link instead of opening a browser:
+## OAuth
 
-```sh
-poppet provider login openai-chatgpt --no-browser
-```
+`OAuthClient` discovers endpoints from the fixed OpenAI issuer, checks their
+origin, exchanges codes, and verifies RS256 ID tokens against JWKS. jose handles
+JWT validation. Discovery is cached for an hour after a success, and a failure is
+retried on the next request. An ID token with several audiences or an authorized
+party must name Poppet's registered client ID. OAuth follows the public-client
+protocol directly. See
+[OpenAI registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in).
 
-Open the link in a browser on any device and sign in. That browser then shows a
-connection error for `http://127.0.0.1:<port>/auth/callback?...`. Copy the full
-address from its address bar and paste it at the `Callback URL:` prompt. Poppet
-checks a pasted address exactly as it checks a browser callback: it must carry
-this attempt's state and use the printed callback port, and an address that
-does not match is ignored so you can paste again. Sign-in still times out after
-five minutes. Esc, Ctrl+C, or Ctrl+D cancels it.
+The first sign-in registers Poppet with its own host ID and an issued client ID.
+The client ID is saved before the code exchange, so a failed exchange can be
+replaced without registering again. Later sign-ins reuse the registration and
+host ID, including after logout. Poppet stores one account. A new sign-in must
+verify as that account before its tokens replace the old ones. Login requests
+plan-usage consent when the saved credentials lack it, and status reports
+`planUsage: false` until then.
 
-**Forward the callback port.** Pin the listener port and forward it from the
-machine with the browser:
+## Credentials
 
-```sh
-ssh -L 1455:127.0.0.1:1455 <host>
-poppet provider login openai-chatgpt --no-browser --callback-port 1455
-```
+`auth/connection.json` is a `0600` file in a `0700` directory, written by atomic
+replacement. Tokens are redacted in application values and never printed.
 
-The browser's callback then reaches Poppet through the tunnel and no paste is
-needed. If the port is already in use, login fails before printing a link.
+`CredentialStoreLive` holds the [owner lock](../storage.md#owner-lock) while any
+of its builds in the process is open. All builds share one lock and one permit
+per data directory, so concurrent requests take turns reading or refreshing, an
+expiring token is renewed once, and other processes stay out until the last
+build closes. An Effect semaphore serializes refresh and credential changes
+inside a command.
 
-Both ways sign in on the remote machine itself, so it keeps its own host
-identifier and registration, and no tokens leave it.
+A near-expiry access token is refreshed, and the rotated credentials are saved
+together. If identity verification is unavailable right after a renewal, the
+renewal is kept, and the next request verifies it before using the new access
+token. A promoted renewal whose access token has already expired is refreshed
+again.
 
-## Image attachments
+Logout revokes the session with a 20-second deadline, including response
+cleanup, and clears tokens and verification. It keeps the account, the
+registration, and the host ID. `--forget` removes `connection.json`. The command
+reports when revocation could not be confirmed.
 
-A ChatGPT model accepts image attachments only when the account's model catalog
-lists `image` among its `input_modalities`. A model without that field is treated
-as text-only. This field has not been confirmed against a live catalog, so image
-attachments may be unavailable for every ChatGPT model; text-file attachments
-work.
+## Models and inference
 
-## Registration and consent
+`ChatGPTModel` lists the account's visible models and calls the OpenAI SDK with
+the OAuth bearer token. A successful catalog lookup is reused for up to a minute
+(`timeouts.modelCatalogCacheSeconds`, where 0 turns the cache off)
+in the same process. Each lookup still checks authentication, and credential
+changes, expiry, or a model missing from the cache fetch again. `provider models`
+always fetches. Failures are not cached and nothing is written to disk. Timing
+logs show hits and misses.
 
-Initial sign-in registers Poppet with its own host identifier and issued client
-ID. The browser handles account and workspace selection and plan-usage consent.
-The local callback displays a confirmation page before its listener closes.
-Return to the terminal for the final identity and permission checks. If an ID
-token names multiple audiences or supplies an authorized party, that party must
-match Poppet's registered client ID.
-Later sign-ins reuse the saved registration and host identifier, including after
-logout. Poppet stores one account and checks that the signed-in identity matches
-it before saving new tokens.
-[OpenAI registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
+A model accepts images only when its catalog entry lists `image` in
+`input_modalities`. Without that field it is text-only.
 
-If identity sign-in succeeds without plan-usage permission, status reports
-`planUsage: false`. Run `poppet provider login openai-chatgpt` again. Login automatically
-requests consent when saved credentials lack plan-usage permission. Returning
-sign-ins with plan permission do not force another consent prompt. Usage limits,
-ineligible accounts, temporary failures, and interrupted streams produce separate errors. Model requests are not automatically retried.
-The flow uses OAuth credentials and requires no API key or client secret.
-Error codes and request IDs are shown only when they are short identifiers
-without spaces or control characters.
+Inference streams Responses requests with `store: false`. The adapter keeps
+`response.output_item.done` items by output index, because the final event can
+omit the output array's contents, and those items win over terminal snapshots
+when it rebuilds history. Continuation keeps the validated output items,
+including encrypted reasoning. Usage limits, ineligible accounts, temporary
+failures, quota codes, and 403 permission responses map to separate
+`ProviderError` reasons. See
+[OpenAI inference requirements](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference).
 
-Model resolution reuses a successful catalog lookup for up to one minute within
-the same process, including across interactive CLI turns and worker requests.
-Each lookup still checks current authentication. Credential changes, an expired
-entry, or a model absent from the cached catalog trigger a fresh request.
-`provider models` always fetches a fresh catalog. Failed responses
-are not cached, and nothing is written to disk. Separate one-shot CLI processes
-do not share the cache. Enable [timing logs](../configuration.md#timing-logs) to
-see catalog hits and misses.
-
-## Credential storage
-
-Credentials live in `<POPPET_DATA_DIR>/auth/connection.json`, with owner-only file
-permissions (`0600`) inside a protected directory (`0700`). Writes use atomic
-replacement. Tokens are redacted in application values and omitted from command
-output. Near-expiry access tokens are refreshed with rotating credentials saved
-together. An OS-held SQLite lock in `auth/owner.lock.sqlite` keeps other processes out while
-one uses the credentials. Simultaneous requests within one process share the lock
-and take turns reading or refreshing credentials, so an expiring token is renewed
-once. `auth/owner.lock` records the current PID for diagnostics
-and is removed on normal shutdown or interruption. After a crash, the OS releases
-the SQLite lock and the next owner replaces the leftover PID marker automatically.
-Never remove the lock database while Poppet is running.
-
-OAuth discovery is cached for an hour after a successful response. A failed
-lookup is retried on the next request. If identity verification is temporarily
-unavailable after renewal, Poppet keeps the renewal in protected storage.
-The next request verifies it before using the renewed access token.
-
-## Logout
-
-`poppet provider logout openai-chatgpt` attempts to revoke the session and clears
-its local tokens and verification. It keeps the account identity, registration,
-and host identifier so signing back in reuses the same entry in ChatGPT.
-The revocation request has a 20-second deadline, including response cleanup.
-If remote revocation cannot be confirmed, the command reports it.
-
-To switch accounts or reset the registration, run
-`poppet provider logout openai-chatgpt --forget` before signing in again. This
-removes the local connection file. To remove an old entry from ChatGPT, disconnect
-it in ChatGPT Settings.
-
-See [provider selection](../cli.md#providers-and-models) for configuring inference and [chat](../chat.md) for saved sessions.
+Verification streams two requests. The second carries the complete tool and
+reasoning history, and success is recorded only after `response.completed` and a
+matching local tool result. Verification can record subscription metadata.
