@@ -1,6 +1,7 @@
 import { GatewayAdapter, GatewayError } from "@poppet/gateway";
 import type { IncomingMessage } from "@poppet/gateway";
-import { Deferred, Effect, Layer, Option, Queue, Schedule, Schema, Stream } from "effect";
+import { timeoutSeconds } from "@poppet/io";
+import { Deferred, Duration, Effect, Layer, Option, Queue, Schedule, Schema, Stream } from "effect";
 
 import {
   Chat,
@@ -104,7 +105,10 @@ export const telegramAdapterLayer = (
   Layer.effect(
     GatewayAdapter,
     Effect.gen(function* () {
-      const call = telegramApi(settings.token, fetcher);
+      const requestSeconds = yield* timeoutSeconds("gatewayRequestSeconds");
+      const retrySeconds = yield* timeoutSeconds("gatewayRetrySeconds");
+      const pollSeconds = yield* timeoutSeconds("telegramPollSeconds");
+      const call = telegramApi(settings.token, fetcher, requestSeconds * 1000);
       const chatId = Number(settings.chatId);
       const messages = yield* Queue.make<IncomingMessage>({ capacity: 64, strategy: "dropping" });
       const nameChanges = yield* Queue.make<string>({ capacity: 64, strategy: "dropping" });
@@ -224,7 +228,7 @@ export const telegramAdapterLayer = (
         catch: telegramFailure,
       }).pipe(
         Effect.tapError(reportError),
-        Effect.retry(Schedule.spaced("30 seconds")),
+        Effect.retry(Schedule.spaced(Duration.seconds(retrySeconds))),
         Effect.tap((me) =>
           Effect.sync(() => {
             bot = { id: me.id, username: me.username };
@@ -238,10 +242,10 @@ export const telegramAdapterLayer = (
         try: (signal) =>
           call(
             "getUpdates",
-            { offset, timeout: 30, allowed_updates: ["message"] },
+            { offset, timeout: pollSeconds, allowed_updates: ["message"] },
             Updates,
             signal,
-            40_000,
+            (pollSeconds + requestSeconds) * 1000,
           ),
         catch: telegramFailure,
       }).pipe(

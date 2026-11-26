@@ -266,7 +266,7 @@ A denial or failed review stops the run. When review requires a person,
 Poppet sends the target, expected effects, reason, and exact invocation to
 the originating Discord or Slack conversation. Only the configured owner
 can answer with `/approve <id>` or `/deny <id>`. Discord and Slack also have buttons.
-The request expires in two minutes and permits one execution. Use a private
+The request expires in two minutes (`timeouts.approvalSeconds`) and permits one execution. Use a private
 conversation for private arguments. CLI and web chat stop when a person is
 needed. Make a fresh request in Discord or Slack to obtain approval there.
 
@@ -307,8 +307,10 @@ Poppet supports tool discovery and invocation only. The legacy HTTP+SSE
 transport, resources, prompts, sampling, elicitation, MCP tasks, and media
 forwarding are outside this implementation. Resource links and media are marked omitted and never fetched.
 
-- At most 8 configured servers, 8 discovery pages per server, 128 discovered tools,
-  and 256 KiB of discovery JSON per server.
+- At most 8 configured servers, 8 discovery pages per server, 128 discovered tools
+  (`limits.mcpTools`), and 256 KiB of discovery JSON per server (`limits.mcpDiscoveryBytes`).
+  Connection, startup, and tool calls use `timeouts.mcpConnectSeconds` (5),
+  `timeouts.mcpStartupSeconds` (8), and `timeouts.mcpToolCallSeconds` (10).
 - Each stdio read buffer is capped at 4 MiB, before JSON parsing. HTTP JSON
   bodies, HTTP errors, and individual SSE events have the same cap; OAuth
   responses stay capped at 256 KiB. Each successful SSE response has a 16 MiB

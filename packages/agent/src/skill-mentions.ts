@@ -6,8 +6,6 @@ import { AgentError } from "#src/errors";
 import { skillAuthorityRule } from "#src/skills";
 import type { Skills } from "#src/skills";
 
-const maxMentions = 4;
-
 const code = /```[\s\S]*?(?:```|$)|`[^`\n]*`/gu;
 
 const mention = /(?<=^|[\s("'[])\$([A-Za-z0-9_-]{1,128})(?=[.,;:!?)"'\]]*(?:\s|$))/gu;
@@ -24,6 +22,7 @@ export const loadMentionedSkills = (
   skills: Skills["Service"],
   text: string,
   selected: string | null,
+  maxMentions: number,
 ): Effect.Effect<ReadonlyArray<SkillSnapshot>, AgentError> =>
   Effect.gen(function* () {
     const candidates = mentionedSkills(text);

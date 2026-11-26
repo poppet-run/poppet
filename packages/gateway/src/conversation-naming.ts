@@ -1,4 +1,5 @@
 import type { Agent } from "@poppet/agent";
+import { timeoutAfter } from "@poppet/io";
 import { Effect, Result } from "effect";
 
 import { GatewayError } from "#src/adapter";
@@ -101,7 +102,7 @@ export const conversationNaming = (context: GatewayContext, agent: Agent["Servic
         yield* repo.disableNaming(key);
       }
     }).pipe(
-      Effect.timeout("10 seconds"),
+      timeoutAfter("conversationNamingSeconds"),
       Effect.catch((cause) =>
         definitiveNamingFailure(cause) && entry.conversationId !== null && entry.sessionId !== null
           ? repo

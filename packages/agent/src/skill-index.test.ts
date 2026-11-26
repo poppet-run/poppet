@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 
 import { AgentError } from "#src/errors";
+import { defaultPolicy } from "#src/settings";
 import { skillDescription, skillIndex } from "#src/skill-index";
 import type { Skills } from "#src/skills";
 
@@ -15,7 +16,7 @@ const service = (names: ReadonlyArray<string>): Skills["Service"] => ({
 });
 
 const index = (names: ReadonlyArray<string>, bytes: number) =>
-  Effect.runPromise(skillIndex(service(names), bytes));
+  Effect.runPromise(skillIndex(service(names), { ...defaultPolicy, skillIndexBytes: bytes }));
 
 const indexedNames = async (contents: Record<string, string>) => {
   const skills: Skills["Service"] = {
@@ -23,7 +24,7 @@ const indexedNames = async (contents: Record<string, string>) => {
     load: (name) => Effect.succeed({ name, content: contents[name]! }),
   };
 
-  const result = await Effect.runPromise(skillIndex(skills, 8192));
+  const result = await Effect.runPromise(skillIndex(skills, defaultPolicy));
 
   return result?.skills.map((skill) => skill.name) ?? null;
 };
@@ -40,12 +41,12 @@ describe("skill-index.ts", () => {
   ])(
     "when skill content is %j, extracts its heading and first paragraph",
     (content, description) => {
-      expect(skillDescription(content)).toBe(description);
+      expect(skillDescription(content, 240)).toBe(description);
     },
   );
 
   test("when a description exceeds 240 bytes, truncates it with an ellipsis", () => {
-    const description = skillDescription(`# Title\n\n${"word ".repeat(200)}`);
+    const description = skillDescription(`# Title\n\n${"word ".repeat(200)}`, 240);
     expect(Buffer.byteLength(description)).toBeLessThanOrEqual(240);
     expect(description.endsWith("…")).toBe(true);
   });

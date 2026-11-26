@@ -166,7 +166,7 @@ grep 'session=<session-id>' worker.log
 Common fields are `task`, `occurrence`, `session`, `run`, `provider`, `adapter`,
 `server`, `reason`, and `error`. Reasoning entries use `msg=thinking` with the
 chunk in `text`; timing entries use `msg=timing` with `stage` and `duration_ms`.
-The background launcher limits each new log file to 5 MiB and retains three
+The background launcher limits each new log file to 5 MiB (`limits.workerLogBytes`) and retains three
 archives, `worker.log.1` through `worker.log.3`, newest first. It appends after
 restart and rotates between writes, including when a single output chunk exceeds
 the file limit. An existing oversized log is archived intact on the next write
@@ -237,7 +237,8 @@ apply to remote requests, including conversation-search result limits. Search
 runs on the owning store connection and needs no provider request. Memory changes are loaded on the next run. Chat output
 and session IDs go to the client terminal and are excluded from worker logs.
 Request bodies have a 10-second read deadline and a 32 MiB transport limit,
-which leaves room for four 5 MiB attachments sent as base64, the chat context, and
+raised when attachment limits need more,
+which leaves room for the largest permitted attachments sent as base64, the chat context, and
 command metadata. Oversized requests report a size error without being retried.
 Only an absent socket or refused connection permits local fallback. A lost,
 incomplete, or incompatible response fails without replaying the command. Restart

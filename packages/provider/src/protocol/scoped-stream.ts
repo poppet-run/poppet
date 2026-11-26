@@ -1,3 +1,4 @@
+import { timeout } from "@poppet/io";
 import { Effect, Stream } from "effect";
 
 import { interrupted, validateRequest } from "#src/index";
@@ -24,16 +25,17 @@ export const modelStream = (
       );
 
       let expired = false;
+      const deadline = yield* timeout("inferenceSeconds");
 
       yield* Effect.gen(function* () {
-        yield* Effect.sleep("60 seconds");
+        yield* Effect.sleep(deadline);
         expired = true;
         controller.abort();
       }).pipe(Effect.forkScoped);
 
       const iterable = yield* open(decoded, controller.signal).pipe(
         Effect.timeoutOrElse({
-          duration: "60 seconds",
+          duration: deadline,
           orElse: () => {
             expired = true;
             controller.abort();

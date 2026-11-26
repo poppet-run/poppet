@@ -1,5 +1,6 @@
 import { InsufficientScopeError } from "@modelcontextprotocol/client";
 import type { Tool as ServerTool } from "@modelcontextprotocol/client";
+import { timeoutSeconds } from "@poppet/io";
 import type { Tool } from "@poppet/provider";
 import { Effect, Ref, Schema } from "effect";
 
@@ -105,12 +106,14 @@ export const makeTool = (
         );
       }
 
+      const callSeconds = yield* timeoutSeconds("mcpToolCallSeconds");
+
       const result = yield* Effect.tryPromise({
         try: (signal) => {
           const send = () =>
             connection.client.request(
               { method: "tools/call", params: { name: tool.name, arguments: args } },
-              { signal, timeout: 10_000 },
+              { signal, timeout: callSeconds * 1000 },
             );
 
           return reviewed && endpoint !== null

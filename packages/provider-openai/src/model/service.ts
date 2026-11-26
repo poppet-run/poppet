@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { timeoutSeconds } from "@poppet/io";
 import { Provider, invalidRequest, measureTiming, verifyModel } from "@poppet/provider";
 import type {
   ModelDescription,
@@ -91,8 +92,10 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
             return yield* measureTiming(
               "model-catalog",
               Effect.gen(function* () {
+                const client = yield* clientFor(token, http);
+
                 const body = yield* Effect.tryPromise({
-                  try: (signal) => clientFor(token, http).get("/models", { signal }),
+                  try: (signal) => client.get("/models", { signal }),
                   catch: modelFailure,
                 });
 
@@ -109,7 +112,9 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
                 const models = catalog.models.filter((model) => model.visibility === "list");
                 catalogCache.entry = {
                   credential,
-                  expiresAt: (yield* Clock.currentTimeMillis) + 60_000,
+                  expiresAt:
+                    (yield* Clock.currentTimeMillis) +
+                    (yield* timeoutSeconds("modelCatalogCacheSeconds")) * 1000,
                   models,
                 };
 
@@ -127,7 +132,7 @@ export const makeChatGPTModel = (http: HttpFetch = fetch) =>
       responsesModel(
         describeModel(entry),
         auth.accessToken.pipe(
-          Effect.map((token) => clientFor(token, http)),
+          Effect.flatMap((token) => clientFor(token, http)),
           Effect.mapError(providerFailure),
         ),
         {

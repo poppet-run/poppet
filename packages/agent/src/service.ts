@@ -1,6 +1,6 @@
 import { styleText } from "node:util";
 
-import { formatLogLine, writeDiagnostic } from "@poppet/io";
+import { formatLogLine, timeout, writeDiagnostic } from "@poppet/io";
 import { ProviderError, RequestTiming, measureTiming, recordTiming } from "@poppet/provider";
 import type { ModelOperations, ProviderId } from "@poppet/provider";
 import { Store, StoreError } from "@poppet/store";
@@ -228,7 +228,12 @@ export const AgentLive = Layer.effect(
             const mentionedSkills =
               skills === null || options.origin === "scheduled"
                 ? []
-                : yield* loadMentionedSkills(skills, text, session.skill?.name ?? null);
+                : yield* loadMentionedSkills(
+                    skills,
+                    text,
+                    session.skill?.name ?? null,
+                    policy.skillMentions,
+                  );
 
             const run = yield* Effect.uninterruptible(
               Effect.gen(function* () {
@@ -457,7 +462,7 @@ export const AgentLive = Layer.effect(
           measureTiming("model-resolution", resolver.resolve(session.provider, session.model)).pipe(
             Effect.flatMap((model) => generateTitle(model, session, prompt)),
             Effect.scoped,
-            Effect.timeout("10 seconds"),
+            Effect.timeout(yield* timeout("sessionTitleSeconds")),
           ),
         );
 

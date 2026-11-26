@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { AppConfig } from "@poppet/config";
-import { readBoundedText, readProtectedFile } from "@poppet/io";
+import { limit, limitSettings, readBoundedText, readProtectedFile } from "@poppet/io";
 import { Cause, Context, Data, Effect, Exit, Layer, Option, Schema } from "effect";
 
 import { WebChatLive, SubmissionBody, WebChatError, WebChat } from "#src/commands/web-chat/chat";
@@ -39,9 +39,18 @@ const Login = Schema.Struct({
   key: Schema.String.check(Schema.isMinLength(32), Schema.isMaxLength(256)),
 });
 
-const maxBodyBytes = 262_144;
 const requestTimeoutSeconds = 10;
-const maxStreams = 32;
+
+interface WebLimits {
+  readonly bodyBytes: number;
+  readonly streams: number;
+}
+
+const defaultLimits: WebLimits = {
+  bodyBytes: limitSettings.webChatBodyBytes.fallback,
+  streams: limitSettings.webChatStreams.fallback,
+};
+
 const loopbackPeers = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
 const securityHeaders = {
@@ -71,7 +80,11 @@ const run = async <A, E>(effect: Effect.Effect<A, E>) => {
   });
 };
 
-const body = async <A>(request: Request, schema: Schema.Codec<A, string | object>) => {
+const body = async <A>(
+  request: Request,
+  schema: Schema.Codec<A, string | object>,
+  maxBodyBytes: number,
+) => {
   if (request.headers.get("content-type") !== "application/json") {
     throw new WebChatError({ status: 415, message: "Expected application/json." });
   }
@@ -193,6 +206,7 @@ export const webHandler = (
   settings: WebSettings,
   chat: WebChat["Service"],
   assets: ReadonlyMap<string, WebAsset>,
+  limits: WebLimits = defaultLimits,
 ) => {
   const logins = new Map<string, number>();
   const attempts = new Map<string, { count: number; windowStarted: number }>();
@@ -272,7 +286,7 @@ export const webHandler = (
         return throttled();
       }
 
-      const input = await body(request, Login);
+      const input = await body(request, Login, limits.bodyBytes);
       const digest = createHash("sha256").update(input.key).digest();
 
       if (!timingSafeEqual(digest, Buffer.from(settings.accessKeyHash, "hex"))) {
@@ -314,9 +328,12 @@ export const webHandler = (
     }
 
     if (request.method === "POST" && url.pathname === "/api/submissions") {
-      return Response.json(await run(chat.submit(await body(request, SubmissionBody))), {
-        status: 202,
-      });
+      return Response.json(
+        await run(chat.submit(await body(request, SubmissionBody, limits.bodyBytes))),
+        {
+          status: 202,
+        },
+      );
     }
 
     const receipt = /^\/api\/submissions\/([a-f0-9-]{36})$/.exec(url.pathname);
@@ -353,7 +370,7 @@ export const webHandler = (
       }
 
       if (request.method === "GET" && session[2] === "/events") {
-        if (streams >= maxStreams) {
+        if (streams >= limits.streams) {
           return Response.json({ message: "Too many open event streams." }, { status: 429 });
         }
 
@@ -537,14 +554,20 @@ export const serveWebChat = Effect.gen(function* () {
 
   const services = yield* Layer.build(WebChatLive);
   const chat = Context.get(services, WebChat);
-  const handler = webHandler(settings, chat, assets);
+
+  const limits = {
+    bodyBytes: yield* limit("webChatBodyBytes"),
+    streams: yield* limit("webChatStreams"),
+  };
+
+  const handler = webHandler(settings, chat, assets, limits);
   yield* Effect.acquireRelease(
     Effect.try({
       try: () =>
         Bun.serve({
           hostname: settings.hostname,
           port: settings.port,
-          maxRequestBodySize: maxBodyBytes,
+          maxRequestBodySize: limits.bodyBytes,
           idleTimeout: requestTimeoutSeconds,
           fetch: async (request, server) => {
             const response = await handler(

@@ -1,6 +1,7 @@
+import { timeout } from "@poppet/io";
 import { toolParameters } from "@poppet/provider";
 import type { Tool } from "@poppet/provider";
-import { Context, Effect, Layer, Schema } from "effect";
+import { Context, Duration, Effect, Layer, Schema } from "effect";
 
 import { contextTool } from "#src/agent-tool";
 import type { ToolCall } from "#src/agent-tool";
@@ -110,7 +111,8 @@ export const PagesLive = Layer.effect(
   Pages,
   Effect.gen(function* () {
     const transport = yield* PageTransport;
-    const { toolBytes } = yield* ChatSettings;
+    const { toolBytes, pageBytes } = yield* ChatSettings;
+    const deadline = yield* timeout("pageFetchSeconds");
 
     const fetch = (supplied: string) =>
       Effect.gen(function* () {
@@ -150,18 +152,18 @@ export const PagesLive = Layer.effect(
           }
 
           return yield* Effect.try({
-            try: () => pageResult(url, response.body, response.contentType, toolBytes),
+            try: () => pageResult(url, response.body, response.contentType, toolBytes, pageBytes),
             catch: (cause) => (cause instanceof AgentError ? cause : pageFailure()),
           });
         }
       }).pipe(
         Effect.timeoutOrElse({
-          duration: "15 seconds",
+          duration: deadline,
           orElse: () =>
             Effect.fail(
               new AgentError({
                 reason: "tool-network",
-                message: "The page request exceeded its 15-second deadline.",
+                message: `The page request exceeded its ${Duration.toSeconds(deadline)}-second deadline.`,
               }),
             ),
         }),

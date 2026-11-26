@@ -1,15 +1,18 @@
+import { timeoutAfter, timeoutSeconds } from "@poppet/io";
 import { requestWorkerReply, workerReply } from "@poppet/worker";
 import { Effect, Option, Schema } from "effect";
 
 import { TaskCommand, TaskError, isTaskControl } from "#src/task-schema";
 
 export const remoteTaskCommand = (path: string, command: TaskCommand) =>
-  requestWorkerReply(
-    path,
-    "/v1/tasks",
-    command,
-    "Could not reach the task worker. Check it is running. The command was not retried.",
-    10_000,
+  Effect.flatMap(timeoutSeconds("taskOperationSeconds"), (seconds) =>
+    requestWorkerReply(
+      path,
+      "/v1/tasks",
+      command,
+      "Could not reach the task worker. Check it is running. The command was not retried.",
+      (seconds + 2) * 1000,
+    ),
   ).pipe(Effect.mapError((error) => new TaskError({ message: error.message })));
 
 export const taskResponse = <E extends { readonly message: string }>(
@@ -29,7 +32,7 @@ export const taskResponse = <E extends { readonly message: string }>(
 
     return yield* workerReply(
       command.action === "add" || isTaskControl(command)
-        ? operation.pipe(Effect.timeout("8 seconds"))
+        ? operation.pipe(timeoutAfter("taskOperationSeconds"))
         : operation,
       "The task command failed.",
     );

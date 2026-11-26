@@ -1,9 +1,14 @@
 import { closeSync, constants, fstatSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { join } from "node:path";
 
-import { ensurePrivateDirectorySync, isMissingFile, openProtectedFileSync } from "@poppet/io";
+import {
+  ensurePrivateDirectorySync,
+  isMissingFile,
+  limitSettings,
+  openProtectedFileSync,
+} from "@poppet/io";
 
-export const workerLogBytes = 5 * 1024 * 1024;
+export const workerLogBytes = limitSettings.workerLogBytes.fallback;
 
 export const prepareWorkerLogDirectory = (directory: string) => {
   ensurePrivateDirectorySync(directory);
@@ -12,7 +17,7 @@ export const prepareWorkerLogDirectory = (directory: string) => {
 const openFile = (file: string, flags: number) =>
   openProtectedFileSync(file, flags, { makePrivate: true });
 
-export const openWorkerLog = (directory: string) => {
+export const openWorkerLog = (directory: string, maxBytes = workerLogBytes) => {
   prepareWorkerLogDirectory(directory);
   const path = join(directory, "worker.log");
   const paths = [path, `${path}.1`, `${path}.2`, `${path}.3`];
@@ -78,7 +83,7 @@ export const openWorkerLog = (directory: string) => {
       let offset = 0;
 
       while (offset < chunk.length) {
-        if (size >= workerLogBytes) {
+        if (size >= maxBytes) {
           rotate();
         }
 
@@ -86,7 +91,7 @@ export const openWorkerLog = (directory: string) => {
           handle,
           chunk,
           offset,
-          Math.min(chunk.length - offset, workerLogBytes - size),
+          Math.min(chunk.length - offset, maxBytes - size),
         );
 
         if (written === 0) {

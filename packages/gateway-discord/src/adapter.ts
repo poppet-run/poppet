@@ -1,5 +1,6 @@
 import { GatewayAdapter, GatewayError } from "@poppet/gateway";
 import type { IncomingMessage } from "@poppet/gateway";
+import { timeout, timeoutSeconds } from "@poppet/io";
 import {
   ChannelType,
   Client,
@@ -54,7 +55,7 @@ const threadName = (title: string) => {
 
 export const discordAdapterLayer = (
   settings: DiscordSettings,
-  createClient = () =>
+  createClient = (requestSeconds: number) =>
     new Client({
       intents: [
         GatewayIntentBits.Guilds,
@@ -65,7 +66,7 @@ export const discordAdapterLayer = (
       makeCache: Options.cacheWithLimits({ MessageManager: 0 }),
       rest: {
         retries: 0,
-        timeout: 10_000,
+        timeout: requestSeconds * 1000,
         rejectOnRateLimit: ({ route }) => !route.includes("/reactions/"),
       },
     }),
@@ -78,8 +79,12 @@ export const discordAdapterLayer = (
       let connectionError: string | null = null;
       let dropped = 0;
 
-      const client = yield* Effect.acquireRelease(Effect.sync(createClient), (owned) =>
-        Effect.promise(() => owned.destroy()),
+      const requestSeconds = yield* timeoutSeconds("gatewayRequestSeconds");
+      const retryAfter = yield* timeout("gatewayRetrySeconds");
+
+      const client = yield* Effect.acquireRelease(
+        Effect.sync(() => createClient(requestSeconds)),
+        (owned) => Effect.promise(() => owned.destroy()),
       );
 
       const identity = yield* Deferred.make<string>();
@@ -195,7 +200,7 @@ export const discordAdapterLayer = (
         Effect.catch(() =>
           Effect.gen(function* () {
             connectionError = "Discord login failed. Check credentials and Message Content intent.";
-            yield* Effect.sleep("30 seconds");
+            yield* Effect.sleep(retryAfter);
           }),
         ),
         Effect.forever,

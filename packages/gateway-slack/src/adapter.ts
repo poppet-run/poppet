@@ -1,5 +1,6 @@
 import { boundedAttachment, GatewayAdapter, GatewayError } from "@poppet/gateway";
 import type { ApprovalAction, IncomingMessage } from "@poppet/gateway";
+import { timeout, timeoutSeconds } from "@poppet/io";
 import { SocketModeClient } from "@slack/socket-mode";
 import { ErrorCode, WebClient } from "@slack/web-api";
 import type { ChatPostMessageArguments } from "@slack/web-api";
@@ -199,10 +200,13 @@ export const slackAdapterLayer = (settings: SlackSettings) =>
       const prompts = new Map<string, string>();
       const identity = yield* Deferred.make<string>();
 
+      const requestSeconds = yield* timeoutSeconds("gatewayRequestSeconds");
+      const retryAfter = yield* timeout("gatewayRetrySeconds");
+
       const web = new WebClient(Redacted.value(settings.token), {
         retryConfig: { retries: 0 },
         rejectRateLimitedCalls: true,
-        timeout: 10_000,
+        timeout: requestSeconds * 1000,
       });
 
       let connected = false;
@@ -276,7 +280,7 @@ export const slackAdapterLayer = (settings: SlackSettings) =>
                   clientOptions: {
                     retryConfig: { retries: 0 },
                     rejectRateLimitedCalls: true,
-                    timeout: 10_000,
+                    timeout: requestSeconds * 1000,
                   },
                 }),
             ),
@@ -310,7 +314,7 @@ export const slackAdapterLayer = (settings: SlackSettings) =>
             error = cause.message;
           }),
         ),
-        Effect.andThen(Effect.sleep("30 seconds")),
+        Effect.andThen(Effect.sleep(retryAfter)),
         Effect.forever,
         Effect.forkScoped,
       );

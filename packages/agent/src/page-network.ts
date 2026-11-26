@@ -5,12 +5,16 @@ import { isIP } from "node:net";
 import { checkServerIdentity } from "node:tls";
 import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
 
-import { publicHttpURL, resolveAddresses, urlHostname as pageHostname } from "@poppet/io";
+import {
+  limit,
+  publicHttpURL,
+  readableSize,
+  resolveAddresses,
+  urlHostname as pageHostname,
+} from "@poppet/io";
 import { Context, Effect, Layer } from "effect";
 
 import { AgentError } from "#src/errors";
-
-export const maxPageBytes = 1_048_576;
 
 export const pageFailure = () =>
   new AgentError({ reason: "tool-network", message: "Could not read the supplied public page." });
@@ -38,7 +42,7 @@ export interface PageResponse {
 
 export const isPageRedirect = (status: number) => [301, 302, 303, 307, 308].includes(status);
 
-const readResponse = async (response: IncomingMessage): Promise<PageResponse> => {
+const readResponse = async (response: IncomingMessage, maxBytes: number): Promise<PageResponse> => {
   const status = response.statusCode ?? 0;
 
   const metadata = {
@@ -63,10 +67,10 @@ const readResponse = async (response: IncomingMessage): Promise<PageResponse> =>
     const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(String(raw));
     size += chunk.length;
 
-    if (size > maxPageBytes) {
+    if (size > maxBytes) {
       throw new AgentError({
         reason: "tool-limit",
-        message: "The page exceeds the 1 MiB body limit.",
+        message: `The page exceeds the ${readableSize(maxBytes)} body limit.`,
       });
     }
 
@@ -78,7 +82,7 @@ const readResponse = async (response: IncomingMessage): Promise<PageResponse> =>
   }
 
   const body = Buffer.concat(chunks);
-  const options = { maxOutputLength: maxPageBytes };
+  const options = { maxOutputLength: maxBytes };
 
   switch (response.headers["content-encoding"]?.trim().toLowerCase()) {
     case undefined:
@@ -100,6 +104,7 @@ export const requestPage = (
   url: URL,
   address: string,
   signal: AbortSignal,
+  maxBytes: number,
 ): Promise<PageResponse> =>
   new Promise((resolve, reject) => {
     const hostname = pageHostname(url);
@@ -138,7 +143,7 @@ export const requestPage = (
         cancel();
       }
 
-      void readResponse(response)
+      void readResponse(response, maxBytes)
         .then(resolve, reject)
         .finally(() => {
           signal.removeEventListener("abort", cancel);
@@ -161,8 +166,10 @@ export const PageTransportLive = Layer.succeed(PageTransport, {
   resolve: (hostname) =>
     Effect.tryPromise({ try: (signal) => resolveAddresses(hostname, signal), catch: pageFailure }),
   request: (url, address) =>
-    Effect.tryPromise({
-      try: (signal) => requestPage(url, address, signal),
-      catch: (cause) => (cause instanceof AgentError ? cause : pageFailure()),
-    }),
+    Effect.flatMap(limit("pageBytes"), (maxBytes) =>
+      Effect.tryPromise({
+        try: (signal) => requestPage(url, address, signal, maxBytes),
+        catch: (cause) => (cause instanceof AgentError ? cause : pageFailure()),
+      }),
+    ),
 });

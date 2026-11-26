@@ -4,7 +4,7 @@ import { Effect, Exit, Fiber, Layer } from "effect";
 import { TestClock } from "effect/testing";
 
 import { AgentError } from "#src/errors";
-import { PageTransport, maxPageBytes } from "#src/page-network";
+import { PageTransport } from "#src/page-network";
 import type { PageResponse } from "#src/page-network";
 import { Pages, PagesLive, decodeFetchPageCall, suppliedPageURLs } from "#src/pages";
 import { ChatSettings, defaultPolicy } from "#src/settings";
@@ -330,7 +330,7 @@ log(&quot;done&quot;)
       "text/html",
     ),
     response("   "),
-    response("a".repeat(maxPageBytes + 1)),
+    response("a".repeat(defaultPolicy.pageBytes + 1)),
   ])(
     "when response case %# is unsupported, empty, failed, or oversized, rejects it",
     async (page) => {

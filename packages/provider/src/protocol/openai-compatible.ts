@@ -1,3 +1,4 @@
+import { timeout, timeoutSeconds } from "@poppet/io";
 import { Clock, Effect, Redacted, Schema, Semaphore } from "effect";
 import OpenAI, { APIError } from "openai";
 
@@ -10,15 +11,19 @@ export const openAIClient = (options: {
   readonly http: HttpFetch;
   readonly headers?: Record<string, string>;
 }) =>
-  new OpenAI({
-    apiKey: Redacted.value(options.key),
-    baseURL: options.baseUrl,
-    fetch: options.http,
-    maxRetries: 0,
-    logLevel: "off",
-    timeout: 45_000,
-    defaultHeaders: options.headers,
-  });
+  Effect.map(
+    timeoutSeconds("providerRequestSeconds"),
+    (seconds) =>
+      new OpenAI({
+        apiKey: Redacted.value(options.key),
+        baseURL: options.baseUrl,
+        fetch: options.http,
+        maxRetries: 0,
+        logLevel: "off",
+        timeout: seconds * 1000,
+        defaultHeaders: options.headers,
+      }),
+  );
 
 export const fetchModelCatalog = <S extends Schema.Top>(options: {
   readonly provider: ProviderId;
@@ -60,21 +65,25 @@ export const fetchModelCatalog = <S extends Schema.Top>(options: {
         invalidRequest(options.provider, `${options.label} returned an unsupported model catalog.`),
       ),
     );
-  }).pipe(
-    Effect.timeoutOrElse({
-      duration: "30 seconds",
-      orElse: () =>
-        Effect.fail(
-          new ProviderError({
-            provider: options.provider,
-            reason: "temporary",
-            message: `${options.label} model discovery timed out.`,
-          }),
-        ),
-    }),
+  }).pipe((load) =>
+    Effect.flatMap(timeout("modelCatalogSeconds"), (duration) =>
+      load.pipe(
+        Effect.timeoutOrElse({
+          duration,
+          orElse: () =>
+            Effect.fail(
+              new ProviderError({
+                provider: options.provider,
+                reason: "temporary",
+                message: `${options.label} model discovery timed out.`,
+              }),
+            ),
+        }),
+      ),
+    ),
   );
 
-export const createCatalogCache = <A extends { readonly id: string }>(ttlMs = 60_000) => {
+export const createCatalogCache = <A extends { readonly id: string }>() => {
   type Entry = { readonly expiresAt: number; readonly models: ReadonlyArray<A> };
 
   type Slot = { readonly lock: Semaphore.Semaphore; entry: Entry | null };
@@ -132,7 +141,9 @@ export const createCatalogCache = <A extends { readonly id: string }>(ttlMs = 60
             Effect.gen(function* () {
               const models = yield* options.load;
               active.entry = {
-                expiresAt: (yield* Clock.currentTimeMillis) + ttlMs,
+                expiresAt:
+                  (yield* Clock.currentTimeMillis) +
+                  (yield* timeoutSeconds("modelCatalogCacheSeconds")) * 1000,
                 models,
               };
 

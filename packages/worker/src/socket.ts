@@ -1,7 +1,7 @@
 import { chmod, lstat, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { ensurePrivateDirectory, isMissingFile } from "@poppet/io";
+import { ensurePrivateDirectory, isMissingFile, limit } from "@poppet/io";
 import { Cause, Context, Data, Effect, Exit, Option, Schema, Scope } from "effect";
 
 export class WorkerRequestError extends Data.TaggedError("WorkerRequestError")<{
@@ -194,10 +194,21 @@ const isSocketLive = async (path: string) => {
   }
 };
 
+const mib = 1024 * 1024;
+
+// Chat requests carry attachments as base64, so the body limit follows the attachment limits.
+const requestBodyBytes = Effect.gen(function* () {
+  const attachments = yield* limit("attachmentsPerMessage");
+  const fileBytes = Math.max(yield* limit("imageBytes"), yield* limit("textFileBytes"));
+
+  return Math.max(32 * mib, Math.ceil((attachments * fileBytes) / 3) * 4 + 5 * mib);
+});
+
 export const serveWorker = (path: string, handle: WorkerRequests["Service"]["handle"]) =>
   Effect.acquireRelease(
     Effect.gen(function* () {
       const scope = yield* Effect.scope;
+      const maxRequestBodySize = yield* requestBodyBytes;
       const services = yield* Effect.context<Scope.Scope>();
       const run = Effect.runPromiseWith(services);
       const runExit = Effect.runPromiseExitWith(services);
@@ -236,7 +247,7 @@ export const serveWorker = (path: string, handle: WorkerRequests["Service"]["han
 
           const options: Bun.Serve.Options<undefined> = {
             unix: path,
-            maxRequestBodySize: 32 * 1024 * 1024,
+            maxRequestBodySize,
             async fetch(request, listener) {
               listener.timeout(request, 10);
 

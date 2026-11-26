@@ -147,7 +147,8 @@ Poppet allows ten login attempts per minute per client address and 60 per minute
 across the listener. Set `"trustProxy": true` in `web.json` to use the last valid
 `X-Forwarded-For` address from a loopback proxy that manages this header.
 Ordinary connections have a 10-second idle timeout, and JSON bodies must arrive
-within 10 seconds. Up to 32 authenticated event streams can stay open at once.
+within 10 seconds. Up to 32 authenticated event streams can stay open at once
+(`limits.webChatStreams`), and JSON bodies are limited to 256 KiB (`limits.webChatBodyBytes`).
 Poppet also keeps at most 32 logins. A new login then replaces the oldest one.
 
 ## Conversation behavior

@@ -132,7 +132,7 @@ export const makeOpenRouterProvider = (
         }
 
         const client = key.pipe(
-          Effect.map((token) => openAIClient({ key: token, baseUrl, http, headers })),
+          Effect.flatMap((token) => openAIClient({ key: token, baseUrl, http, headers })),
         );
 
         return chatCompletionsModel(

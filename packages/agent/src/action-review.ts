@@ -1,3 +1,4 @@
+import { timeout } from "@poppet/io";
 import { outputText } from "@poppet/provider";
 import type { ModelOperations } from "@poppet/provider";
 import type { Run } from "@poppet/store";
@@ -77,7 +78,7 @@ export const reviewAction = <A>(
         }),
       ),
       Stream.runLast,
-      Effect.timeout("30 seconds"),
+      Effect.timeout(yield* timeout("actionReviewSeconds")),
       Effect.mapError(
         () =>
           new AgentError({

@@ -7,6 +7,7 @@ import {
   timeZone,
   gatewayPackages,
 } from "@poppet/config";
+import { resolvedLimits, resolvedTimeouts } from "@poppet/io";
 import { mcpServers } from "@poppet/mcp";
 import { Effect } from "effect";
 import { Command } from "effect/cli";
@@ -35,6 +36,8 @@ const showConfig = (json: boolean) =>
           maxConcurrentRequests,
         },
         tasks: { catchUpMinutes: yield* taskCatchUpMinutes, quietHours: yield* quietHours },
+        timeouts: yield* resolvedTimeouts,
+        limits: yield* resolvedLimits,
         ...(yield* ConfigSource),
       },
       tree,

@@ -6,6 +6,7 @@ import type {
   Tool as ServerTool,
 } from "@modelcontextprotocol/client";
 import { ApiKeyStore } from "@poppet/credentials";
+import { limit, readableSize, timeoutSeconds } from "@poppet/io";
 import { Data, Effect, Redacted, Ref } from "effect";
 
 import { isHTTPServer } from "#src/config";
@@ -333,7 +334,19 @@ export const hydrateConnection = (
         : [...secrets, ...resources.authorization.current.secrets()];
   });
 
-export const listTools = async (client: Client, signal: AbortSignal) => {
+export interface DiscoveryLimits {
+  readonly requestMs: number;
+  readonly tools: number;
+  readonly bytes: number;
+}
+
+export const discoveryLimits: Effect.Effect<DiscoveryLimits> = Effect.all({
+  requestMs: Effect.map(timeoutSeconds("mcpConnectSeconds"), (seconds) => seconds * 1000),
+  tools: limit("mcpTools"),
+  bytes: limit("mcpDiscoveryBytes"),
+});
+
+export const listTools = async (client: Client, signal: AbortSignal, limits: DiscoveryLimits) => {
   if (!client.getServerCapabilities()?.tools) {
     throw new MCPDiagnostic({ message: "Server does not advertise tools capability." });
   }
@@ -351,13 +364,15 @@ export const listTools = async (client: Client, signal: AbortSignal) => {
 
     const result = await client.request(
       { method: "tools/list", params: cursor === undefined ? {} : { cursor } },
-      { signal, timeout: 5000 },
+      { signal, timeout: limits.requestMs },
     );
 
     bytes += Buffer.byteLength(JSON.stringify(result));
 
-    if (bytes > 262_144 || discovered.length + result.tools.length > 128) {
-      throw new MCPDiagnostic({ message: "Discovery exceeds 128 tools or 256 KiB." });
+    if (bytes > limits.bytes || discovered.length + result.tools.length > limits.tools) {
+      throw new MCPDiagnostic({
+        message: `Discovery exceeds ${limits.tools} tools or ${readableSize(limits.bytes)}.`,
+      });
     }
 
     for (const tool of result.tools) {
@@ -385,8 +400,13 @@ export const listTools = async (client: Client, signal: AbortSignal) => {
   return discovered;
 };
 
-export const discoverTools = async (config: MCPServer, client: Client, signal: AbortSignal) => {
-  const discovered = await listTools(client, signal);
+export const discoverTools = async (
+  config: MCPServer,
+  client: Client,
+  signal: AbortSignal,
+  limits: DiscoveryLimits,
+) => {
+  const discovered = await listTools(client, signal, limits);
 
   if (config.tools.some((name) => !discovered.some((tool) => tool.name === name))) {
     throw new MCPDiagnostic({

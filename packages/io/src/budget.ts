@@ -59,3 +59,10 @@ export const fitText = (
 
   return shown === null ? null : render(shown, true);
 };
+
+export const readableSize = (bytes: number) =>
+  bytes >= 1024 * 1024
+    ? `${Math.round((bytes / 1024 / 1024) * 10) / 10} MiB`
+    : bytes >= 1024
+      ? `${Math.round((bytes / 1024) * 10) / 10} KiB`
+      : `${bytes} bytes`;
