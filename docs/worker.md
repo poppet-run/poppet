@@ -1,277 +1,185 @@
 # Worker
 
-[Documentation index](README.md)
+[Engineering notes](README.md)
 
-Use [`poppet doctor`](doctor.md) to inspect setup and worker state without
-repairs or live provider/tool probes.
+`poppet worker run` is one long-running process that owns a data directory. It
+runs scheduling, the configured gateways, optional web chat, and MCP connections,
+and it serves CLI commands over a Unix socket. On macOS and on Linux with systemd,
+`worker install` registers it as a user login service. The
+[user guide](https://poppet.run/docs/worker/) covers the `worker` commands.
 
-## Foreground worker
+| Module                                     | Owns                                                           |
+| ------------------------------------------ | -------------------------------------------------------------- |
+| `apps/cli/src/commands/worker/host.ts`     | The scoped host runtime and socket routes                      |
+| `apps/cli/src/commands/worker/requests.ts` | `WorkerRequests` for chat and queries                          |
+| `apps/cli/src/commands/worker/service.ts`  | Action parsing, platform selection, and launch description     |
+| `apps/cli/src/commands/worker/log.ts`      | Log writes and rotation                                        |
+| `apps/cli/src/worker-background.ts`        | The installed launcher                                         |
+| `packages/worker/src/socket.ts`            | Socket protection, body limits, deadlines, and client requests |
+| `packages/tasks/src/scheduler.ts`          | `makeTaskWorker`                                               |
+| `packages/platform/src/macos.ts`           | LaunchAgent plist and `launchctl` control                      |
+| `packages/platform/src/linux.ts`           | systemd user unit and `systemctl --user` control               |
+| `packages/platform/src/logs.ts`            | Protected log files and bounded log reads                      |
 
-Run scheduling and configured messaging adapters in one foreground worker:
+## Host
 
-```sh
-poppet worker run
-```
+`host.ts` builds one scoped runtime. Scheduling, gateways, and web chat share the
+store connection, agent, memory, provider resolver, and command functions, so
+the CLI's chat slots and session ordering apply across all of them. There are no
+helper processes. The store's owner lock stops a second worker from opening the
+same data directory.
 
-When `web.json` is configured, the worker also serves [web chat](web-chat.md).
-Web replies continue when a browser disconnects. Use Stop to cancel a reply.
-Shutting down the worker also stops unfinished replies.
+`makeTaskWorker` provides scheduling and task commands without opening a socket.
+The host routes task requests to it and builds the gateway layer. Unconfigured
+gateways stay off. A failed gateway restarts after one second, doubling up to
+`timeouts.gatewayRestartMaxSeconds`, five minutes by default, without stopping
+other gateways or scheduling. `worker status`
+reports each gateway's `restarts` and `lastError`. A storage failure, or any other
+fatal service failure, stops the host and its other services before storage is
+released.
 
-The worker owns enabled [MCP connections](mcp.md), started lazily on discovery
-or an eligible agent run and closed on shutdown. CLI discovery uses these same
-connections. `mcp servers` inspects them without starting a process. Restart the
-worker after changing server configuration or to reconnect a failed server.
+MCP connections start lazily and close on shutdown. Configuration is read at
+start, so `config.json`, MCP permissions, and code changes need `worker restart`.
+Shutdown interrupts active requests, closes connections, and releases the socket
+and the owner lock. Queued work survives restart, and the gateway recovers a
+committed answer without repeating its request. After a crash, the next owner
+takes over storage even when the old PID was reused.
 
-The worker owns one SQLite connection and serves task, chat, memory, and store-status commands
-through `store/tasks.sock`, protected by the `0700` store directory and `0600`
-socket. Commands use the worker when it is running and execute locally when it
-is stopped. Inspecting saved data needs no model or provider credentials.
-Unconfigured messaging adapters remain disabled. `worker status`
-reports the host's services, and its `worker.messaging` field reports
-whether messaging is running. Only one worker can own a data directory at a time.
-CLI, web chat, scheduled, and messaging model requests share
-[`chat.maxConcurrentRequests`](configuration.md) slots, 3 by default. Requests to one
-session always run one at a time, so a CLI chat sent to a session that a messaging
-thread is using waits for the thread's request. Chat streams to the
-invoking terminal; Ctrl-C cancels that request and leaves the worker running.
-The worker closes a socket request's resources when the request finishes or the
-client disconnects. Stopping the worker interrupts active requests, closes open
-connections, and releases the socket and owner lock. After a crash,
-a new owner automatically reclaims storage from a dead process, even if its PID has
-been reused; unfinished work needs an explicit retry. A messaging adapter that
-fails restarts on its own after a delay, from one second doubling to five minutes,
-without stopping other adapters or scheduling; `worker status` reports each
-adapter's `restarts` and `lastError`. Storage failures still stop the worker. Already queued work survives restart, and a committed
-answer is recovered without repeating its request. Task commands can open the
-store even if a dead worker left its socket behind. A lost response to a delivered command does
-not trigger local fallback. Task outcomes and provider pauses commit together;
-recovery restores a quota pause from an unfinished occurrence's saved run.
+## Socket transport
 
-## Login startup
+The socket is `store/tasks.sock`, a `0600` socket in the `0700` store directory.
+Clients check its ownership and permissions before connecting.
 
-On macOS and on Linux with systemd, stop any foreground worker, then install a
-user service to start the `worker run` host at login and keep it running
-while you are logged in. macOS uses a LaunchAgent in `~/Library/LaunchAgents`.
-Linux uses a systemd user unit in `$XDG_CONFIG_HOME/systemd/user`, or
-`~/.config/systemd/user` when `XDG_CONFIG_HOME` is unset or relative:
+| Route          | Used for                                                  |
+| -------------- | --------------------------------------------------------- |
+| `/v1/commands` | Chat requests                                             |
+| `/v1/queries`  | Memory, store status, chat inspection, and MCP inspection |
+| `/v1/tasks`    | Task commands, validated by the task package              |
+| `/v1/doctor`   | A bounded diagnostic snapshot                             |
 
-```sh
-poppet worker install
-poppet worker status
-poppet worker logs
-```
+Other routes return 404. Payloads reject unknown fields. Tasks and queries reply
+with `{ok: true, value}` or `{ok: false, message}`. `WorkerRequests` lets the CLI
+supply the chat and query handlers without importing CLI schemas into the task
+package. The host runs the same command functions as local execution. A new chat
+carries the client's provider and model, and a continued chat uses its saved
+session. Budgets come from the worker's layers.
 
-Save persistent provider, model, and chat-limit settings in
-`<data directory>/config.json` before installing. See [configuration](configuration.md).
-Shell overrides apply to foreground commands and workers; installation does not
-save them for the background worker.
+The listener handles each request in a scoped fiber, including body decoding.
+Body reads have a 10-second deadline. A body can be at most 32 MiB, which fits
+four 5 MiB attachments as base64 plus context and metadata, and the limit grows
+when the attachment limits need more. An oversized request
+gets a size error. The Unix-socket listener turns off Bun's idle timeout so a
+quiet request can wait for a chat slot. Per-request timeout changes have no effect
+on this transport.
 
-Installation starts it immediately. It records the absolute Bun executable, CLI
-entry point, current working directory, and `POPPET_DATA_DIR`. The worker reads
-`config.json` on startup. After editing settings, use `worker restart`.
-Keep the checkout and Bun executable in place; moving either
-requires uninstalling and installing again. Each data directory has its own
-service. Manage it with the same `POPPET_DATA_DIR`.
+A chat response owns a worker-scoped fiber and a bounded output queue. It streams
+validated stdout and stderr frames and ends with a success or failure frame.
+When the client disconnects, the worker interrupts the fiber, finalizes the run,
+and releases the slot. Answers and session IDs go to the client, never to the
+worker log. For a new session, the worker finishes the optional title request
+before ending the response.
 
-`worker stop`, `worker uninstall`, and `worker logs` use only the data directory.
-They remain available when `config.json` is invalid, so a configuration error does
-not prevent stopping the worker or reading its logs. `POPPET_DATA_DIR` must still
-be valid.
+The CLI runs a command locally only when the socket is absent or refuses the
+connection. Once a command is delivered, a transport error, malformed reply, or
+missing final frame fails the command, and nothing replays it. Client and host
+must run the same code, so restart the worker after updating. The wire protocol
+is independent of store migrations. Task commands can still open the store when a
+dead worker left its socket behind.
 
-Older installations saved ordinary settings and budget overrides in their
-LaunchAgent environment. Move the settings you want to keep into `config.json`,
-then run `worker uninstall` followed by `worker install` once to remove those
-saved overrides. Otherwise, they continue to take precedence over the file.
-Saved data and credentials are retained.
+## Login services
 
-If an existing installation launches `tasks work`, use `worker uninstall` followed
-by `worker install` once to update it to `worker run`. Saved data and credentials
-are retained. Restarting that old installation alone keeps its obsolete command.
+`service.ts` parses actions, picks the platform, and passes absolute paths to Bun
+and the entry point, the working directory, and `POPPET_DATA_DIR`. The platform
+package defines the shared action, error, status, and launch types, and neither
+platform module imports scheduling or CLI configuration. Other platforms report
+no service, and `service` in `worker status` is `null`. The service environment
+holds only the data directory. API keys stay in protected storage, and the worker
+reads `config.json` at start. Moving the checkout or Bun needs uninstall and
+install. Each data directory gets its own service.
 
-API keys are excluded from the service's environment. Save them first with
-`provider login openrouter`, `provider login opencode`, or `provider login opencode-go`; ChatGPT uses its existing
-protected sign-in storage. The worker refreshes credentials through the same
-provider code as chat. Installation does not verify live inference.
+`worker stop`, `worker uninstall`, and `worker logs` use only the data directory,
+so they work when `config.json` is invalid. `worker restart` validates
+configuration before it stops the service. Control operations finish in an
+uninterruptible region, and each `launchctl` or `systemctl` call is killed after
+35 seconds. Any failed inspection keeps the installed configuration. Starting an
+already loaded worker does not interrupt it.
 
-New installations use a background launcher to capture and rotate the worker's
-stdout and stderr. Existing installations need `worker uninstall` followed by
-`worker install` once to select this launcher. Saved data, credentials, and logs
-are retained. Foreground commands continue writing to the terminal.
+### macOS
 
-### Linux and systemd
+The LaunchAgent lives in `~/Library/LaunchAgents`. `KeepAlive` restarts the
+launcher with a 30-second throttle. Stopping removes the registration, which
+sends SIGTERM, and Effect finalizers interrupt work and release resources. Only
+exit code 113 from inspection means the service is absent. Restart waits up to 35
+seconds for launchd to remove the old registration before loading it again. See
+[Apple's launchd guide](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html).
 
-`worker install` writes the unit, reloads the user manager, and runs
-`systemctl --user enable --now`. `worker stop` stops the unit and leaves it
-enabled; `worker uninstall` disables it and removes the unit file. The user
-manager starts at your first login and stops after your last session ends, so
-the worker stops at logout too. To keep it running without a login session,
-enable lingering once:
+### Linux
 
-```sh
-loginctl enable-linger
-```
+The unit lives in `$XDG_CONFIG_HOME/systemd/user`, or `~/.config/systemd/user`
+when that variable is unset or relative. It sets `Restart=always`,
+`RestartSec=30`, `TimeoutStopSec=30`, and `UMask=0077`. `KillMode=mixed` sends
+SIGTERM only to the launcher, which forwards it as launchd's single signal would.
+The rest of the group gets only the final SIGKILL. Unit values are quoted and
+escaped for specifiers and variable expansion, and control characters are
+rejected.
 
-Worker commands need the user manager's bus. From a login session this is set
-up for you; over `su` or in some containers `XDG_RUNTIME_DIR` is missing and
-`systemctl --user` fails, which `worker status` reports. The launcher's own
-startup errors go to the journal, while worker output still goes to
-`worker.log`:
+`install` writes the unit, reloads the user manager, and runs `systemctl --user
+enable --now`. `stop` stops the unit and leaves it enabled. `uninstall` disables
+it and removes the file. A unit that is present but not loaded is reloaded before
+it is started or disabled. `systemctl show` reports an absent unit as
+`LoadState=not-found`. Without lingering, the user manager stops after the last
+session ends, and the worker with it. Commands need the user bus, so they fail
+when `XDG_RUNTIME_DIR` is missing, as under `su` or in some containers. The
+launcher's own startup errors go to the journal. See
+[systemd.service](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html)
+and [systemd.unit](https://www.freedesktop.org/software/systemd/man/latest/systemd.unit.html).
 
-```sh
-journalctl --user -u 'run.poppet.worker.*'
-```
+### Upgrading an installation
 
-## Status and logs
+Some changes need `worker uninstall` then `worker install` once. Restarting keeps
+the old service definition. Saved data, credentials, and logs stay.
 
-`worker status` reports whether the login service is installed and active, whether
-the worker is responding, its PID and active occurrence, task and pending counts,
-the next scheduled timestamp, provider pauses, and five recent outcomes. It also
-shows local connection metadata and the account and plan-usage permission where
-supported, with actions for login, consent, quota resume, and failed work.
-Running and stopped status include providers assigned to saved tasks, even when
-the current CLI default provider differs.
-Connection metadata is not a live provider verification. During an active
-credential-owning request, the last observed metadata is labelled `cached` with
-its observation time. `worker status` works for the foreground worker too.
-The `service` field holds that state and the service file path. It is `null` on
-platforms without login startup; worker status remains available.
+- Installations that launch `tasks work` instead of `worker run`.
+- Installations without the background launcher.
+- Older LaunchAgents that saved settings or budget overrides in their
+  environment. Those values still override `config.json` until reinstalled.
 
-Inspect full task results using the existing commands:
+## Launcher and logs
 
-```sh
-poppet tasks list
-poppet tasks show <task-id>
-```
+The installed entry point is `worker-background.ts`. It holds its own log
+ownership lock and starts `main.ts worker run` with piped stdout and stderr. It
+forwards SIGINT and SIGTERM, drains both streams, and exits with the child's
+code. It kills a child that has not exited after 25 seconds, inside the service
+manager's 30-second stop deadline. A logging failure stops the child, so the
+worker never runs without diagnostics. Foreground workers write to the terminal.
 
-Lifecycle logs go to `<data directory>/logs/worker.log`, with `0700` directory and
-`0600` file permissions. Default lifecycle logs exclude prompts, model output, and tokens. Enabling
-[`chat.logReasoning`](configuration.md#reasoning-logs) also records readable reasoning,
-which can contain private prompt or tool content.
+`log.ts` serializes writes to `logs/worker.log`, a `0600` file in a `0700`
+directory. It rotates at `limits.workerLogBytes`, 5 MiB by default, and keeps three archives, `worker.log.1` to
+`worker.log.3`, newest first, closing each file before renaming it. A single
+chunk larger than the limit still rotates between writes. An existing oversized
+log is archived whole. Symlinks, hard links, and non-regular files are rejected.
+`worker logs` reads at most the last 64 KiB across the current file and the
+archives, joining bytes across rotations, and never follows links or rotates.
 
-Each entry is one [logfmt](https://brandur.org/logfmt) line on standard error:
-`time`, `level` (`info`, `warn`, or `error`), and a fixed lowercase `msg`, then
-fields for the entry. Values with spaces, quotes, or `=` are JSON-quoted, so
-multi-line text stays on one line. Search by message or field:
+Each entry is one [logfmt](https://brandur.org/logfmt) line from `io/src/log.ts`:
+`time`, `level` (`info`, `warn`, or `error`), a fixed lowercase `msg`, then
+fields. Values with spaces, quotes, or `=` are JSON-quoted, so multi-line text
+stays on one line. Common fields are `task`, `occurrence`, `session`, `run`,
+`provider`, `adapter`, `server`, `reason`, and `error`. Default logs exclude
+prompts, answers, and tokens. With `chat.logReasoning`, `msg=thinking` entries
+carry reasoning in `text`. With `chat.logTimings`, `msg=timing` entries carry
+`stage` and `duration_ms`.
 
-```text
-time=2099-10-29T09:00:00.000Z level=info msg="task occurrence finished" task=<task-id> name=Summary occurrence=<occurrence-id> status=completed
-```
+## Status
 
-```sh
-grep 'level=error' worker.log
-grep 'msg="task occurrence' worker.log
-grep 'session=<session-id>' worker.log
-```
+`worker status` works for foreground and installed workers. It reports the login
+service, whether the worker answers, its PID, the active occurrence, task and
+pending counts, the next scheduled time, provider holds, five recent outcomes,
+gateway state under `worker.messaging`, and local connection metadata with
+suggested actions. Connection metadata is not a live check. During a request that
+holds the provider's credentials, the worker reports the last observed metadata,
+marked `cached` with its time. Status includes the providers of saved tasks, even
+when the CLI default differs. See [tasks](tasks.md#logs-and-status).
 
-Common fields are `task`, `occurrence`, `session`, `run`, `provider`, `adapter`,
-`server`, `reason`, and `error`. Reasoning entries use `msg=thinking` with the
-chunk in `text`; timing entries use `msg=timing` with `stage` and `duration_ms`.
-The background launcher limits each new log file to 5 MiB (`limits.workerLogBytes`) and retains three
-archives, `worker.log.1` through `worker.log.3`, newest first. It appends after
-restart and rotates between writes, including when a single output chunk exceeds
-the file limit. An existing oversized log is archived intact on the next write
-and expires through the same retention policy. Archives have `0600` permissions;
-symlinks, hard links, and non-regular log files are rejected.
-
-`worker logs` prints at most the last 64 KiB across the current file and archives,
-joining bytes across rotation boundaries. Reading logs does not rotate them.
-The launcher forwards shutdown signals, waits for the worker to exit, and drains
-its output before closing the log. A worker that does not exit within 25 seconds
-is killed to stay within the service manager's 30-second stop deadline. A logging failure stops the
-worker rather than allowing it to run without captured diagnostics.
-
-## Stop, start, restart, and uninstall
-
-When you accept the restart prompt in `poppet setup`, Poppet restarts the active
-installed worker in one service-manager operation.
-
-```sh
-poppet worker stop
-poppet worker start
-poppet worker restart
-poppet worker uninstall
-```
-
-Stopping removes the running launchd registration, or stops the systemd unit, and
-sends SIGTERM to the launcher. Scoped
-cleanup interrupts active work, records its outcome, closes the socket, and
-releases storage. `stop` keeps login startup configured; `uninstall` disables it
-and retains tasks, results, credentials, and logs. Inspection errors fail
-the command and preserve the installed configuration. Lifecycle mutations finish
-before an interruption returns; each launchctl or systemctl subprocess has a
-35-second timeout.
-Starting an already
-loaded worker does not interrupt an active request.
-Restarting interrupts active work and starts the installed service again, including
-when it was stopped. It retains the service configuration and saved data. Restart
-validates configuration before stopping the service and requires an installed worker.
-On macOS, restart waits up to 35 seconds for launchd to remove the old registration
-before loading the service again. If removal times out or inspection fails, it
-reports an error and retains the installed configuration.
-For a foreground worker, stop and rerun `worker run` instead.
-
-## Interactive commands
-
-Chat can [manage scheduled tasks](tasks.md#chat-task-management) through the
-same worker and task repository. Task tools execute in the owning process and
-share the scheduler's command lock; they do not submit another chat or a loopback
-worker request. A running occurrence waiting for the shared agent does not block
-interactive task changes. The existing reconciliation timer picks up new work.
-Task changes are durable even when their final chat reply fails.
-
-Chat, memory, session inspection, and `store status` work while it is running:
-
-```sh
-poppet memory set project.name Acorn
-poppet chat new "What is the project called?"
-poppet chat
-poppet chat sessions
-poppet chat search "project"
-poppet memory list
-poppet store status
-```
-
-New chats use the invoking terminal's provider and model; continued
-chats use their saved selection. The worker's startup budgets
-apply to remote requests, including conversation-search result limits. Search
-runs on the owning store connection and needs no provider request. Memory changes are loaded on the next run. Chat output
-and session IDs go to the client terminal and are excluded from worker logs.
-Request bodies have a 10-second read deadline and a 32 MiB transport limit,
-raised when attachment limits need more,
-which leaves room for the largest permitted attachments sent as base64, the chat context, and
-command metadata. Oversized requests report a size error without being retried.
-Only an absent socket or refused connection permits local fallback. A lost,
-incomplete, or incompatible response fails without replaying the command. Restart
-the worker with `worker restart` after updating code.
-The current protocol uses `/v1/commands` for chat, `/v1/queries` for memory and
-inspection, `/v1/tasks` for task commands, and `/v1/doctor` for bounded diagnostic
-snapshots; other routes are rejected. Optional [web chat](web-chat.md) uses a
-separate authenticated HTTP listener.
-
-## Sleep and missed schedules
-
-The worker does not keep the computer awake. After sleep, it runs an overdue one-off
-once. After sleep or a restart, a recurring task runs its most recent missed time
-once if that time is within the catch-up window (`tasks.catchUpMinutes`, default
-60), and records earlier missed times as skipped. Missed times older than the
-window are all skipped. Setting the window to `0` restores the earlier policy:
-restarts skip missed recurring work, and a delayed timer runs the most recent due
-time only if it is less than a minute old, recording earlier times as skipped. Summaries older than 24 hours expire. Failed or
-interrupted requests are never automatically replayed.
-
-## Optional naming work
-
-Chat rename commands use the same local-or-worker routing as chat inspection.
-`chat [session]` uses the same worker transport for each entered
-message. Waiting at the prompt does not hold storage. Session metadata is returned
-with the existing stderr announcement, so one-shot clients keep their output and
-interactive clients can retain the session after a failed turn.
-
-After printing an interactive answer, the worker finishes the optional bounded
-title request before completing that command response. The gateway starts naming
-only after the answer's delivery chunks are confirmed sent. A separate agent naming
-permit allows one title request at a time, independently of the chat request slots. Shutdown can cancel
-naming without changing the completed chat run, delivery state, or provider pause
-state. Durable attempt claims prevent a restart from repeating title inference.
-Managed thread synchronization considers each title once, with a one-time fetch
-to reconcile an uncertain update rather than a persistent retry queue.
+The worker does not keep the computer awake. See
+[the scheduler](tasks.md#scheduler) for what runs after sleep or a restart.

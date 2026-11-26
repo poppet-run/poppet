@@ -395,45 +395,7 @@ against the saved prompt and fails the occurrence if human approval is needed.
 Do not automatically retry a side effect whose completion is uncertain. Record
 its state and require an explicit retry. Database updates use transactions. Exactly-once external execution is not assumed.
 
-## Unattended operation
-
-The CLI's `worker.ts` parses actions, selects the platform, and supplies absolute
-Bun and entry-point paths, a working directory, and an explicit settings
-allowlist. `@poppet/platform` defines the shared action, error, status, and
-launch data, plus protected log creation and bounded log reading.
-`@poppet/platform/macos` owns LaunchAgent installation and control, plist
-encoding, and bounded launchctl subprocesses. `@poppet/platform/linux` owns the
-same lifecycle for a systemd user unit through `systemctl --user`. Neither
-imports task scheduling or CLI configuration. Other platforms report no service.
-
-The installed CLI entry point is `worker-background.ts`. This process boundary
-holds a separate log ownership lock and launches `main.ts worker run` with piped
-stdout/stderr. `worker-log.ts` serializes writes and rotates at 5 MiB with three
-archives, closing each file before renaming it. Foreground workers still write
-to the terminal. The launcher forwards SIGINT/SIGTERM, drains both streams, and
-preserves the child exit code. It stops the child on logging failure and allows
-25 seconds for graceful shutdown before killing it. Existing installations need
-uninstall/install to select this entry point. Log inspection shares one 64 KiB
-budget across current and archived files without following links.
-
-`KeepAlive` lets launchd restart the launcher and combined `worker run` process, with a
-30-second throttle. Removing the registration sends SIGTERM; Effect finalizers
-interrupt work and release resources. Mutating control operations finish under
-an uninterruptible region, and launchctl subprocesses are killed after 35 seconds
-if they do not finish. Only exit 113 confirms that a service is absent; other
-inspection errors preserve its registration and plist. API keys remain in
-protected provider storage and are excluded from the host's launch environment.
-See [Apple's launchd guide](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html).
-
-On Linux the unit uses `Restart=always` with `RestartSec=30`, `TimeoutStopSec=30`,
-and `UMask=0077`. `KillMode=mixed` sends SIGTERM only to the launcher, which
-forwards it like launchd's single signal; the rest of the group receives only
-the final SIGKILL. Unit values are quoted and escaped for specifiers and
-variable expansion, and control characters are rejected. `systemctl show`
-reports an absent unit as `LoadState=not-found`; any failed inspection preserves
-the unit file. A unit file that is present but not loaded is reloaded before it
-is started or disabled. See [systemd.service](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html)
-and [systemd.unit](https://www.freedesktop.org/software/systemd/man/latest/systemd.unit.html).
+## Storage ownership lock
 
 `@poppet/credentials/lock` shares storage ownership between conversation storage,
 ChatGPT credentials, and API-key mutations. A small lock database uses
@@ -444,56 +406,6 @@ acquired, a leftover regular marker is replaced without checking PID liveness,
 including when its PID has been reused. Invalid marker files fail closed. Lock
 databases are protected and are never removed while an owner might hold them.
 They contain no user credentials or records.
-
-## Worker host
-
-`apps/cli/src/commands/worker/host.ts` owns one scoped runtime and protected listener.
-`worker run` starts scheduling, configured messaging adapters, and optional web chat.
-They share the store, agent, memory, provider resolver, and command functions. The store lock prevents
-starting another worker against that data directory. No separate processes or
-cross-process model coordination are introduced.
-
-`makeTaskWorker` exposes scheduling and task commands without opening a socket.
-The host routes task commands to that service and builds the messaging layer.
-Unconfigured adapters remain disabled. Status includes services and messaging status.
-Fatal service failures stop the host and its siblings before storage is released.
-
-`@poppet/worker` owns request protection, body limits, deadlines, disconnect and
-shutdown handling. The host exposes `/v1/tasks`, `/v1/queries`, `/v1/commands`,
-and `/v1/doctor` through `store/tasks.sock`. Command payloads reject unknown fields;
-the doctor route returns a bounded diagnostic snapshot. Unsupported routes return 404. Tasks and queries share one JSON reply,
-`{ok: true, value}` or `{ok: false, message}`; the task package owns task RPC validation.
-macOS and Linux installations launch `worker run` through the background log launcher.
-
-## Interactive worker commands
-
-The neutral host's protected socket accepts interactive requests.
-`WorkerRequests` lets the CLI supply `/v1/commands` (chat) and `/v1/queries` (memory,
-store status, MCP and chat inspection) without importing CLI command
-schemas or memory behavior into the task package. The host validates these
-payloads and uses the same command functions as direct
-local execution. New chat payloads include the client's provider and model; continued chats
-resolve their saved session. Chat budgets come from the worker's existing layers.
-
-The listener owns the full request, including JSON body decoding, in a scoped
-fiber. Body reads have a 10-second deadline. The Unix-socket listener disables
-Bun idle timeouts so quiet requests can wait for the shared runner; per-request
-timeout changes are ineffective on this transport. The transport accepts up to 32 MiB, leaving room
-for four 5 MiB attachments as base64, the chat context, and command metadata. Oversized
-requests return a clear size error without local fallback.
-
-Each chat response owns a worker-scoped fiber and a bounded output queue. Responses
-stream validated stdout/stderr frames and end with an explicit success or failure
-frame. Disconnecting a client interrupts its fiber, finalizes the run, and releases
-the shared agent permit. Worker shutdown also cancels queued and active requests
-before releasing storage. Session IDs and interactive output go to the client,
-not the worker log. Memory edits affect subsequent run snapshots.
-
-Clients check the same socket ownership and permissions as task commands. Only
-absence or connection refusal permits direct local execution. Once delivered,
-commands are never replayed after a transport error, malformed reply, or missing
-completion. Restart the worker after updating code so the client and host use
-the same protocol. Saved record migrations are independent of the wire protocol.
 
 ## Web chat
 
