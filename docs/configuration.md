@@ -63,8 +63,10 @@ store as busy until no request is running. A provider rate limit fails the reque
 with the standard failure reply rather than retrying. A request waiting for command approval keeps its slot until the approval expires
 (`timeouts.approvalSeconds`, two minutes by default).
 
-Timeouts and size limits live in the `timeouts` and `limits` sections; see
-[timeouts and limits](#timeouts-and-limits). `poppet config` prints every resolved value.
+Context size, history length, model turns, tool calls, tool output, and memory/skill
+sizes use fixed limits in code. They are not configuration fields. See
+[chat limits](chat.md#defaults). `poppet config` shows only editable
+chat settings.
 
 The file must be valid JSON, at most 64 KiB, owned by the current user, and not
 writable by group or other users. Symlinks and hard links are rejected. Unknown
@@ -310,8 +312,8 @@ budget. See [skills](skills.md).
 
 Page reading uses the model-turn, tool-call, context, and tool-output limits.
 Each request has a 15-second deadline, at most three redirects, and a 1 MiB body
-limit by default; see [timeouts and limits](#timeouts-and-limits). Only HTTP(S) standard ports are accepted. Ambient proxies and credentials
-are not forwarded. See [page reading](chat.md#read-a-supplied-url).
+limit. Only HTTP(S) standard ports are accepted. Ambient proxies and credentials
+are not forwarded. See [page reading](chat.md#page-reading).
 
 The retired `browser` configuration key is ignored. Built-in browser automation and
 built-in web search (`webSearch` and `webSearchProvider`, rejected as unknown fields)

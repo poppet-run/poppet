@@ -144,7 +144,12 @@ have no source run. Model changes have one until its session is deleted.
 
 ## Session deletion
 
-[Deleting a session](chat.md#delete-old-sessions) removes its search entries,
+`chat delete` takes one or more session IDs. It deletes nothing if any ID is
+missing or any session has a reply in progress. `chat prune --days <n>` (1 to 36500) deletes sessions whose last activity is older than that and skips sessions
+with a reply in progress. Renaming is not activity. Both route through the worker
+when it owns storage.
+
+Deleting a session removes its search entries,
 tool calls, messages, attachments, runs, and the session in one transaction.
 Packages that reference sessions or runs detach themselves through `BEFORE DELETE`
 triggers added by their own migrations: task migration 5 clears occurrence and
@@ -169,7 +174,7 @@ byte budget. It quotes and binds FTS terms, returns at most ten relevance-ranked
 matches with stable message-ID ordering for ties, and bounds excerpts and output.
 The CLI and agent tool use this same operation on the owning store connection.
 Agent and CLI recall can inspect all saved sessions.
-See [conversation search](chat.md#search-past-conversations).
+See [conversation search](chat.md#conversation-recall).
 
 `Store.readSession` uses the same indexed eligible message IDs and the
 `searchable_messages` projection over original saved messages. It reads at most
@@ -182,7 +187,7 @@ byte budget. Stable message anchors must belong to the requested session and
 eligible history. Per-message and overall truncation flags mark shortened text
 and omitted context; `nextAfterMessageId` advances past the last returned message,
 including a shortened one. Current titles are read without changing session
-activity. See [conversation context](chat.md#read-conversation-context).
+activity. See [conversation context](chat.md#conversation-recall).
 
 ## Permissions and recovery
 

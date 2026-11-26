@@ -168,7 +168,7 @@ to **Chats**.
 - Stop cancels a web-started run. Partial text is not saved as a completed answer.
 - Delete in the conversation header removes the open conversation after you confirm.
   It is unavailable while a reply runs or the page is reconnecting. See
-  [delete old sessions](chat.md#delete-old-sessions) for what else is removed.
+  [delete old sessions](storage.md#session-deletion) for what else is removed.
   `DELETE /api/sessions/<id>` returns 404 for an unknown conversation and 409 while
   it has a reply in progress.
 - The browser assigns each message an ID and keeps it in this tab's session storage

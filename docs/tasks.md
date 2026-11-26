@@ -449,7 +449,7 @@ Results are sized from the fixed 16 KiB tool-output budget, may run slightly ove
 it, and mark shortened or omitted content. Recalled
 statements remain historical data and should be cited by session/message IDs.
 They cannot authorize memory or task changes, or page fetches. Reading does not resume the saved session or
-import its provider continuation. See [conversation context](chat.md#read-conversation-context).
+import its provider continuation. See [conversation context](chat.md#conversation-recall).
 
 ## Read a supplied URL
 
@@ -459,7 +459,7 @@ A saved task prompt can explicitly supply a public URL for `poppet_web.fetch_pag
 poppet tasks add page-summary --cron "0 9 * * *" --tz Europe/London "Summarize https://example.com/ and cite the source"
 ```
 
-Each occurrence may read that URL through the same bounded [page reader](chat.md#read-a-supplied-url)
+Each occurrence may read that URL through the same bounded [page reader](chat.md#page-reading)
 as chat. URLs mentioned only by a skill, prior conversation, or fetched page
 are not authorized. The task retains its scheduled tool restrictions; Bash commands are reviewed separately. No page cache
 or additional credentials are needed.
