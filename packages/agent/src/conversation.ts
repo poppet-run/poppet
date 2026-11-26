@@ -1,4 +1,4 @@
-import { limit } from "@poppet/io";
+import { limit, timeoutSeconds } from "@poppet/io";
 import { measureTiming, recordTiming } from "@poppet/provider";
 import type {
   AttachmentContent,
@@ -7,10 +7,12 @@ import type {
   ModelEvent,
   ProviderError,
 } from "@poppet/provider";
-import type { StoreError } from "@poppet/store";
-import { Store } from "@poppet/store";
+import type { Approval, StoreError } from "@poppet/store";
+import { Store, callDigest } from "@poppet/store";
 import { Cause, Clock, Effect, Exit, Option, Result, Stream } from "effect";
 
+import { ownerDenied } from "#src/action-approval";
+import type { ParkRequest } from "#src/action-approval";
 import type {
   AgentTool,
   PreparedCall,
@@ -44,9 +46,15 @@ import { taskNoteGuidance, taskNoteTool } from "#src/task-note";
 import { taskTool } from "#src/task-tools";
 import { toolExecution, preflightReported, failureReason, failureReply } from "#src/tool-execution";
 
-type ConversationEvent = ModelEvent | { readonly type: "reasoning-end" };
+type ConversationEvent =
+  | ModelEvent
+  | { readonly type: "reasoning-end" }
+  | { readonly type: "waiting"; readonly approval: Approval };
 
 type ConversationStream = Stream.Stream<ConversationEvent, AgentError | ProviderError | StoreError>;
+
+const waiting = (approval: Approval): ConversationStream =>
+  Stream.make({ type: "waiting" as const, approval });
 
 interface PlannedCall {
   readonly callId: string;
@@ -226,7 +234,7 @@ export const conversation = Effect.gen(function* () {
             (tool) => tool.definition,
           );
 
-        const findTool = (call: ToolCall) =>
+        const findTool = (call: Pick<ToolCall, "name" | "namespace">) =>
           tools.find(
             (tool) =>
               tool.definition.name === call.name && tool.definition.namespace === call.namespace,
@@ -506,9 +514,13 @@ export const conversation = Effect.gen(function* () {
 
                 yield* rejectBatch(calls, planned);
               } else {
-                yield* executeBatch(
+                const parked = yield* executeBatch(
                   planned.flatMap((entry) => (Result.isSuccess(entry) ? [entry.success] : [])),
                 );
+
+                if (parked !== null) {
+                  return waiting(parked);
+                }
               }
 
               return turn();
@@ -590,18 +602,180 @@ export const conversation = Effect.gen(function* () {
                     );
               };
 
-              const output = yield* executeTool(run, callId, tool, prepared, guard);
+              const result = yield* executeTool(run, callId, tool, prepared, guard).pipe(
+                Effect.map((output) => ({ output })),
+                Effect.catchTag("ParkRequest", (request) =>
+                  park(callId, request).pipe(Effect.map((approval) => ({ approval }))),
+                ),
+              );
+
+              if ("approval" in result) {
+                return result.approval;
+              }
 
               if (tool.untrustedResult) {
                 untrusted = true;
               }
 
-              current.push({ role: "tool", callId, output });
+              current.push({ role: "tool", callId, output: result.output });
               callsUsed++;
             }
+
+            return null;
           });
 
-        return turn();
+        // Saves the approval so the run waits, leaving the call and the rest of its batch pending.
+        const park = (callId: string, { approval }: ParkRequest) =>
+          Effect.gen(function* () {
+            const requester = runContext.approvalRequester;
+
+            if (requester === null) {
+              return yield* Effect.die(new Error("A run parked without an approval requester."));
+            }
+
+            const expiresAfter = yield* timeoutSeconds("approvalSeconds");
+
+            return yield* store.parkRun(run.id, callId, {
+              kind: approval.kind,
+              request: { ...approval },
+              requester,
+              expiresAt: (yield* Clock.currentTimeMillis) + expiresAfter * 1000,
+            });
+          });
+
+        // Runs the rest of a batch after a resumed call, one call at a time.
+        const continueBatch = (calls: ReadonlyArray<ToolCall>) =>
+          Effect.gen(function* () {
+            for (const call of calls) {
+              const planned = yield* prepareTool(call).pipe(Effect.result);
+
+              if (Result.isFailure(planned)) {
+                if (!preflightReported(planned.failure)) {
+                  return yield* Effect.fail(planned.failure);
+                }
+
+                const output = failureReply(planned.failure.reason, planned.failure.message);
+
+                yield* store.finishToolCall(run.id, call.callId, {
+                  status: "failed",
+                  reason: failureReason(planned.failure),
+                  output,
+                });
+                current.push({ role: "tool", callId: call.callId, output });
+                callsUsed++;
+                continue;
+              }
+
+              const parked = yield* executeBatch([planned.success]);
+
+              if (parked !== null) {
+                return parked;
+              }
+            }
+
+            return null;
+          });
+
+        // Continues a waiting run from its saved messages once the owner has decided.
+        const resumeFrom = (approval: Approval): ConversationStream =>
+          Stream.unwrap(
+            Effect.gen(function* () {
+              const saved = yield* store.toolCalls(run.id);
+              const call = saved.find((entry) => entry.callId === approval.callId);
+              const own = runContext.history.filter((entry) => entry.runId === run.id);
+
+              const batch = own.findLast((entry) => entry.message.role === "assistant")?.message;
+
+              const calls =
+                batch?.role === "assistant"
+                  ? batch.output.flatMap((part) => (part.type === "tool-call" ? [part] : []))
+                  : [];
+
+              const index = calls.findIndex((part) => part.callId === approval.callId);
+              const part = calls[index];
+
+              if (
+                (approval.state !== "approved" && approval.state !== "denied") ||
+                approval.runId !== run.id ||
+                call?.status !== "pending" ||
+                callDigest(call) !== approval.digest ||
+                part === undefined
+              ) {
+                return yield* Effect.fail(
+                  new AgentError({
+                    reason: "invalid-request",
+                    message: "The approval no longer matches a waiting call. Nothing was executed.",
+                  }),
+                );
+              }
+
+              current.splice(
+                0,
+                current.length,
+                ...own.map((entry) => withMentionedSkills(entry.message)),
+              );
+              turns = current.filter((message) => message.role === "assistant").length;
+              callsUsed = current.filter((message) => message.role === "tool").length;
+              usage = null;
+
+              for (const message of current) {
+                if (message.role === "assistant") {
+                  for (const output of message.output) {
+                    outputBytes += output.type === "text" ? byteSize(output.text) : 0;
+                  }
+                }
+              }
+
+              // A finished call whose tool is gone is treated as untrusted.
+              untrusted ||= saved.some(
+                (entry) =>
+                  (entry.status === "completed" || entry.status === "failed") &&
+                  (findTool(entry)?.untrustedResult ?? true),
+              );
+
+              const tool = findTool(part);
+
+              if (tool === undefined) {
+                return yield* Effect.fail(
+                  new AgentError({
+                    reason: "tool-permission",
+                    message: "The requested tool is not allowed in this run.",
+                  }),
+                );
+              }
+
+              if (untrusted && tool.withdrawnWhenUntrusted) {
+                return yield* Effect.fail(withdrawnError(tool));
+              }
+
+              const prepared = yield* tool.prepare(part, context);
+
+              if (!("authorize" in prepared)) {
+                return yield* Effect.fail(
+                  new AgentError({
+                    reason: "invalid-request",
+                    message: "The waiting call is no longer reviewed. Nothing was executed.",
+                  }),
+                );
+              }
+
+              const decided: ReviewableCall = {
+                approved: prepared.approved,
+                authorize: () =>
+                  approval.state === "approved"
+                    ? Effect.succeed(prepared.approved)
+                    : Effect.fail(ownerDenied(approval.kind)),
+              };
+
+              yield* executeBatch([{ callId: part.callId, tool, prepared: decided }]);
+
+              const parked = yield* continueBatch(calls.slice(index + 1));
+
+              return parked === null ? turn() : waiting(parked);
+            }),
+          );
+
+        return runContext.resume === null ? turn() : resumeFrom(runContext.resume);
       }),
     );
 });

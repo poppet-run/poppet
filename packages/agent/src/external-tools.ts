@@ -2,7 +2,7 @@ import type { Tool } from "@poppet/provider";
 import { Context, Effect, Schema } from "effect";
 import type { Scope } from "effect";
 
-import { escapedApprovalJSON } from "#src/action-approval";
+import { ParkRequest, escapedApprovalJSON, ownerDenied } from "#src/action-approval";
 import { MCPReview, reviewAction } from "#src/action-review";
 import type {
   AgentTool,
@@ -87,7 +87,19 @@ const prepareExternal = (entry: ExternalTool, call: ToolCall, context: ToolConte
       return prepared;
     }
 
+    const execute = (approvedBy: "owner" | "reviewer") =>
+      prepared.execute.pipe(
+        Effect.map((output) =>
+          JSON.stringify({
+            status: "completed",
+            approvedBy,
+            result: Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(output),
+          }),
+        ),
+      );
+
     return {
+      approved: { execute: execute("owner") },
       authorize: (record) =>
         Effect.gen(function* () {
           if (context.hasUntrustedContent()) {
@@ -158,6 +170,18 @@ const prepareExternal = (entry: ExternalTool, call: ToolCall, context: ToolConte
           if (result.decision === "needs_approval") {
             const approve = context.approveAction;
 
+            const approval = {
+              kind: "mcp" as const,
+              invocation: exactInvocation,
+              target: result.target,
+              effects: result.effects,
+              reason: result.reason,
+            };
+
+            if (context.origin !== "scheduled" && context.approvalRequester !== null) {
+              return yield* new ParkRequest({ approval });
+            }
+
             if (approve === null || context.origin === "scheduled") {
               return yield* Effect.fail(
                 new AgentError({
@@ -167,38 +191,12 @@ const prepareExternal = (entry: ExternalTool, call: ToolCall, context: ToolConte
               );
             }
 
-            const approved = yield* approve(
-              {
-                kind: "mcp",
-                invocation: exactInvocation,
-                target: result.target,
-                effects: result.effects,
-                reason: result.reason,
-              },
-              (approval) => record({ ...result, approval }),
-            );
-
-            if (!approved) {
-              return yield* Effect.fail(
-                new AgentError({
-                  reason: "mcp-denied",
-                  message: "The owner did not approve this MCP action. Nothing was executed.",
-                }),
-              );
+            if (!(yield* approve(approval, (answer) => record({ ...result, approval: answer })))) {
+              return yield* Effect.fail(ownerDenied("mcp"));
             }
           }
 
-          return {
-            execute: prepared.execute.pipe(
-              Effect.map((output) =>
-                JSON.stringify({
-                  status: "completed",
-                  approvedBy: result.decision === "needs_approval" ? "owner" : "reviewer",
-                  result: Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Json))(output),
-                }),
-              ),
-            ),
-          };
+          return { execute: execute(result.decision === "needs_approval" ? "owner" : "reviewer") };
         }),
     } satisfies ReviewableCall;
   });

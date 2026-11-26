@@ -74,6 +74,7 @@ describe("runWorker", () => {
       TaskRepositoryLive.pipe(Layer.provide(store)),
       Layer.succeed(Agent, {
         send: () => Stream.die("Unexpected inference"),
+        resume: () => Stream.die("Unexpected resume"),
         nameSession: () => Effect.void,
       }),
       Layer.succeed(WorkerRequests, {

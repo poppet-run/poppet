@@ -2020,3 +2020,219 @@ describe.concurrent("conversation", () => {
     }
   });
 });
+
+describe("parked approvals", () => {
+  const restart = { command: "systemctl restart app", cwd: "/tmp", timeoutSeconds: 5 };
+  const status = { command: "systemctl status app", cwd: "/tmp", timeoutSeconds: 5 };
+  const owner = { adapter: "discord", senderId: "owner", at: 0 } as const;
+
+  const parked = async () => {
+    const executed: Array<string> = [];
+    let reviews = 0;
+
+    const state = await fixture(
+      (request) => {
+        if (request.instructions === commandReviewInstructions) {
+          reviews++;
+          const input = request.messages[0]?.role === "user" ? request.messages[0].text : "";
+
+          return completed([
+            {
+              type: "text",
+              text: JSON.stringify(
+                input.includes("restart")
+                  ? { decision: "needs_approval", reason: "Restarts a service" }
+                  : { decision: "allow", reason: "Reads status" },
+              ),
+            },
+          ]);
+        }
+
+        return request.messages.at(-1)?.role === "tool"
+          ? final()
+          : completed([
+              tool("bash", JSON.stringify(restart), "restart", "poppet_system"),
+              tool("bash", JSON.stringify(status), "status", "poppet_system"),
+            ]);
+      },
+      {
+        bash: {
+          run: (request) =>
+            Effect.sync(() => {
+              executed.push(request.command);
+
+              return { stdout: "ok", stderr: "", exitCode: 0, truncated: false };
+            }),
+        },
+      },
+    );
+
+    const start = Effect.gen(function* () {
+      const store = yield* Store;
+      const session = yield* store.createSession("test-provider", "test-model");
+
+      const events = yield* Stream.runCollect(
+        (yield* Agent).send(session.id, "Restart my app and show its status", {
+          approvalRequester: { surface: "test" },
+        }),
+      );
+
+      const waiting = events.at(-1);
+
+      if (waiting?.type !== "waiting") {
+        throw new Error("Expected the run to wait");
+      }
+
+      return waiting;
+    });
+
+    return { state, executed, reviews: () => reviews, start };
+  };
+
+  test.each(["approved", "denied"] as const)(
+    "when the owner's answer is %s, resumes the waiting run without reviewing it again",
+    async (decision) => {
+      const { state, executed, reviews, start } = await parked();
+
+      try {
+        await state.run(
+          Effect.gen(function* () {
+            const store = yield* Store;
+            const { run, approval } = yield* start;
+            expect(run.status).toBe("waiting");
+            expect(approval).toMatchObject({
+              kind: "bash",
+              callId: "restart",
+              requester: { surface: "test" },
+              request: { kind: "bash", ...restart, reason: "Restarts a service" },
+            });
+            expect(executed).toEqual([]);
+            expect(reviews()).toBe(1);
+
+            yield* store.decideApproval(approval.id, { ...owner, decision });
+
+            const resumed = yield* Stream.runCollect((yield* Agent).resume(run.id)).pipe(
+              Effect.result,
+            );
+
+            const saved = (yield* store.run(run.id))!;
+            const calls = yield* store.toolCalls(run.id);
+
+            if (decision === "approved") {
+              expect(resumed._tag).toBe("Success");
+              expect(saved.status).toBe("completed");
+              expect(executed).toEqual([restart.command, status.command]);
+              expect(reviews()).toBe(2);
+              expect(calls.map((call) => call.status)).toEqual(["completed", "completed"]);
+              expect(JSON.parse(calls[0]!.output!)).toMatchObject({ approvedBy: "owner" });
+              expect(JSON.parse(calls[1]!.output!)).toMatchObject({ approvedBy: "reviewer" });
+            } else {
+              expect(saved).toMatchObject({
+                status: "failed",
+                failureReason: "agent:command-denied",
+              });
+              expect(executed).toEqual([]);
+              expect(calls.map((call) => call.status)).toEqual(["failed", "interrupted"]);
+            }
+          }),
+        );
+      } finally {
+        await state.close();
+      }
+    },
+  );
+
+  test("when untrusted content arrived before the run waited, keeps tools withdrawn after resuming", async () => {
+    const state = await fixture(
+      (request) => {
+        if (request.instructions === commandReviewInstructions) {
+          return completed([
+            {
+              type: "text",
+              text: JSON.stringify({ decision: "needs_approval", reason: "Restarts a service" }),
+            },
+          ]);
+        }
+
+        return request.messages.at(-1)?.role === "tool"
+          ? final()
+          : completed([
+              tool("fetch_page", '{"url":"https://example.com/"}', "page", "poppet_web"),
+              tool("bash", JSON.stringify(restart), "restart", "poppet_system"),
+            ]);
+      },
+      {
+        pages: { fetch: () => Effect.succeed("Untrusted page content") },
+        bash: {
+          run: () => Effect.succeed({ stdout: "ok", stderr: "", exitCode: 0, truncated: false }),
+        },
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const agent = yield* Agent;
+          const session = yield* store.createSession("test-provider", "test-model");
+
+          const events = yield* Stream.runCollect(
+            agent.send(session.id, "Read https://example.com/ and restart my app", {
+              approvalRequester: { surface: "test" },
+            }),
+          );
+
+          const waiting = events.at(-1);
+
+          if (waiting?.type !== "waiting") {
+            throw new Error("Expected the run to wait");
+          }
+
+          yield* store.decideApproval(waiting.approval.id, { ...owner, decision: "approved" });
+          yield* Stream.runDrain(agent.resume(waiting.run.id));
+          expect(yield* store.run(waiting.run.id)).toMatchObject({ status: "completed" });
+        }),
+      );
+
+      const turns = state.requests.filter(
+        (request) => request.instructions !== commandReviewInstructions,
+      );
+
+      expect(turns).toHaveLength(2);
+      expect(toolNames(turns[0]!)).toContain("memory");
+      expect(toolNames(turns[1]!)).not.toContain("memory");
+      expect(turns[1]!.messages.filter((message) => message.role === "tool")).toHaveLength(2);
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when the approval is still pending or the run already resumed, refuses to resume and leaves it", async () => {
+    const { state, executed, start } = await parked();
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const agent = yield* Agent;
+          const { run, approval } = yield* start;
+
+          expect(yield* failure(Stream.runDrain(agent.resume(run.id)))).toMatchObject({
+            reason: "invalid-request",
+          });
+          expect(yield* store.run(run.id)).toMatchObject({ status: "waiting" });
+
+          yield* store.decideApproval(approval.id, { ...owner, decision: "approved" });
+          yield* Stream.runDrain(agent.resume(run.id));
+          expect(yield* failure(Stream.runDrain(agent.resume(run.id)))).toMatchObject({
+            reason: "invalid-request",
+          });
+          expect(yield* store.run(run.id)).toMatchObject({ status: "completed" });
+          expect(executed).toEqual([restart.command, status.command]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+});
