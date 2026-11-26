@@ -6,6 +6,7 @@ import { fields, time } from "#src/output";
 
 export const ReviewedCall = Schema.Struct({
   runId: Schema.String,
+  name: Schema.optionalKey(Schema.String),
   serverId: Schema.optionalKey(Schema.NullOr(Schema.String)),
   toolName: Schema.optionalKey(Schema.NullOr(Schema.String)),
   arguments: Schema.optionalKey(Schema.String),
@@ -24,7 +25,12 @@ export const renderReviewedCall = (call: typeof ReviewedCall.Type) => {
   return [
     fields([
       ["Run", call.runId],
-      ["Tool", `${call.serverId}/${call.toolName}`],
+      [
+        "Tool",
+        call.serverId === null || call.serverId === undefined
+          ? (call.name ?? "-")
+          : `${call.serverId}/${call.toolName}`,
+      ],
       ["Arguments", call.arguments === undefined ? "-" : escapedApprovalJSON(call.arguments)],
       ["Review", review.decision],
       ["Reason", escapedApprovalJSON(review.reason)],

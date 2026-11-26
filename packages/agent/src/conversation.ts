@@ -86,13 +86,14 @@ const taskSchedulingGuidance = (now: number, timeZone: string | null) =>
     ].join(" "),
   ].join("\n");
 
+const reviewedMCP = (tool: AgentTool) => tool.external !== undefined && tool.reviewed === true;
+
 const withdrawnError = (tool: AgentTool) =>
   new AgentError({
-    reason: tool.external?.reviewed === true ? "mcp-denied" : "tool-permission",
-    message:
-      tool.external?.reviewed === true
-        ? "Reviewed MCP tools are disabled after untrusted content enters this run. Ask for the action and target in a fresh owner message."
-        : "This tool is disabled after untrusted content entered this run. Propose the action and ask the owner to confirm it in a new message.",
+    reason: reviewedMCP(tool) ? "mcp-denied" : "tool-permission",
+    message: reviewedMCP(tool)
+      ? "Reviewed MCP tools are disabled after untrusted content enters this run. Ask for the action and target in a fresh owner message."
+      : "This tool is disabled after untrusted content entered this run. Propose the action and ask the owner to confirm it in a new message.",
   });
 
 export const conversation = Effect.gen(function* () {
@@ -456,9 +457,11 @@ export const conversation = Effect.gen(function* () {
                 run.id,
                 response,
                 calls.flatMap((call) => {
-                  const identity = findTool(call)?.external;
+                  const tool = findTool(call);
 
-                  return identity === undefined ? [] : [{ callId: call.callId, ...identity }];
+                  return tool?.external === undefined && tool?.reviewed !== true
+                    ? []
+                    : [{ callId: call.callId, ...tool.external, reviewed: tool.reviewed === true }];
                 }),
               );
 
@@ -560,7 +563,7 @@ export const conversation = Effect.gen(function* () {
                   output,
                 });
 
-                if (tool.external?.reviewed === true) {
+                if (reviewedMCP(tool)) {
                   return yield* Effect.fail(error);
                 }
 

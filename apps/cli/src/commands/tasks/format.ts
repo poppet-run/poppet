@@ -202,7 +202,7 @@ const showTask = ({ task, target, note, occurrences, skipped }: typeof TaskDetai
       ),
     ],
     latest === undefined ? null : ["Latest result", latest],
-    reviewed.length === 0 ? null : ["Reviewed MCP calls", reviewed.join("\n\n")],
+    reviewed.length === 0 ? null : ["Reviewed calls", reviewed.join("\n\n")],
     skipped.length === 0
       ? null
       : [

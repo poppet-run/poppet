@@ -129,9 +129,13 @@ const prepareBash = (
     const request = yield* toolArguments(bashDefinition, Arguments)(call.arguments);
 
     return {
-      authorize: () =>
+      authorize: (record) =>
         Effect.gen(function* () {
-          const review = yield* reviewCommand(model, run, ownerRequest, request);
+          const review = yield* reviewCommand(model, run, ownerRequest, request).pipe(
+            Effect.tapError((error) => record({ decision: "unavailable", reason: error.message })),
+          );
+
+          yield* record(review);
 
           if (review.decision === "deny") {
             return yield* Effect.fail(
@@ -152,7 +156,12 @@ const prepareBash = (
               );
             }
 
-            if (!(yield* approve({ kind: "bash", ...request, reason: review.reason }))) {
+            const approved = yield* approve(
+              { kind: "bash", ...request, reason: review.reason },
+              (approval) => record({ ...review, approval }),
+            );
+
+            if (!approved) {
               return yield* Effect.fail(
                 new AgentError({
                   reason: "command-denied",
@@ -200,5 +209,6 @@ export const bashTool = Effect.gen(function* () {
     contextOnly: false,
     availableWhenScheduled: true,
     failures: bashFailures,
+    reviewed: true,
   } satisfies AgentTool;
 });

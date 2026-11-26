@@ -237,6 +237,7 @@ describe.concurrent("conversation", () => {
     "approved",
     "approved-nonzero",
     "rejected",
+    "approved-unsaved",
   ])("when Bash review is %s, enforces the decision without model retries", async (mode) => {
     let executions = 0;
     let approvals = 0;
@@ -315,10 +316,23 @@ describe.concurrent("conversation", () => {
           yield* Stream.runDrain(
             (yield* Agent).send(session.id, "Restart my service", {
               origin: mode === "scheduled" ? "scheduled" : "interactive",
-              approveAction: (request) =>
-                Effect.sync(() => {
+              approveAction: (request, recordAnswer) =>
+                Effect.gen(function* () {
                   approvals++;
                   expect(request).toEqual({ kind: "bash", ...args, reason: "Service change" });
+
+                  if (mode === "approved-unsaved") {
+                    return true;
+                  }
+
+                  yield* (
+                    recordAnswer?.({
+                      decision: approved ? "approved" : "denied",
+                      adapter: "discord",
+                      senderId: "owner",
+                      at: 0,
+                    }) ?? Effect.void
+                  );
 
                   return approved;
                 }),
@@ -328,13 +342,38 @@ describe.concurrent("conversation", () => {
           expect(run.status).toBe(approved ? "completed" : "failed");
           const calls = yield* store.toolCalls(run.id);
           expect(calls).toHaveLength(1);
-          expect(calls[0]!.status).toBe(approved ? "completed" : "failed");
+          expect(calls[0]!.status).toBe(
+            approved ? "completed" : mode === "approved-unsaved" ? "interrupted" : "failed",
+          );
+
+          expect(calls[0]!.review?.decision).toBe(
+            mode === "deny"
+              ? "deny"
+              : mode === "invalid" || mode === "unavailable"
+                ? "unavailable"
+                : "needs_approval",
+          );
+          expect(calls[0]!.review?.approval).toEqual(
+            approved || mode === "rejected"
+              ? {
+                  decision: approved ? "approved" : "denied",
+                  adapter: "discord",
+                  senderId: "owner",
+                  at: 0,
+                }
+              : undefined,
+          );
 
           if (approved) {
             expect(JSON.parse(calls[0]!.output!)).toEqual(receipt);
           } else {
             expect(calls[0]!.startedAt).toBeNull();
             expect(JSON.parse(calls[0]!.arguments)).toEqual(args);
+
+            if (mode === "approved-unsaved") {
+              return;
+            }
+
             const messages = yield* store.messages(session.id);
             expect(
               messages.some(
@@ -345,7 +384,9 @@ describe.concurrent("conversation", () => {
         }),
       );
       expect(executions).toBe(approved ? 1 : 0);
-      expect(approvals).toBe(approved || mode === "rejected" ? 1 : 0);
+      expect(approvals).toBe(
+        approved || mode === "rejected" || mode === "approved-unsaved" ? 1 : 0,
+      );
     } finally {
       await state.close();
     }

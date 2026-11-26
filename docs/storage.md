@@ -109,8 +109,11 @@ and running calls become uncertain. Completed calls never change, and terminal
 calls never restart.
 
 MCP calls fill the nullable `server_id` and `tool_name`. Store migration 5 added
-review metadata, which reviewed calls save before dispatch. A call interrupted
-during review stays interrupted. A call interrupted after dispatch is uncertain.
+review metadata. Bash calls and reviewed MCP calls start with a `pending` review
+and save the reviewer's decision, and any owner answer, before dispatch.
+`startToolCall` refuses a reviewed call unless its review allows it or the owner
+approved it. A call interrupted during review stays interrupted. A call
+interrupted after dispatch is uncertain.
 
 `Store.commitToolCall` runs a synchronous change, such as a task edit, together
 with completing its tool call and message. If saving the result fails, the change

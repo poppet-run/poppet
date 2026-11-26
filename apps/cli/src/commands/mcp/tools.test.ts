@@ -549,7 +549,7 @@ describe("ExternalAgentToolsLive", () => {
         const reviewDecision = failure === "mcp-review" ? "unavailable" : decision;
 
         expect(saved.toolCalls[0]).toMatchObject({ status, review: { decision: reviewDecision } });
-        expect(await state.invoke(["chat", "show", session])).toContain("Reviewed MCP calls");
+        expect(await state.invoke(["chat", "show", session])).toContain("Reviewed calls");
 
         if (status === "completed") {
           expect(JSON.parse(saved.toolCalls[0].output)).toMatchObject({
@@ -727,7 +727,7 @@ describe("ExternalAgentToolsLive", () => {
               }),
             }),
           ]);
-          expect(await state.invoke(["tasks", "show", jobId])).toContain("Reviewed MCP calls");
+          expect(await state.invoke(["tasks", "show", jobId])).toContain("Reviewed calls");
         }
 
         const log = await readFile(join(state.directory, "events"), "utf8").catch(() => "");

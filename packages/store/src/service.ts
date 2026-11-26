@@ -90,8 +90,8 @@ export interface StoreOperations {
     response: Completion,
     identities?: ReadonlyArray<{
       readonly callId: string;
-      readonly serverId: string;
-      readonly toolName: string;
+      readonly serverId?: string;
+      readonly toolName?: string;
       readonly reviewed?: boolean;
     }>,
   ) => Effect.Effect<ReadonlyArray<ToolCall>, StoreError>;

@@ -110,7 +110,7 @@ const renderSession = ({ session, messages, runs, toolCalls }: typeof SessionDet
             )
             .join("\n\n"),
     ],
-    reviewed.length === 0 ? null : ["Reviewed MCP calls", reviewed.join("\n\n")],
+    reviewed.length === 0 ? null : ["Reviewed calls", reviewed.join("\n\n")],
     [
       "Runs",
       tableOr(
