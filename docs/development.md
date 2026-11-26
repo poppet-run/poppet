@@ -89,20 +89,13 @@ worker.
 
 ## Store migrations
 
-Each package owns its tables. The store defines conversations in
-`packages/store/src/migrations/0001_baseline.ts`; memory, tasks, and gateway
-define theirs in their own `src/migrations.ts`. Each exports a `PackageSchema`
-with its own ledger table, version, and migrations keyed `<id>_<name>`, one SQL
-statement per array entry. Each package's layer calls `migrate` from
-`@poppet/store` when it starts, after the store has migrated its own tables.
-The gateway migrates the task schema first because it reads task occurrences.
-
-To change a package's schema, append the next migration and raise its `version`.
-Never edit an applied migration: the migrator records only IDs, so it cannot
-detect a changed one. Each package's pending migrations run in one transaction.
-
-Development databases created before the baseline are refused and need a fresh
-data directory. See [storage](storage.md#schema-and-saved-records).
+Each package owns its tables and its `PackageSchema`. To change a schema, append
+the next migration to that package's list and raise its `version`. Never edit an
+applied migration. The migrator records only IDs, so it cannot detect a changed
+one. Add a `BEFORE DELETE` trigger when a new table references sessions or runs,
+so [session deletion](storage.md#session-deletion) can detach it. See
+[storage](storage.md#migrations) for where each package's schema lives and how
+migrations run.
 
 ## Lint rules
 

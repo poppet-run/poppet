@@ -1,204 +1,193 @@
 # Storage
 
-[Documentation index](README.md)
+[Engineering notes](README.md)
 
-Open or inspect the local database:
+Poppet keeps durable state in one SQLite database at
+`<POPPET_DATA_DIR>/store/poppet.sqlite`. Every package that needs tables defines
+and migrates its own, on the one connection that `@poppet/store` opens. The
+[user guide](https://poppet.run/docs/storage/) covers the data directory and
+backups. See [development](development.md#store-migrations) for how to add a
+migration.
 
-```sh
-poppet store status
-```
+## Database
 
-This opens `<POPPET_DATA_DIR>/store/poppet.sqlite`, applies pending migrations,
-and prints its path, schema version, and session/message/run counts. It requires
-no login or selected model. Help, configuration, and auth commands do not open
-this database. To experiment in a separate directory:
+`store/src/database.ts` protects the `store` directory (`0700`), takes the owner
+lock, and opens one Effect SQL client on
+[Bun SQLite](https://bun.sh/docs/runtime/sqlite) with foreign keys, WAL, and full
+synchronous commits. The database and WAL sidecars are `0600`. Rows come back
+with camelCase names. Scope finalizers close SQLite before releasing the lock,
+including after interruption or a failed start.
 
-Bash / Zsh / POSIX sh:
+`StoreLive` provides the `Store` record service and the shared `SqlClient`. Other
+packages query `SqlClient` through their own repositories. The `Store` API exposes
+no raw handle and has no memory, task, or gateway operations. `store status`
+migrates and prints the path, schema version, and counts without opening any
+authentication service. Help, configuration, skill, and provider commands never
+open the database.
 
-```sh
-export POPPET_DATA_DIR=/tmp/poppet-storage-test
-poppet store status
-```
+## Owner lock
 
-fish:
+`credentials/src/lock.ts` gives one process ownership of a data directory. The
+store, ChatGPT credentials, and API-key changes all use it. The lock is a small
+SQLite database, `store/owner.lock.sqlite`, held with
+[exclusive locking](https://www.sqlite.org/pragma.html#pragma_locking_mode), which
+stays held across transactions and is released by the OS when the process exits
+or crashes. An atomic PID marker, `store/owner.lock`, records the owner for
+diagnostics only. Once the SQLite lock is held, a leftover regular marker is
+replaced without checking whether its PID is alive. An invalid marker file fails
+closed. Lock databases hold no credentials or records, stay after logout, and must
+never be removed while Poppet runs.
 
-```fish
-set -lx POPPET_DATA_DIR /tmp/poppet-storage-test
-poppet store status
-```
+## Migrations
 
-## Schema and saved records
+Each package exports a `PackageSchema` with its own ledger table, version, and
+migrations keyed `<id>_<name>`, one SQL statement per array entry. `migrate` in
+`store/src/migrations.ts` runs one package's pending migrations with Effect's SQL
+migrator in a single transaction, so a failure rolls back the batch. The
+migrator records IDs only, so it cannot detect an edited migration.
 
-The initial schema includes durable tool calls and their execution states,
-explicitly saved facts and their revisions, and session titles with their source,
-a durable automatic-attempt claim, and separate title-request usage.
-Manual titles take precedence over automatic results, and metadata
-updates leave session activity timestamps unchanged. Gateway bindings also retain
-creation provenance, confirmed and pending remote names, the last title considered
-for synchronization, and whether external edits or failures disabled naming.
+| Package           | Defined in                               | Tables                                                                                                            |
+| ----------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `@poppet/store`   | `store/src/migrations/`                  | `sessions`, `runs`, `messages`, `tool_calls`, `attachments`, `session_search`, and the `searchable_messages` view |
+| `@poppet/memory`  | `memory/src/migrations.ts`               | `memory_revisions` and the `memories` view                                                                        |
+| `@poppet/tasks`   | `tasks/src/migrations.ts`                | `jobs`, `job_occurrences`, `job_skips`, `job_provider_pauses`, `job_notes`                                        |
+| `@poppet/gateway` | `gateway/src/migrations.ts`              | `gateway_bindings`, `gateway_inbox`, `gateway_deliveries`                                                         |
+| Web chat          | `apps/cli/src/commands/web-chat/chat.ts` | `web_chat_submissions`                                                                                            |
 
-`@poppet/store` provides a scoped Effect `Store` service backed by
-[Bun SQLite](https://bun.sh/docs/runtime/sqlite) through the Effect SQL client.
-Each package migrates its own tables: the store creates conversations, and memory,
-tasks, and gateway create theirs when their layers start. Table checks define which
-record states are valid. Effect's migrator records each package's applied
-migration IDs in its own ledger table and runs that package's pending migrations
-in one transaction; a failure rolls back the batch.
-The store refuses databases from newer versions, from other applications, and
-from development builds before the baseline. Those need a fresh data directory;
-databases are never reset automatically.
+The store migrates its own tables first. Each other package migrates when its
+layer starts. The gateway migrates the task schema first, because it reads
+occurrences. The store refuses a ledger newer than the build, a database from
+another application, and a development database from before the baseline. Those
+need a fresh data directory. Nothing resets a database by itself.
 
-Sessions retain their selected provider and model. Messages preserve order,
-tool call IDs, tool
-results, and versioned provider continuation. Continuation includes the readable
-reasoning the provider returned, which is saved even when `chat.logReasoning` is
-off, alongside any encrypted reasoning. Runs persist pending
-inputs before execution, then transition through running to completed, failed,
-or interrupted. Successful completion writes its assistant message and result
-in one transaction. The store validates continuation identity on write and read.
-It permits one pending or running run per session; different sessions can run at
-the same time.
+## Sessions and messages
 
-Store migration 3 adds the `attachments` table. A run's attachment bytes are saved
-in the same transaction as the user message that references them, keyed by
-attachment ID and session. Messages hold only each attachment's ID, name, type,
-and size. Attachments stay in the database with their session, so backups and
-the permissions below cover them.
+A session saves its provider and model, title metadata, an optional
+[skill snapshot](skills.md#snapshots), and its origin (`chat`, `scheduled`, or
+`gateway:<id>`, added by store migration 6 for the web sidebar). Migration 6
+classified existing sessions from task titles, occurrences, gateway bindings, and
+inbox history. A session with no evidence of either is `chat`.
 
-Store migration 6 records where each session started for the web sidebar.
-Existing sessions are classified from task title metadata, task occurrences,
-gateway bindings, and gateway inbox history. A legacy session with no surviving
-evidence of a task or gateway origin appears under Chats. New sessions keep
-their origin through renames, job deletion, and gateway thread resets.
+Title metadata has the title, its source, an attempt claim, and separate title
+usage. A manual title wins over a generated one. Title changes never touch
+activity timestamps.
 
-## Task revisions and timing
+Messages keep their order, tool call IDs, tool results, and versioned provider
+continuation. Continuation holds the readable reasoning the provider returned,
+saved whether or not `chat.logReasoning` is on, plus any encrypted reasoning.
+`service.ts` checks continuation identity on write and on read. A user message
+can carry a `skills` array of `name` and `content` from
+[mentions](skills.md#mentions) in its JSON payload.
 
-Jobs carry a monotonically increasing definition revision. Occurrences save that
-revision and a JSON execution definition, independently of the mutable job. Their
-unique slot is `(job_id, revision, scheduled_at)`; the partial unique index still
-permits at most one pending/running occurrence per job. `available_at` controls
-eligibility and recurring expiration, while `scheduled_at` identifies the logical
-slot. `origin` distinguishes scheduled and manual work. Legacy rows are backfilled
-from the previously immutable job definition and their own destination snapshot.
+Store migration 3 added `attachments`. Attachment bytes are saved in the
+transaction that saves the user message, keyed by attachment ID and session. The
+message holds only each attachment's ID, name, type, and size.
 
-Store migration 5 adds nullable review metadata to tool calls. Reviewed MCP
-calls save the decision before dispatch. A pending call interrupted during
-review remains interrupted. A running call interrupted after dispatch may
-have had effects and is recorded as uncertain. Existing calls have no review
-metadata.
+## Runs
 
-Task migration 3 adds the nullable `jobs.end_at`, the last instant a cron slot
-may fall on, in UTC milliseconds. Existing tasks have none and behave as before.
-It stays on the job and out of the occurrence definition, so changing it does not
-raise the revision.
+Table checks define valid states, and services rely on them:
 
-Task migration 4 adds `job_notes`, one row per [task note](tasks.md#task-notes)
-change: the job, the text (null when cleared), its `origin` (`occurrence` or
-`cli`), the occurrence and run that saved it, and the time. A job's latest row is
-its current note. Databases from before the migration start with no notes.
+- `queueRun` saves a pending run and its input messages in one transaction.
+- `startRun` accepts only pending runs.
+- A pending run can fail or be interrupted. Completion needs a running run.
+- `finishRun` saves a completed response and its assistant message in one
+  transaction, or records a failure or interruption reason.
+- A partial unique index allows one pending or running run per session. Other
+  sessions run at the same time.
+- Runs read their provider and model from the session.
 
-Definition edits, occurrence replacement, and timing changes commit together.
-Apart from notes, task changes keep no separate history: occurrences and skipped
-intervals record what ran and what did not. Clearing tasks cascades to their
-occurrences and notes, preserving existing chat and queued-delivery behavior.
+A new owner marks unfinished runs interrupted with `process-exit`. Their inputs
+stay, and nothing replays them.
 
-## Scheduled delivery destinations
+## Tool call journal
 
-Chat task mutations and their completed tool result/message commit in one
-shared-database transaction, keyed by run and call ID. Failure to save the tool
-result rolls back the task change. Repeating a completed call returns its saved
-result, and a later model failure does not undo a committed task. This tool
-journal is the only replay protection; CLI and worker commands are not
-deduplicated, and there is no automatic execution replay.
+`tool_calls` records every tool call. One transaction saves the assistant tool
+request with its pending calls, and another saves a completed result with its
+transcript message. States go from pending to running to completed or failed.
+When a run fails or a new owner opens the store, pending calls become interrupted
+and running calls become uncertain. Completed calls never change, and terminal
+calls never restart.
 
-Jobs and occurrences have nullable JSON `destination` columns.
-Each occurrence copies the task's adapter, bot account, owner, server, parent
-channel, and thread IDs when queued. Tasks without messaging delivery have no
-destination.
-The gateway copies completed answers and fixed failure notices into its delivery
-queue. A unique `(occurrence_id, run_id)` index prevents duplicate queue entries
-while allowing a successful explicit retry to deliver a new result. Failure notices
-use `notice:<occurrence-id>:<finished-at>` as their synthetic run ID.
-Delivery chunks retain their own state independently of task execution. Queued
-replies and their saved answers survive clearing task definitions and history.
+MCP calls fill the nullable `server_id` and `tool_name`. Store migration 5 added
+review metadata, which reviewed calls save before dispatch. A call interrupted
+during review stays interrupted. A call interrupted after dispatch is uncertain.
 
-## Skill snapshots
+`Store.commitToolCall` runs a synchronous change, such as a task edit, together
+with completing its tool call and message. If saving the result fails, the change
+rolls back. A completed call returns its saved result instead of running again.
+CLI and worker commands have no such deduplication.
 
-Sessions and jobs have nullable JSON `skill` columns. Each selected
-skill saves its validated `name` and full `content` at creation. Records created
-without a selected skill have no snapshot. Task occurrences copy their task's
-snapshot into the new session; no later run rereads the skill file. A skill
-[named in a message](skills.md#mentions) is saved in that user
-message's JSON payload as `skills`, with the same `name` and `content` fields, and
-needs no migration. Search indexes only the message text. Inspection
-exposes snapshots without provider
-continuation or credentials. See [skills](skills.md).
+## Facts
 
-## Fact history
+`memory_revisions` is append-only and is the only place facts live. Each row has
+the key, the value (null when forgotten), the origin (`cli` or `turn`), the
+source run, and the time. The `memories` view shows each key's latest revision
+unless that revision forgot it.
 
-The append-only `memory_revisions` table is the only place facts are stored. It
-records every remember, replace, forget, and revert per key, with the value (null
-when forgotten), origin (`cli` or `turn`), source run, and time. The `memories`
-view shows each key's latest revision unless that revision forgot it. CLI changes
-have no source run. Model changes have one until its session is deleted.
+## Tasks
+
+A job has a definition revision that rises on every name, prompt, or schedule
+edit. An occurrence saves the revision and a JSON definition, so later edits do
+not change it. Its unique slot is `(job_id, revision, scheduled_at)`, and a
+partial unique index allows one pending or running occurrence per job.
+`scheduled_at` is the logical slot and `available_at` decides eligibility and
+expiry. `origin` tells scheduled work from manual runs.
+
+- Task migration 3 added `jobs.end_at`, the last instant a slot may fall on. It is
+  not part of the occurrence definition, so changing it keeps the revision.
+- Task migration 4 added `job_notes`, one row per note change, with the text,
+  `origin` (`occurrence` or `cli`), occurrence, run, and time. The latest row is
+  the current note.
+- `job_skips` records skipped intervals, and `job_provider_pauses` records
+  provider holds.
+
+Jobs and occurrences have nullable JSON `destination` columns. An occurrence
+copies the adapter, bot account, owner, server, parent, and thread IDs when it is
+queued. Apart from notes, tasks keep no change history beyond their occurrences
+and skips. Clearing tasks cascades to occurrences and notes.
+
+## Gateway
+
+`gateway_bindings` maps a conversation to its session, with creation provenance,
+confirmed and pending remote names, the last title considered, and whether naming
+was turned off. `gateway_inbox` is the durable request queue.
+`gateway_deliveries` holds reply and scheduled result chunks. A unique
+`(occurrence_id, run_id)` index stops duplicate scheduled entries and still lets
+a successful retry deliver. Delivery state is independent of task execution, so
+queued replies survive clearing tasks. See [gateways](gateways/discord.md).
 
 ## Session deletion
 
 `chat delete` takes one or more session IDs. It deletes nothing if any ID is
-missing or any session has a reply in progress. `chat prune --days <n>` (1 to 36500) deletes sessions whose last activity is older than that and skips sessions
-with a reply in progress. Renaming is not activity. Both route through the worker
-when it owns storage.
+missing or any session has a reply in progress. `chat prune --days <n>` (1 to 36500) deletes sessions whose last activity is older than that, and skips
+sessions with a reply in progress. Renaming is not activity. Both go through the
+worker when it owns storage.
 
-Deleting a session removes its search entries,
-tool calls, messages, attachments, runs, and the session in one transaction.
-Packages that reference sessions or runs detach themselves through `BEFORE DELETE`
-triggers added by their own migrations: task migration 5 clears occurrence and
-note links, gateway migration 2 removes thread bindings and clears inbox links,
-web chat migration 2 removes submission receipts, and memory migration 2 clears
-`source_run_id`. Memory migration 2 also rebuilds `memory_revisions` so a `turn`
-revision may have no source run; existing rows are copied unchanged. Deletion
-applies every package's pending migrations first, so the triggers exist even when
-that package has not started since an upgrade.
+Deleting a session removes its search entries, tool calls, messages,
+attachments, runs, and the session in one transaction. Each package detaches its
+own references through `BEFORE DELETE` triggers from its migrations:
 
-## Conversation search index
+| Migration  | Trigger effect                                 |
+| ---------- | ---------------------------------------------- |
+| Task 5     | Clears occurrence and note links               |
+| Gateway 2  | Removes thread bindings and clears inbox links |
+| Web chat 2 | Removes submission receipts                    |
+| Memory 2   | Clears `source_run_id`                         |
 
-The schema includes an FTS5 index for completed user messages and final
-assistant text. Intermediate responses, tool data, failed/interrupted inputs,
-and provider continuation are excluded. A trigger on successful run completion
-updates the index in the same transaction as the final message and run result.
-Indexing failures roll back completion. Messages remain the source of truth;
-titles are read from sessions at query time so manual renames appear immediately.
+Memory migration 2 also rebuilt `memory_revisions`, so a `turn` revision may have
+no source run. Deletion applies every package's pending migrations first, so the
+triggers exist even when that package has not started since an upgrade.
 
-`Store.searchSessions` accepts a bounded plain-text query and a serialized JSON
-byte budget. It quotes and binds FTS terms, returns at most ten relevance-ranked
-matches with stable message-ID ordering for ties, and bounds excerpts and output.
-The CLI and agent tool use this same operation on the owning store connection.
-Agent and CLI recall can inspect all saved sessions.
-See [conversation search](chat.md#conversation-recall).
+## Search index
 
-`Store.readSession` uses the same indexed eligible message IDs and the
-`searchable_messages` projection over original saved messages. It reads at most
-eleven rows for forward paging, or six on each side of an around-message anchor
-including lookahead. SQL bounds each returned text before it reaches the agent.
-It creates no new index, summary, transcript copy, or schema migration.
+`session_search` is an FTS5 index over the `searchable_messages` view: completed
+user messages and final assistant text. A trigger on run completion indexes the
+exchange in the completion transaction, so an indexing failure rolls back the
+completion. Messages are the source of truth. Titles join from sessions at query
+time, so a rename shows at once.
 
-The result has at most ten chronological messages and fits the supplied JSON
-byte budget. Stable message anchors must belong to the requested session and
-eligible history. Per-message and overall truncation flags mark shortened text
-and omitted context; `nextAfterMessageId` advances past the last returned message,
-including a shortened one. Current titles are read without changing session
-activity. See [conversation context](chat.md#conversation-recall).
-
-## Permissions and recovery
-
-The store directory uses `0700` permissions; the database and WAL sidecars use
-`0600`. Credentials stay in the separate `auth` directory. The store holds an
-exclusive ownership until its SQLite connection closes, including on interruption
-and initialization failure. A shared helper uses an OS-held SQLite lock in
-`store/owner.lock.sqlite` and an atomic PID marker in `store/owner.lock`.
-The OS releases the SQLite lock when an owner exits or crashes, so a leftover
-marker is replaced automatically, even if its PID now belongs to another process.
-The marker records the current owner for diagnostics only.
-Never remove a `.lock.sqlite` file while Poppet is running. These small lock
-databases contain no credentials and remain after logout. On reopening, unfinished runs become interrupted
-with a `process-exit` reason. Poppet does not automatically replay them.
+`Store.searchSessions` and `Store.readSession` in `search.ts` and `recall.ts`
+serve both the CLI and the agent on the owning connection. `readSession` reads at
+most eleven rows for forward paging, or six on each side of an anchor including
+lookahead, and SQL bounds each text before it reaches the agent. See
+[conversation recall](chat.md#conversation-recall) for the query and result rules.
