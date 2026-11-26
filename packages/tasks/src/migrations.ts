@@ -70,4 +70,8 @@ export const taskSchema = packageSchema("task_migrations", {
     `UPDATE sessions SET origin = 'scheduled'
       WHERE id IN (SELECT session_id FROM job_occurrences WHERE session_id IS NOT NULL)`,
   ],
+  "7_task_approvals": [
+    `ALTER TABLE jobs ADD COLUMN approvals TEXT
+      CHECK (approvals IS NULL OR approvals IN ('fail', 'wait'))`,
+  ],
 });

@@ -83,6 +83,7 @@ describe("runWorker", () => {
       Layer.succeed(MessagingWorker, {
         run: Effect.never,
         status: Effect.succeed({}),
+        homeDestination: Effect.succeed(null),
         resolveDestination: (adapter, conversationId) => {
           expect([adapter, conversationId]).toEqual(["discord", "thread"]);
 

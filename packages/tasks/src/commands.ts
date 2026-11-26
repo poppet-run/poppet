@@ -17,6 +17,7 @@ export class TaskDestinations extends Context.Service<
       adapter: string,
       conversationId: string | null,
     ) => Effect.Effect<DeliveryDestination, TaskError>;
+    readonly home?: Effect.Effect<DeliveryDestination | null, TaskError>;
   }
 >()("poppet/TaskDestinations") {}
 
@@ -127,7 +128,14 @@ export const executeTaskCommand = (
         );
       }
 
-      return yield* repo.add(command.task, now, skill, destination, command.endAt ?? null);
+      return yield* repo.add(
+        command.task,
+        now,
+        skill,
+        destination,
+        command.endAt ?? null,
+        command.approvals ?? null,
+      );
     }
 
     if (isTaskControl(command)) {

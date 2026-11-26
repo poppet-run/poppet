@@ -1,4 +1,4 @@
-import { timeZone } from "@poppet/config";
+import { TaskApprovalPolicy, timeZone } from "@poppet/config";
 import { Session } from "@poppet/store";
 import { TaskPatch, NewTask, TaskError, parseTimestamp, taskOperation } from "@poppet/tasks";
 import { Effect, Option, Schema } from "effect";
@@ -38,9 +38,13 @@ export const tasksCommand = (context: CLIContext) => {
             Flag.withDescription("End time for a recurring task, or none to clear it"),
             Flag.atMost(1),
           ),
+          approvals: Flag.String("approvals").pipe(
+            Flag.withDescription("Approval policy: fail, wait, or default to inherit config"),
+            Flag.atMost(1),
+          ),
           json: jsonFlag,
         },
-        ({ id, name, prompt, at, cron, tz, until, json }) =>
+        ({ id, name, prompt, at, cron, tz, until, approvals, json }) =>
           Effect.gen(function* () {
             const defaultZone = yield* timeZone;
 
@@ -69,9 +73,21 @@ export const tasksCommand = (context: CLIContext) => {
                 fields.endAt = until[0] === "none" ? null : parseTimestamp(until[0]);
               }
 
+              if (approvals[0] !== undefined) {
+                if (
+                  approvals[0] !== "fail" &&
+                  approvals[0] !== "wait" &&
+                  approvals[0] !== "default"
+                ) {
+                  throw new TaskError({ message: "Use --approvals fail, wait, or default." });
+                }
+
+                fields.approvals = approvals[0] === "default" ? null : approvals[0];
+              }
+
               if (Object.keys(fields).length === 0) {
                 throw new TaskError({
-                  message: "Supply --name, --prompt, --at, --cron, or --until.",
+                  message: "Supply --name, --prompt, --at, --cron, --until, or --approvals.",
                 });
               }
 
@@ -124,10 +140,15 @@ export const tasksCommand = (context: CLIContext) => {
             Flag.atMost(1),
             Flag.map(([value]) => value),
           ),
+          approvals: Flag.String("approvals").pipe(
+            Flag.withDescription("Approval policy: fail or wait (overrides tasks.approvals)"),
+            Flag.atMost(1),
+            Flag.map(([value]) => value),
+          ),
           json: jsonFlag,
           prompt: textArgument("prompt"),
         },
-        ({ name, at, cron, tz, delay, until, prompt, skill, to, json }) =>
+        ({ name, at, cron, tz, delay, until, prompt, skill, to, approvals, json }) =>
           Effect.gen(function* () {
             const defaultZone = yield* timeZone;
 
@@ -139,7 +160,27 @@ export const tasksCommand = (context: CLIContext) => {
 
             const endAt = yield* taskOperation(() => parseTaskEnd(until, schedule));
 
-            const command = yield* prepareTask(name, schedule, prompt, skill, delivery, endAt);
+            const approvalPolicy = yield* taskOperation(() => {
+              if (approvals === undefined) {
+                return undefined;
+              }
+
+              if (!Schema.is(TaskApprovalPolicy)(approvals)) {
+                throw new TaskError({ message: "Use --approvals fail or wait." });
+              }
+
+              return approvals;
+            });
+
+            const command = yield* prepareTask(
+              name,
+              schedule,
+              prompt,
+              skill,
+              delivery,
+              endAt,
+              approvalPolicy,
+            );
 
             yield* runTaskCommand(runtime, command, json);
           }).pipe(Effect.provide(runtime.config)),

@@ -23,6 +23,7 @@ export class MessagingWorker extends Context.Service<
       adapter: string,
       conversationId: string | null,
     ) => Effect.Effect<DeliveryDestination, GatewayError>;
+    readonly homeDestination: Effect.Effect<DeliveryDestination | null, GatewayError>;
     readonly run: Effect.Effect<void, ChatFailure | GatewayError>;
     readonly status: Effect.Effect<Schema.JsonObject, StoreError | GatewayError>;
   }
@@ -189,6 +190,21 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<GatewayRegistratio
                 }),
               );
         },
+        homeDestination: Effect.gen(function* () {
+          for (const worker of workers) {
+            if (worker.resolveDestination === null) {
+              continue;
+            }
+
+            const resolved = yield* worker.resolveDestination(null).pipe(Effect.result);
+
+            if (Result.isSuccess(resolved)) {
+              return resolved.success;
+            }
+          }
+
+          return null;
+        }),
         run:
           workers.length === 0
             ? Effect.never

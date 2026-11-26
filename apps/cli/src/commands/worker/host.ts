@@ -18,7 +18,6 @@ export const runWorker = Effect.scoped(
   Effect.gen(function* () {
     const config = yield* AppConfig;
     const commands = yield* WorkerRequests;
-    const tasks = yield* makeTaskWorker;
     const messaging = yield* MessagingWorker;
     const deliveries = Option.getOrNull(yield* Effect.serviceOption(TaskDeliveries));
     const startedAt = yield* Clock.currentTimeMillis;
@@ -30,7 +29,12 @@ export const runWorker = Effect.scoped(
         messaging
           .resolveDestination(adapter, conversationId)
           .pipe(Effect.mapError((error) => new TaskError({ message: error.message }))),
+      home: messaging.homeDestination.pipe(
+        Effect.mapError((error) => new TaskError({ message: error.message })),
+      ),
     };
+
+    const tasks = yield* makeTaskWorker.pipe(Effect.provideService(TaskDestinations, destinations));
 
     yield* serveWorker(workerSocketPath(config.dataDirectory), (request, body) => {
       if (new URL(request.url).pathname === "/v1/doctor") {

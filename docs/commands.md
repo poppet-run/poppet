@@ -121,9 +121,15 @@ was not saved does not run.
 
 ## Scheduled runs
 
-A scheduled run reviews each command against the saved prompt. A command that
-needs approval fails the occurrence at once. The run never waits and never posts
-an approval prompt. The worker logs the failure reason code, and `tasks show`
-keeps the full reason. Earlier commands in the run are
-not rolled back, and the recurring schedule stays active. A task with a messaging
-destination can post a [failure notice](tasks.md#failure-notices).
+A scheduled run reviews each command against the saved prompt. By default
+(`tasks.approvals: "fail"`), a command that needs approval fails the occurrence
+at once without waiting or posting a prompt. When opted into `approvals: "wait"`
+(globally in `config.json` or per task via `tasks add`/`tasks edit --approvals`)
+and a messaging destination or gateway home conversation is available, the run
+parks and posts the approval prompt there, keeping the occurrence `running` and
+capping expiry at the smaller of `timeouts.approvalSeconds` and the next due
+slot. Without a destination or home conversation, it still fails at once. The
+worker logs the failure reason code, and `tasks show` keeps the full reason.
+Earlier commands in the run are not rolled back, and the recurring schedule
+stays active. A task with a messaging destination can post a
+[failure notice](tasks.md#failure-notices).

@@ -633,13 +633,29 @@ export const conversation = Effect.gen(function* () {
               return yield* Effect.die(new Error("A run parked without an approval requester."));
             }
 
-            const expiresAfter = yield* timeoutSeconds("approvalSeconds");
+            const now = yield* Clock.currentTimeMillis;
+            const defaultExpiry = now + (yield* timeoutSeconds("approvalSeconds")) * 1000;
+
+            const expiresAt =
+              runContext.approvalExpiresAt === null
+                ? defaultExpiry
+                : Math.min(defaultExpiry, runContext.approvalExpiresAt);
+
+            if (expiresAt <= now) {
+              return yield* Effect.fail(
+                new AgentError({
+                  reason:
+                    approval.kind === "mcp" ? "mcp-approval-required" : "command-approval-required",
+                  message: "Approval cannot wait because the next scheduled run is already due.",
+                }),
+              );
+            }
 
             return yield* store.parkRun(run.id, callId, {
               kind: approval.kind,
               request: { ...approval },
               requester,
-              expiresAt: (yield* Clock.currentTimeMillis) + expiresAfter * 1000,
+              expiresAt,
             });
           });
 

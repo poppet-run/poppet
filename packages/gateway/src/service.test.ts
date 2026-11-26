@@ -964,6 +964,124 @@ describe.concurrent("Gateway", () => {
     }
   });
 
+  test("when a scheduled run parks for approval, posts the prompt to its destination and answers without a chat binding", async () => {
+    const prompts: Array<{ readonly conversation: string; readonly text: string }> = [];
+    const updates: Array<ApprovalState> = [];
+
+    const state = await fixture({
+      approvals: {
+        actions: Stream.never,
+        send: (conversation, prompt) =>
+          Effect.sync(() => {
+            prompts.push({ conversation, text: prompt.fallbackText });
+
+            return "scheduled-prompt";
+          }),
+        update: (_conversation, _messageId, _id, resultState) =>
+          Effect.sync(() => {
+            updates.push(resultState);
+          }),
+      },
+    });
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          const store = yield* Store;
+
+          const session = yield* store.createSession("test-provider", "test-model", {
+            origin: "scheduled",
+          });
+
+          const run = yield* store.queueRun(session.id, [
+            { role: "user", text: "Restart service" },
+          ]);
+
+          yield* store.startRun(run.id);
+          yield* store.recordToolCalls(
+            run.id,
+            {
+              output: [
+                {
+                  type: "tool-call",
+                  callId: "bash-1",
+                  namespace: "poppet_system",
+                  name: "bash",
+                  arguments: JSON.stringify({
+                    command: "restart-service",
+                    cwd: "/tmp",
+                    timeoutSeconds: 5,
+                  }),
+                },
+              ],
+              continuation: {
+                version: 1,
+                provider: "test-provider",
+                model: "test-model",
+                data: {},
+              },
+              finishReason: "tool-calls",
+              usage: null,
+            },
+            [{ callId: "bash-1", reviewed: true }],
+          );
+          yield* store.recordToolReview(run.id, "bash-1", {
+            decision: "needs_approval",
+            reason: "Restart service",
+          });
+
+          const approval = yield* store.parkRun(run.id, "bash-1", {
+            kind: "bash",
+            request: {
+              kind: "bash",
+              command: "restart-service",
+              cwd: "/tmp",
+              timeoutSeconds: 5,
+              reason: "Restart service",
+            },
+            requester: {
+              surface: "scheduled",
+              occurrenceId: "occ-1",
+              jobId: "job-1",
+              adapter: "discord",
+              account: "bot",
+              ownerId: "owner",
+              scopeId: "guild",
+              parentId: "home",
+              conversationId: "home",
+            },
+            expiresAt: (yield* Clock.currentTimeMillis) + 60_000,
+          });
+
+          // Sweep posts the scheduled approval prompt once.
+          yield* gateway.sweepApprovals;
+          expect(prompts).toHaveLength(1);
+          expect(prompts[0]?.conversation).toBe("home");
+
+          yield* gateway.sweepApprovals;
+          expect(prompts).toHaveLength(1);
+
+          // Owner approves via text in a channel with no chat session binding and no mention.
+          yield* gateway.accept({
+            messageId: "owner-approve",
+            scopeId: "guild",
+            parentId: "home",
+            conversationId: "home",
+            senderId: "owner",
+            text: `/approve ${approval.id}`,
+            mentioned: false,
+          });
+
+          expect(updates).toEqual(["approved"]);
+          expect((yield* store.approval(approval.id))?.state).toBe("approved");
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
   test("when a scheduled MCP action needs approval, only delivers the fixed failure notice", async () => {
     const definition = {
       name: "edit_record",

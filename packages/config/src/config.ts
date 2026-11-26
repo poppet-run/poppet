@@ -4,6 +4,7 @@ import { Config, Context, Effect, Layer, Option, Schema } from "effect";
 import {
   ConfigSourceLive,
   ConfigText,
+  TaskApprovalPolicy,
   dataDirectory as configuredDataDirectory,
 } from "#src/source";
 
@@ -14,6 +15,7 @@ export {
   dataDirectory,
   DiscordConfiguration,
   SlackConfiguration,
+  TaskApprovalPolicy,
   readConfigFile,
   updateConfigFile,
 } from "#src/source";
@@ -31,6 +33,10 @@ export const taskCatchUpMinutes = Config.schema(
   Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1440 })),
   "catchUpMinutes",
 ).pipe(Config.withDefault(60));
+
+export const taskApprovals = Config.schema(TaskApprovalPolicy, "taskApprovals").pipe(
+  Config.withDefault("fail"),
+);
 
 /** The owner's IANA time zone, or null when unset. */
 export const timeZone = Config.schema(TimeZone, "timeZone").pipe(

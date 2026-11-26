@@ -22,7 +22,7 @@ const controlReply = (
   entry: Inbox,
   message: IncomingMessage,
   conversation: string,
-  session: string,
+  session: string | null,
 ) =>
   Effect.gen(function* () {
     const { adapter, repo, store } = context;
@@ -31,6 +31,10 @@ const controlReply = (
       yield* adapter.checkAccess(message, conversation);
 
       return yield* controls.approvals.answer(conversation, message);
+    }
+
+    if (session === null) {
+      return yield* Effect.die(new Error("A non-approval control ran without a session."));
     }
 
     if (message.text.trim() === "/cancel") {
@@ -77,7 +81,7 @@ const handleControl = (
   entry: Inbox,
   message: IncomingMessage,
   conversation: string,
-  session: string,
+  session: string | null,
 ) =>
   Effect.gen(function* () {
     yield* mark(context, message, "working");
@@ -130,7 +134,9 @@ export const accept = (context: GatewayContext, controls: Controls, input: Incom
         ? null
         : yield* repo.binding(adapter.id, account, message.scopeId, conversation);
 
-    if (session === null && !message.mentioned) {
+    const approvalReply = conversation !== null && isApprovalReply(message.text);
+
+    if (session === null && !message.mentioned && !approvalReply) {
       return;
     }
 
@@ -146,7 +152,7 @@ export const accept = (context: GatewayContext, controls: Controls, input: Incom
       return;
     }
 
-    if (conversation === null || session === null) {
+    if (conversation === null || (session === null && !approvalReply)) {
       return;
     }
 

@@ -63,8 +63,14 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
           );
 
           const endChanged = endAt !== job.endAt;
+          const approvals = patch.approvals !== undefined ? patch.approvals : job.approvals;
+          const approvalsChanged = approvals !== job.approvals;
 
-          changedFields = endChanged ? [...fields, "endAt"] : fields;
+          changedFields = [
+            ...fields,
+            ...(endChanged ? ["endAt"] : []),
+            ...(approvalsChanged ? ["approvals"] : []),
+          ];
 
           if (changedFields.length > 0) {
             const revised = fields.length > 0;
@@ -92,7 +98,8 @@ export const taskControls = (sql: SqlClient.SqlClient) => {
 
             yield* sql`UPDATE jobs SET name = ${patch.name ?? job.name},
               prompt = ${patch.prompt ?? job.prompt}, schedule = ${JSON.stringify(schedule)},
-              end_at = ${endAt}, next_at = ${nextAt}, revision = revision + ${revised ? 1 : 0}
+              end_at = ${endAt}, approvals = ${approvals}, next_at = ${nextAt},
+              revision = revision + ${revised ? 1 : 0}
               WHERE id = ${job.id}`;
 
             const pastEnd = pending !== null && endAt !== null && pending.scheduledAt > endAt;

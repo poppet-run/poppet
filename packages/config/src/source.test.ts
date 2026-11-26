@@ -43,6 +43,7 @@ describe("loadConfigSource", () => {
         timeZone: "Europe/London",
         tasks: {
           catchUpMinutes: 15,
+          approvals: "wait",
           quietHours: { start: "22:00", end: "07:30", timeZone: "Europe/London" },
         },
         chat: { outputTokens: 4096 },

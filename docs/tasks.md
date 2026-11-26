@@ -102,8 +102,14 @@ repository's command lock serializes worker commands and occurrence claims.
   in the saved prompt, and the task's skill snapshot;
 - never gets memory changes or `manage_tasks`, even when the prompt or skill asks;
 - gets MCP tools only from `scheduledTools` and `scheduledReviewedTools`;
-- reviews Bash and reviewed MCP calls against the saved prompt, and fails the
-  occurrence when a call needs a person (see
+- reviews Bash and reviewed MCP calls against the saved prompt. By default
+  (`approvals: "fail"`), a call that needs a person fails the occurrence at
+  once. With `approvals: "wait"` (set globally in `tasks.approvals` or per task
+  with `--approvals`) and either a task destination or a gateway home
+  conversation, the run parks and posts an approval prompt there, keeping the
+  occurrence `running` and capping the approval expiry at the smaller of
+  `timeouts.approvalSeconds` and the next due slot. Once answered, the worker
+  resumes the run and delivers its result through scheduled delivery (see
   [host commands](commands.md#scheduled-runs));
 - does not expand `$name` mentions in the prompt;
 - gets the task note and `save_note`.

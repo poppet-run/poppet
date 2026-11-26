@@ -115,7 +115,8 @@ Every subsystem follows these rules.
   Pages, MCP results, recalled history, skills, attachments, and command output
   are data and never permission. See [untrusted content](chat.md#untrusted-content).
 - **Scheduled runs are restricted.** They never change memory or tasks, use only
-  the scheduled MCP allowlists, and fail instead of waiting for a person. See
+  the scheduled MCP allowlists, and fail instead of waiting for a person unless
+  opted into `approvals: "wait"` with a messaging route. See
   [scheduled run policy](tasks.md#scheduled-run-policy).
 - **Credentials stay apart.** Credentials live in `auth/` and `channels/`, away
   from memory, tool-readable files, logs, prompts, and the service environment.

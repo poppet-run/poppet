@@ -137,7 +137,18 @@ describe.concurrent("TaskRepository", () => {
     try {
       await state.run((repo, _store, sql) =>
         Effect.gen(function* () {
-          const saved = yield* repo.add(recurring, start);
+          const saved = { id: "saved-job" };
+
+          yield* sql`INSERT INTO jobs ${sql.insert({
+            id: saved.id,
+            name: recurring.name,
+            prompt: recurring.prompt,
+            provider: recurring.provider,
+            model: recurring.model,
+            schedule: JSON.stringify(recurring.schedule),
+            nextAt: start + 60_000,
+            createdAt: start,
+          })}`;
           yield* migrate(taskSchema).pipe(Effect.provideService(SqlClient.SqlClient, sql));
           yield* repo.reconcile(start + 60_000);
           const claimed = (yield* repo.claim(start + 60_000))!;

@@ -29,6 +29,10 @@ export const SlackConfiguration = Schema.Struct({
   homeChannelId: Schema.String.check(Schema.isPattern(/^[CG][A-Z0-9]+$/)),
 });
 
+export const TaskApprovalPolicy = Schema.Literals(["fail", "wait"]);
+
+export type TaskApprovalPolicy = typeof TaskApprovalPolicy.Type;
+
 const FileSettings = Schema.Struct({
   discord: Schema.optionalKey(DiscordConfiguration),
   slack: Schema.optionalKey(SlackConfiguration),
@@ -42,6 +46,7 @@ const FileSettings = Schema.Struct({
     Schema.Struct({
       catchUpMinutes: Schema.optionalKey(Schema.Int),
       quietHours: Schema.optionalKey(QuietHoursSetting),
+      approvals: Schema.optionalKey(TaskApprovalPolicy),
     }),
   ),
   chat: Schema.optionalKey(
@@ -123,6 +128,7 @@ export const loadConfigSource = Effect.gen(function* () {
     gatewayPackages:
       file.gatewayPackages === undefined ? undefined : JSON.stringify(file.gatewayPackages),
     catchUpMinutes: file.tasks?.catchUpMinutes,
+    taskApprovals: file.tasks?.approvals,
     quietHours:
       file.tasks?.quietHours === undefined
         ? undefined
