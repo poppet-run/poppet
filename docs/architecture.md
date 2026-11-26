@@ -388,16 +388,6 @@ their inputs without replaying them. A hard crash releases the OS-held SQLite lo
 leftover PID marker through the shared scoped lock helper. Credentials, facts, jobs, context
 assembly, and model execution are outside this store's record APIs.
 
-## Reviewed MCP actions
-
-For tools in `reviewedTools`, the CLI exposes the validated arguments through
-the external-tool adapter. The agent uses the same review request machinery
-with MCP-specific instructions and journals the decision on the pending call.
-Only a reviewer-allowed or owner-approved call reaches dispatch. The HTTP transport binds the prepared
-sign-in and permits one POST for the reviewed call. Redirects and authorization
-challenges stop dispatch without a resend. The store distinguishes
-pre-dispatch interruption from uncertain in-flight effects.
-
 ## Scheduled delivery
 
 Failed occurrences log a reason code and retain details in task history
@@ -984,33 +974,3 @@ for optional inference. External edits disable synchronization, and uncertain
 acknowledgements are reconciled without a second remote mutation. The Discord
 adapter owns SDK calls, permissions, platform name limits, and error mapping;
 other adapters can omit the capability. Inference-provider packages are unchanged.
-
-## MCP clients
-
-`@poppet/mcp` owns configuration schemas, prompt policy, inspection commands,
-errors, allowed tool contracts, and the official SDK's local stdio and
-Streamable HTTP connections and discovery. Both transports share one connection
-lifecycle; HTTP adds a byte-bounded `fetch` and ends its session on close. It depends on credentials and the provider contract, with no agent
-or application-config dependency. The lightweight `@poppet/mcp/config` export lets
-`@poppet/config` validate the file section and resolve its paths without importing
-the SDK or starting a client.
-
-The CLI supplies the tool-result byte limit to `makeMCPLive` and adapts its tools
-and errors to the agent through `ExternalAgentToolsLive`. `ExternalTools` in
-`@poppet/agent` stays generic, including optional host-owned instructions. MCP
-policy comes from its package; server instructions never enter that hook. The
-existing loop includes tool definitions in context budgeting, validates whole call
-batches, records original identities, and dispatches calls with the normal tool
-budgets and run cancellation.
-
-Durable calls have nullable `server_id` and `tool_name` columns.
-Built-in calls retain null identities. Running calls settle as uncertain when
-interrupted or recovered; neither the agent nor MCP client replays them. Reported
-tool errors are failed; post-dispatch transport or protocol errors are uncertain.
-
-Discovery freezes permissions until owner restart. The strict one-string wrapper
-retains original JSON Schema validation and optional-field semantics across
-providers. Selected credentials stay out of prompts and inspection. Worker
-inspection exposes only servers, status and allowed catalog discovery; invocation
-continues through the normal durable agent path. See [MCP tools](mcp.md) for limits,
-credential references, supported schemas, and the live validation path.

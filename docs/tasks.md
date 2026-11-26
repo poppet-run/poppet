@@ -4,7 +4,7 @@
 
 Scheduled [MCP tools](mcp.md) are denied by default. A server's `scheduledTools`
 lists owner-verified reads. A separate `scheduledReviewedTools` list opts
-specific tools into [per-call review](mcp.md#schedule-a-reviewed-action) using
+specific tools into [per-call review](mcp.md#reviewed-actions) using
 the saved task prompt. Either kind of tool must also be on the interactive
 allowlist.
 Annotations cannot grant permission. Restart the worker after changing these
