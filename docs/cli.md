@@ -1,259 +1,80 @@
 # Command line
 
-[Documentation index](README.md)
+[Engineering notes](README.md)
 
-After [linking the command](development.md#commands-and-tooling), run `poppet` from any directory. Run
-`poppet --help` for the current command syntax. Angle-bracket values below
-are placeholders; replace them before running a command. Quote prompts and values
-that contain spaces.
+`apps/cli` is the `poppet` command. `cli.ts` assembles the command tree with
+`effect/cli`, and each command with supporting modules lives in
+`src/commands/<command>/`, with `command.ts` defining its subcommands. `main.ts`
+runs the Effect runtime. The [command reference](https://poppet.run/docs/cli/)
+lists every command for users.
 
-Every command has its own help, for example `poppet tasks add --help` or
-`poppet provider login -h`. Help works without credentials. Gateway help reads configuration to list external
-adapters; other help works without valid configuration.
-Argument errors print the relevant command's help and exit unsuccessfully.
-The remaining words of a message, memory value, or task prompt are joined with
-spaces; flags inside that text stay literal. Use `--` before the text when it
-starts with `--help` or `-h`. For task prompts, use `--` before any initial
-flag-like text; unknown task options are rejected.
+## Arguments
 
-Run `poppet doctor` for read-only setup and worker inspection, or
-`poppet doctor --json` for scripts. See [doctor](doctor.md) for checks, exit codes,
-and limits.
+- Every command has `--help` and `-h`. Help needs no credentials. Gateway help
+  reads configuration to list external adapters. All other help works without
+  valid configuration.
+- An argument error prints that command's help and exits with a failure.
+- The remaining words of a message, memory value, or task prompt are joined with
+  spaces, and flags inside that text stay literal. `--` before the text allows a
+  leading `--help` or `-h`. Task prompts need `--` before any leading flag-like
+  text, and unknown task options are rejected.
+- Options such as `--skill`, `--attach`, and `--json` go before free text. After
+  it, they are part of the text.
+- `poppet --completions <bash|zsh|fish>` prints a completion script for
+  commands, subcommands, and flags. It covers no saved values and needs no
+  configuration.
 
 ## Output
 
-Commands print human-readable text: lists as aligned tables, single records as
-labelled fields, and changes as a short confirmation. Times are shown in the
-local timezone to the minute. On a terminal, the last table column is shortened
-to fit the window; redirected output keeps full values. `NO_COLOR=1` disables
-styling.
+`output.ts` prints lists as aligned tables, single records as labelled fields,
+and changes as a short confirmation. Times show in the local zone to the minute.
+On a terminal, the last table column is cut to the window width. Redirected
+output keeps full values. `NO_COLOR` turns off styling.
 
-Commands that report data accept `--json` to print the full result as JSON
-instead, with Unix-millisecond timestamps and every field. Use it in scripts:
+Commands that report data take `--json` and print the full result with
+Unix-millisecond timestamps: `config`, `doctor`, `provider status` and
+`models`, `chat rename`, `delete`, `prune`, `search`, `sessions`, and `show`,
+`skills list` and `show`, every `memory` and `tasks` command, `mcp servers` and
+`tools`, `store status`, and `worker status`. Commands that stream answers,
+prompt for input, or confirm a setup step print text only. Chat streams the
+answer to stdout and IDs to stderr. See [chat](chat.md#command-output).
 
-```sh
-poppet tasks list --json
-poppet memory set --json project "Poppet"
-```
+## Routing
 
-For commands that take free text, put `--json` before the text; after it,
-`--json` is part of the text. `--json` is available on `config`, `doctor`,
-`provider status` and `models`, `chat rename`, `delete`, `prune`,
-`search`, `sessions` and `show`, `skills list` and `show`, all `memory` and `tasks`
-commands, `mcp servers` and `tools`, `store status`, and `worker status`.
-Commands that stream answers, prompt for input, or only confirm a setup step
-print text only.
+`runtime.ts` builds only the layers a command needs. Commands that use stored
+data go to the worker when it owns the data directory, and run locally
+otherwise. They fall back to local only when the socket is absent or refuses the
+connection. See [socket transport](worker.md#socket-transport).
 
-## Shell completions
+| Command group                                                  | Needs a model | Opens the store | Uses the worker |
+| -------------------------------------------------------------- | ------------- | --------------- | --------------- |
+| `--help`, `config`, `skills`, `provider`, `gateway <id> setup` | No            | No              | No              |
+| `chat new`, `chat send`, `chat`                                | Yes           | Yes             | Yes             |
+| `chat sessions`, `show`, `search`, `rename`, `delete`, `prune` | No            | Yes             | Yes             |
+| `memory`, `store status`                                       | No            | Yes             | Yes             |
+| `tasks`                                                        | No            | Yes             | Yes             |
+| `mcp servers`, `mcp tools`                                     | No            | No              | Yes             |
+| `mcp add`, `allow`, `deny`, `remove`, `login`, `logout`        | No            | No              | No              |
+| `doctor`                                                       | No            | Never           | For saved work  |
+| `worker run`                                                   | Per run       | Owns it         | Is the worker   |
 
-`poppet --completions <shell>` prints a completion script for `bash`, `zsh`, or
-`fish`. Scripts cover commands, subcommands, and flags, but not saved values such
-as session IDs or skill names. Like help, generating a script needs no
-configuration or credentials. Regenerate the script after updating Poppet.
+`memory history` and `memory revert` need a running worker. Provider commands
+take a provider name or `--provider <id>` and default to `provider` in
+`config.json`, without changing the configured inference provider. API-key login
+always prompts with hidden input, even when the environment holds a key.
 
-Bash:
+## Setup
 
-```sh
-poppet --completions bash > ~/.local/share/bash-completion/completions/poppet
-```
+`poppet setup` needs an interactive terminal and has no noninteractive mode. It
+reuses saved choices, offers to reconnect an existing provider, and lists that
+provider's models. It then offers the bundled Discord and Slack registrations
+through their `promptSetup`, and skipping one leaves its settings and tokens
+alone. Token input shows asterisks. If the provider's key comes from the
+environment, setup still asks for one and saves it for the background worker.
 
-zsh, with `~/.zsh/completions` on `fpath` before `compinit` runs:
-
-```sh
-poppet --completions zsh > ~/.zsh/completions/_poppet
-```
-
-fish:
-
-```fish
-poppet --completions fish > ~/.config/fish/completions/poppet.fish
-```
-
-## Configuration and storage
-
-| Command        | Action                                                                                            |
-| -------------- | ------------------------------------------------------------------------------------------------- |
-| `setup`        | Interactively choose a provider and model, configure Discord and Slack, and offer worker startup. |
-| `config`       | Print validated configuration without opening storage or contacting a provider.                   |
-| `store status` | Open or migrate the local database and print its path, schema version, and counts.                |
-| `--help`       | Print command help.                                                                               |
-
-See [configuration](configuration.md) and [storage](storage.md).
-
-`setup` requires an interactive terminal. It reuses saved choices, offers reconnect
-for an existing provider, and lists models from that provider. Discord and Slack are optional;
-skipping a channel leaves its policy and tokens unchanged. Token input displays
-asterisks. Other settings in `config.json` are preserved.
-
-If the selected provider uses an API key from the shell environment, setup still
-asks for a key with hidden input and saves it for the background worker.
-
-Authentication saves immediately. Provider and model choices save after the
-prompts, followed by each selected messaging channel. Cancellation or a later failure keeps
-completed saves and reports that they remain. Invalid configuration is never
-overwritten. Setup does not run inference or test messaging access.
-
-On macOS and Linux with systemd, setup offers to install and start the worker, start an installed
-worker, or explicitly restart a loaded worker. Restarting can interrupt active runs.
-Other platforms get the foreground command. Use the individual provider, gateway,
-and worker commands for scripts; setup has no noninteractive mode.
-
-## Providers and models
-
-Select a provider and an explicit model. Provider commands default to the `provider` in `config.json`.
-Pass a provider after `login`, `status`, `models`, or `logout`, or use
-`--provider <id>`. This selects which provider to inspect or manage without
-changing the configured inference provider. These commands need no selected model.
-
-Save the provider and model in `config.json`:
-
-```json
-{
-  "provider": "openai-chatgpt",
-  "model": "replace-with-model-id"
-}
-```
-
-```sh
-poppet provider models openai-chatgpt
-```
-
-The runtime builds only the selected provider's dependencies and never falls
-back to another model. ChatGPT's browser login handles plan-usage consent
-through `provider login openai-chatgpt`.
-
-| Command                                 | Action                                                                                            |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `provider login [provider] [options]`   | Sign in or save an API key.                                                                       |
-| `provider status [provider]`            | Show connection status without secrets.                                                           |
-| `provider models [provider]`            | List available models.                                                                            |
-| `provider logout [provider] [--forget]` | Sign out or remove a saved API key. Use `--forget` to also remove the saved ChatGPT registration. |
-
-API-key login always prompts with hidden input, even when an environment key is set. `--no-browser` and
-`--callback-port <port>` apply to browser sign-in; see
-[headless and remote machines](providers/openai-chatgpt.md#sign-in).
-See [ChatGPT](providers/openai-chatgpt.md), [OpenCode](providers/opencode.md),
-[OpenCode Go](providers/opencode.md), [OpenRouter](providers/openrouter.md),
-and [API-key handling](configuration.md#api-keys)
-for provider-specific setup and logout behavior.
-
-## MCP servers
-
-| Command                                                | Purpose                                                             |
-| ------------------------------------------------------ | ------------------------------------------------------------------- |
-| `mcp servers`                                          | Show permissions, connection diagnostics, sign-in state, and tools. |
-| `mcp tools <server>`                                   | Discover every tool with its interactive and scheduled permissions. |
-| `mcp add <server> <url> --auth <none\|api-key\|oauth>` | Save a remote server without connecting or allowing tools.          |
-| `mcp login <server>`                                   | Sign in to an OAuth server.                                         |
-| `mcp logout <server>`                                  | Delete an OAuth server's saved tokens.                              |
-| `mcp allow <server> <tools...>`                        | Allow discovered tools for interactive runs.                        |
-| `mcp allow <server> --all`                             | Allow all currently discovered names for interactive runs.          |
-| `mcp deny <server> <tools...>`                         | Remove interactive and scheduled permissions.                       |
-| `mcp remove <server>`                                  | Remove the entry and the key or sign-in that Poppet saved for it.   |
-
-With `--auth api-key`, `add` reads a hidden prompt or accepts `--api-key <key>`.
-Custom headers and prefixes, OAuth client IDs, and scopes are configured in
-`config.json`. `login` accepts `--no-browser` and `--callback-port <port>`;
-the latter overrides the configured port for that sign-in only.
-
-`allow --scheduled` grants both permissions for explicitly named, reviewed
-read-only tools. `deny --scheduled` removes only scheduled access. `--all`
-cannot be combined with names or `--scheduled`. Failed discovery or unknown
-names leave permissions unchanged; `deny` works without connecting.
-
-`servers` and `tools` need no model and route through the worker when running.
-Configuration changes from `add`, `remove`, `allow`, and `deny` take effect in
-the worker after restart. A running worker uses new sign-in tokens on its next
-request. See [MCP tools](mcp.md) for configuration and permissions.
-
-## Chat
-
-| Command                                                    | Action                                                  |
-| ---------------------------------------------------------- | ------------------------------------------------------- |
-| `chat [session] [--skill <name>]`                          | Open a terminal prompt for a new or saved session.      |
-| `chat new [--skill <name>] [--attach <path>]... <message>` | Start a session with the configured provider and model. |
-| `chat send <session> [--attach <path>]... <message>`       | Continue a saved session.                               |
-| `chat rename <session> <title>`                            | Rename a saved session without inference.               |
-| `chat delete <session>...`                                 | Delete saved sessions.                                  |
-| `chat prune --days <n> [--dry-run]`                        | Delete sessions with no activity in the last n days.    |
-| `chat search <query>`                                      | Search completed conversation text without inference.   |
-| `chat sessions`                                            | List saved sessions.                                    |
-| `chat show <session>`                                      | Show saved messages and run outcomes.                   |
-
-See [chat](chat.md) for session selection, streaming, cancellation, limits,
-attachments, and the tools available during a run.
-
-## Skills
-
-| Command              | Action                                                  |
-| -------------------- | ------------------------------------------------------- |
-| `skills list`        | List owner skill directories, marking manual-only ones. |
-| `skills show <name>` | Show an owner SKILL.md file.                            |
-
-Use `--skill <name>` before a new chat message or task prompt to save the current
-procedure with that session or task. See [skills](skills.md) for examples and limits.
-
-## Memory
-
-| Command                          | Action                                              |
-| -------------------------------- | --------------------------------------------------- |
-| `memory list`                    | List explicitly saved facts.                        |
-| `memory set <key> <value>`       | Create a fact or replace its value.                 |
-| `memory forget <key>`            | Delete a saved fact.                                |
-| `memory history <key>`           | Show a fact's revisions with origin and source run. |
-| `memory revert <key> <revision>` | Restore an earlier revision as a new revision.      |
-
-Memory commands manage the shared facts.
-See [memory](memory.md) for keys, limits, profiles, and deletion behavior.
-
-## Scheduled tasks
-
-| Command                                                                                                                                                   | Action                                                                            |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `tasks add <name> (--at <timestamp> \| --in <duration>) [--skill <name>] [--to <gateway>[:<conversation-id>]] <prompt>`                                   | Schedule a one-off request.                                                       |
-| `tasks add <name> --cron <expression> [--tz <timezone>] [--until <timestamp>] [--skill <name>] [--to <gateway>[:<conversation-id>]] <prompt>`             | Schedule recurring work, optionally with an end time.                             |
-| `tasks edit <task> [--name <name>] [--prompt <prompt>] [--at <timestamp> \| --cron <expression> [--tz <timezone>]] [--until <timestamp> \| --until none]` | Edit definition fields or the end time while retaining task identity and history. |
-| `tasks run <task>`                                                                                                                                        | Queue normal scheduled work without shifting recurring cadence.                   |
-| `tasks` / `tasks list`                                                                                                                                    | List saved tasks.                                                                 |
-| `tasks show <task>`                                                                                                                                       | Show the task note, occurrences, results, delivery states, and skipped intervals. |
-| `tasks clear-note <task>`                                                                                                                                 | Clear the note a task keeps between occurrences; rejects running tasks.           |
-| `tasks pause <task>`                                                                                                                                      | Pause scheduling and cancel pending work.                                         |
-| `tasks resume <task>`                                                                                                                                     | Resume future occurrences.                                                        |
-| `tasks cancel <task> [--occurrence <id>]`                                                                                                                 | Cancel pending or active work.                                                    |
-| `tasks retry <task> [--occurrence <id>]`                                                                                                                  | Explicitly retry an unsuccessful occurrence.                                      |
-| `tasks remove <task>`                                                                                                                                     | Remove one task and its history; rejects running tasks.                           |
-| `tasks clear`                                                                                                                                             | Interrupt active work and remove all tasks and task history.                      |
-
-See [scheduled tasks](tasks.md) for timezones, missed work, retry rules, and what
-`clear` deletes or retains. Tasks execute while a worker with scheduling enabled
-is running. Use `--to <gateway>` to deliver to that gateway's home channel, or
-`--to <gateway>:<conversation-id>` to select another channel or thread.
-
-## Messaging
-
-| Command                                                                                                                 | Action                                                            |
-| ----------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `gateway discord setup --owner-id <id> --guild-id <id> --home-channel-id <id> [--bot-token <token>]`                    | Save Discord settings and the bot token (or read token on stdin). |
-| `gateway slack setup --owner-id <id> --team-id <id> --home-channel-id <id> [--bot-token <token>] [--app-token <token>]` | Save Slack settings and tokens (or read omitted tokens on stdin). |
-
-See [Discord](gateways/discord.md) and [Slack](gateways/slack.md) for setup, conversation behavior,
-controls, and uncertain deliveries. Use `poppet setup` for masked token entry.
-
-## Worker
-
-| Command            | Action                                                          |
-| ------------------ | --------------------------------------------------------------- |
-| `worker run`       | Run scheduling and configured messaging adapters.               |
-| `worker install`   | Install and start the login worker.                             |
-| `worker start`     | Start an installed worker.                                      |
-| `worker restart`   | Restart an installed worker, interrupting active work.          |
-| `worker stop`      | Stop it until the next login or explicit start.                 |
-| `worker status`    | Show login service, scheduling, provider, and messaging status. |
-| `worker logs`      | Print the last 64 KiB of worker logs.                           |
-| `worker uninstall` | Stop and remove login startup, retaining saved data.            |
-
-See [worker](worker.md) for foreground modes, login lifecycle commands, logs,
-interactive requests, and recovery. `worker status` includes messaging connection,
-queue, and delivery status under `worker.messaging`. Only one worker can own a data directory
-at a time. Commands use the worker while it is running and run locally when it
-is stopped; a lost response does not cause command replay.
+Saves happen in order: authentication at once, the provider and model after the
+prompts, then each gateway. Cancelling or a later failure keeps completed saves
+and reports them. Setup preserves other `config.json` settings, never overwrites
+invalid configuration, and runs no inference or messaging check. On macOS and
+Linux with systemd, it offers to install, start, or restart the worker. A restart
+can interrupt active runs.
