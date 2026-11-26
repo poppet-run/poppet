@@ -89,7 +89,7 @@ by `worker install` once to update it to `worker run`. Saved data and credential
 are retained. Restarting that old installation alone keeps its obsolete command.
 
 API keys are excluded from the service's environment. Save them first with
-`provider login openrouter` or `provider login opencode-go`; ChatGPT uses its existing
+`provider login openrouter`, `provider login opencode`, or `provider login opencode-go`; ChatGPT uses its existing
 protected sign-in storage. The worker refreshes credentials through the same
 provider code as chat. Installation does not verify live inference.
 

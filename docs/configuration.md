@@ -216,20 +216,21 @@ answers, tool arguments, and credentials are excluded.
 
 ## API keys
 
-API-key login saves credentials under `<POPPET_DATA_DIR>/auth/openrouter.json`
-or `opencode-go.json`, with `0600` file permissions inside a `0700` directory.
+API-key login saves credentials under `<POPPET_DATA_DIR>/auth/openrouter.json`,
+`opencode.json`, or `opencode-go.json`, with `0600` file permissions inside a `0700` directory.
 Writes replace files atomically and use a separate lock for each provider.
 Login always masks typed or pasted characters with `*` and requires an interactive terminal. It does not
 read keys from environment variables, command-line arguments, or piped input.
 
-`POPPET_OPENROUTER_API_KEY` and `POPPET_OPENCODE_GO_API_KEY` override stored keys
+`POPPET_OPENROUTER_API_KEY`, `POPPET_OPENCODE_API_KEY`, and
+`POPPET_OPENCODE_GO_API_KEY` override stored keys
 for inference and status. Empty or invalid overrides fail instead of falling
 back to a stored key. Status reports the credential source without secrets;
 remote access is checked when making model requests. `provider logout openrouter`
 removes that provider's saved key. It leaves other providers connected and does
 not revoke the remote key or unset an environment override.
 
-See [OpenCode Go](providers/opencode-go.md) and [OpenRouter](providers/openrouter.md) for login and model-selection examples.
+See [OpenCode](providers/opencode.md), [OpenCode Go](providers/opencode-go.md), and [OpenRouter](providers/openrouter.md) for login and model-selection examples.
 
 ## Skill files
 

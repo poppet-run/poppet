@@ -6,6 +6,7 @@ import type {
   ModelDescription,
   ModelOperations,
   ProviderError,
+  ProviderId,
   ProviderOperations,
 } from "@poppet/provider";
 import { invalidRequest, userAgent } from "@poppet/provider";
@@ -47,6 +48,24 @@ const CatalogModel = Schema.Struct({
       output: Schema.optionalKey(Schema.NullOr(Schema.Natural)),
     }),
   ),
+  cost: Schema.optionalKey(
+    Schema.Struct({
+      text: Schema.optionalKey(
+        Schema.Struct({
+          input: Schema.optionalKey(
+            Schema.Struct({
+              price: Schema.optionalKey(Schema.Number),
+            }),
+          ),
+          output: Schema.optionalKey(
+            Schema.Struct({
+              price: Schema.optionalKey(Schema.Number),
+            }),
+          ),
+        }),
+      ),
+    }),
+  ),
   recommended_api: Schema.optionalKey(Schema.NullOr(Schema.String)),
   api: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
   go: Schema.optionalKey(
@@ -58,12 +77,16 @@ const CatalogModel = Schema.Struct({
 
 const Catalog = Schema.Struct({ data: Schema.Array(Schema.Unknown) });
 
+const isFreeModel = (model: typeof CatalogModel.Type) =>
+  model.go?.monthly_usage === null ||
+  (model.cost?.text?.input?.price === 0 && model.cost?.text?.output?.price === 0);
+
 const supportsChat = (model: typeof CatalogModel.Type) =>
   model.type === "chat" &&
   model.modalities.input.includes("text") &&
   model.modalities.output.length === 1 &&
   model.modalities.output[0] === "text" &&
-  model.go?.monthly_usage !== null;
+  !isFreeModel(model);
 
 const protocolFor = (model: typeof CatalogModel.Type): "responses" | "chat-completions" =>
   model.recommended_api === "responses" ||
@@ -73,7 +96,7 @@ const protocolFor = (model: typeof CatalogModel.Type): "responses" | "chat-compl
     ? "responses"
     : "chat-completions";
 
-const describeModel = (model: typeof CatalogModel.Type): ModelDescription => {
+const describeModel = (provider: ProviderId, model: typeof CatalogModel.Type): ModelDescription => {
   const generationSettings: Array<ModelDescription["capabilities"]["generationSettings"][number]> =
     [];
 
@@ -94,7 +117,7 @@ const describeModel = (model: typeof CatalogModel.Type): ModelDescription => {
       : null;
 
   return {
-    provider: "opencode-go",
+    provider,
     id: model.id,
     name: model.name ?? model.id,
     capabilities: {
@@ -111,26 +134,45 @@ const describeModel = (model: typeof CatalogModel.Type): ModelDescription => {
 
 const catalogCache = createCatalogCache<typeof CatalogModel.Type>();
 
-const cacheKeyFor = (baseUrl: string, token: Redacted.Redacted<string> | null) =>
+const cacheKeyFor = (
+  provider: ProviderId,
+  baseUrl: string,
+  token: Redacted.Redacted<string> | null,
+) =>
   token === null
-    ? `${baseUrl}\0public`
-    : `${baseUrl}\0${createHash("sha256").update(Redacted.value(token)).digest("hex")}`;
+    ? `${provider}\0${baseUrl}\0public`
+    : `${provider}\0${baseUrl}\0${createHash("sha256").update(Redacted.value(token)).digest("hex")}`;
+
+export interface OpenCodeProviderOptions {
+  readonly id?: ProviderId;
+  readonly label?: string;
+  readonly baseUrl?: string;
+  readonly http?: HttpFetch;
+  readonly optionalKey?: Effect.Effect<Redacted.Redacted<string> | null, ProviderError>;
+}
 
 export const makeOpenCodeProvider = (
   key: Effect.Effect<Redacted.Redacted<string>, ProviderError>,
-  http: HttpFetch = fetch,
-  baseUrl = "https://opencode.ai/inference/go/openai/v1",
-  optionalKey: Effect.Effect<Redacted.Redacted<string> | null, ProviderError> = key.pipe(
-    Effect.catchIf(
-      (error) => error.reason === "authentication",
-      () => Effect.succeed(null),
-    ),
-  ),
+  options: OpenCodeProviderOptions = {},
 ): ProviderOperations => {
+  const id = options.id ?? "opencode-go";
+  const label = options.label ?? "OpenCode Go";
+  const baseUrl = options.baseUrl ?? "https://opencode.ai/inference/go/openai/v1";
+  const http = options.http ?? fetch;
+
+  const optionalKey =
+    options.optionalKey ??
+    key.pipe(
+      Effect.catchIf(
+        (error) => error.reason === "authentication",
+        () => Effect.succeed(null),
+      ),
+    );
+
   const load = (token: Redacted.Redacted<string> | null) =>
     fetchModelCatalog({
-      provider: "opencode-go",
-      label: "OpenCode Go",
+      provider: id,
+      label,
       url: `${baseUrl}/models`,
       http,
       headers:
@@ -138,7 +180,7 @@ export const makeOpenCodeProvider = (
           ? { "User-Agent": userAgent }
           : { "User-Agent": userAgent, Authorization: `Bearer ${Redacted.value(token)}` },
       schema: Catalog,
-      failure: (cause) => inferenceFailure("opencode-go", cause),
+      failure: (cause) => inferenceFailure(id, cause),
     }).pipe(
       Effect.flatMap((value) => {
         const models = value.data.flatMap((entry) => {
@@ -148,9 +190,7 @@ export const makeOpenCodeProvider = (
         });
 
         return models.length === 0 && value.data.length > 0
-          ? Effect.fail(
-              invalidRequest("opencode-go", "OpenCode Go returned an unsupported model catalog."),
-            )
+          ? Effect.fail(invalidRequest(id, `${label} returned an unsupported model catalog.`))
           : Effect.succeed(models.filter(supportsChat));
       }),
     );
@@ -161,12 +201,14 @@ export const makeOpenCodeProvider = (
 
       return yield* catalogCache({
         http,
-        key: cacheKeyFor(baseUrl, token),
+        key: cacheKeyFor(id, baseUrl, token),
         load: load(token),
       })(requested);
     });
 
-  const models = readCatalog().pipe(Effect.map((entries) => entries.map(describeModel)));
+  const models = readCatalog().pipe(
+    Effect.map((entries) => entries.map((entry) => describeModel(id, entry))),
+  );
 
   const resolve = (modelId: string) =>
     Effect.gen(function* () {
@@ -176,8 +218,8 @@ export const makeOpenCodeProvider = (
       if (!selected) {
         return yield* Effect.fail(
           invalidRequest(
-            "opencode-go",
-            "Choose a chat model ID from the OpenCode Go catalog. No model fallback is allowed.",
+            id,
+            `Choose a chat model ID from the ${label} catalog. No model fallback is allowed.`,
           ),
         );
       }
@@ -188,7 +230,7 @@ export const makeOpenCodeProvider = (
         ),
       );
 
-      const description = describeModel(selected);
+      const description = describeModel(id, selected);
 
       const model =
         protocolFor(selected) === "responses"
@@ -198,12 +240,31 @@ export const makeOpenCodeProvider = (
       return model satisfies ModelOperations;
     });
 
-  return { id: "opencode-go", models, resolve };
+  return { id, models, resolve };
 };
+
+export const { registration: openCode } = apiKeyProvider({
+  id: "opencode",
+  name: "OpenCode",
+  environment: "POPPET_OPENCODE_API_KEY",
+  make: (key, optionalKey) =>
+    makeOpenCodeProvider(key, {
+      id: "opencode",
+      label: "OpenCode",
+      baseUrl: "https://opencode.ai/inference/openai/v1",
+      optionalKey,
+    }),
+});
 
 export const { registration: openCodeGo } = apiKeyProvider({
   id: "opencode-go",
   name: "OpenCode Go",
   environment: "POPPET_OPENCODE_GO_API_KEY",
-  make: (key, optionalKey) => makeOpenCodeProvider(key, fetch, undefined, optionalKey),
+  make: (key, optionalKey) =>
+    makeOpenCodeProvider(key, {
+      id: "opencode-go",
+      label: "OpenCode Go",
+      baseUrl: "https://opencode.ai/inference/go/openai/v1",
+      optionalKey,
+    }),
 });

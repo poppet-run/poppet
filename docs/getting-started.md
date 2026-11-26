@@ -95,8 +95,8 @@ Complete account selection and plan-usage consent in the browser, then return to
 the terminal for the final checks. See [ChatGPT](providers/openai-chatgpt.md) for
 consent, credential storage, and logout.
 
-Alternatively, follow the [OpenCode Go](providers/opencode-go.md) or
-[OpenRouter](providers/openrouter.md) guide.
+Alternatively, follow the [OpenCode](providers/opencode.md),
+[OpenCode Go](providers/opencode-go.md), or [OpenRouter](providers/openrouter.md) guide.
 
 ## Choose a model and chat
 
