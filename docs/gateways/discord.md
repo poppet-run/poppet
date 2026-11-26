@@ -104,7 +104,7 @@ are saved before sending; a delivery retry never repeats model or tool work.
 Uncertain sends are recorded without automatic resending, since Discord may
 already have posted them. Use the session ID and `chat show <session>` to inspect
 the saved answer before manually reposting it. No reply is redirected to another
-channel when a thread becomes inaccessible. [Scheduled tasks](../tasks.md#deliver-results-to-discord) default to the home
+channel when a thread becomes inaccessible. [Scheduled tasks](../tasks.md#delivery) default to the home
 channel with `--to discord`. Use `--to discord:<channel-or-thread-id>` to
 select another destination. Use the worker to execute and deliver
 them. Scheduled results use the same queue and do not alter thread sessions.
@@ -167,5 +167,5 @@ keep results on the machine. To deliver to another channel or thread, include it
 Discord channel mention or numeric ID in the request. The destination must be in
 the configured server and pass the bot's access checks. A plain channel name
 requires a mention or ID before the task can be created.
-See [task management](../tasks.md#manage-tasks-through-chat) for time,
+See [task management](../tasks.md#chat-task-management) for time,
 receipt, and recovery behavior. Scheduled runs cannot manage other tasks.

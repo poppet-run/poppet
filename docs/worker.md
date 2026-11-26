@@ -212,7 +212,7 @@ For a foreground worker, stop and rerun `worker run` instead.
 
 ## Interactive commands
 
-Chat can [manage scheduled tasks](tasks.md#manage-tasks-through-chat) through the
+Chat can [manage scheduled tasks](tasks.md#chat-task-management) through the
 same worker and task repository. Task tools execute in the owning process and
 share the scheduler's command lock; they do not submit another chat or a loopback
 worker request. A running occurrence waiting for the shared agent does not block
