@@ -26,7 +26,7 @@ expose the worker socket to the network.
 | `conversation-naming.ts`    | Thread title synchronization                                |
 | `failure.ts`                | Retry decisions for adapter failures                        |
 | `settings.ts`               | Protected settings files                                    |
-| `repository.ts`             | Bindings, inbox, and delivery records                       |
+| `repository.ts`             | Bindings, inbox, delivery, and approval records             |
 
 ## Registration
 

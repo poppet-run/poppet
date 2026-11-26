@@ -37,7 +37,7 @@ const gateway = Effect.gen(function* () {
 
   const running = runningRequests();
   const { maxConcurrentRequests, imageBytes, textFileBytes } = yield* ChatSettings;
-  const approvals = actionApprovals(adapter);
+  const approvals = actionApprovals(adapter, context.repo);
 
   const execution: Execution = {
     agent,
@@ -72,7 +72,7 @@ const gateway = Effect.gen(function* () {
     deliverNext: deliverNext(context),
     nameNext,
     externalNameChange,
-    recover: recover(context),
+    recover: recover(context).pipe(Effect.andThen(approvals.recover)),
     connectionStatus: adapter.status.pipe(
       Effect.map((connection) => Object.assign({}, connection, { rejected })),
     ),

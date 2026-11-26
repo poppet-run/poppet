@@ -192,7 +192,7 @@ packages/
     src/accept.ts           Sender authorization and durable acceptance
     src/execution.ts        Inbox processing and crash recovery
     src/delivery.ts         Durable reply and scheduled result delivery
-    src/approvals.ts        In-memory approval requests for Bash and reviewed MCP actions
+    src/approvals.ts        Approval requests for Bash and reviewed MCP actions
     src/conversation-naming.ts Managed thread title synchronization
     src/settings.ts         Shared protected settings files
   gateway-discord/          @poppet/gateway-discord, Discord adapter, approvals, attachments, and setup

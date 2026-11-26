@@ -20,6 +20,7 @@ import {
   formatApprovalStatus,
 } from "#src/approval-format";
 import { authorized } from "#src/context";
+import type { GatewayRepository } from "#src/repository";
 
 interface PendingApproval {
   readonly conversation: string;
@@ -35,12 +36,23 @@ interface PendingApproval {
 const missing =
   "No matching pending approval in this conversation. It may have expired; request the operation again.";
 
-export const actionApprovals = (adapter: GatewayAdapter["Service"]) => {
+export type ApprovalRecords = Pick<
+  GatewayRepository["Service"],
+  "openApproval" | "promptedApproval" | "settleApproval" | "approval" | "expireApprovals"
+>;
+
+const ended = (state: ApprovalState) =>
+  state === "approved" || state === "denied"
+    ? `This approval was already answered: ${formatApprovalStatus(state)}.`
+    : `This approval has ended: ${formatApprovalStatus(state)}. Nothing was executed; request the operation again.`;
+
+export const actionApprovals = (adapter: GatewayAdapter["Service"], records: ApprovalRecords) => {
   const pending = new Map<string, PendingApproval>();
 
   const request = (
     message: IncomingMessage,
     conversation: string,
+    runId: string,
     approval: ActionApproval,
     recordAnswer?: Parameters<ApproveAction>[1],
   ) =>
@@ -60,6 +72,7 @@ export const actionApprovals = (adapter: GatewayAdapter["Service"]) => {
 
       pending.set(id, entry);
       let expired = false;
+      let opened = false;
 
       return yield* Effect.gen(function* () {
         if (!authorized(adapter.policy, message)) {
@@ -70,6 +83,18 @@ export const actionApprovals = (adapter: GatewayAdapter["Service"]) => {
 
         const expiresAfter = yield* timeoutSeconds("approvalSeconds");
         entry.expiresAt = (yield* Clock.currentTimeMillis) + expiresAfter * 1000;
+
+        yield* records.openApproval({
+          id,
+          adapter: adapter.id,
+          account: yield* adapter.accountId,
+          conversationId: conversation,
+          parentId: message.parentId,
+          runId,
+          kind: approval.kind,
+          expiresAt: entry.expiresAt,
+        });
+        opened = true;
 
         const prompt = formatApprovalPrompt({
           requestId: id,
@@ -92,6 +117,10 @@ export const actionApprovals = (adapter: GatewayAdapter["Service"]) => {
               entry.promptId = sent;
             }
           }
+        }
+
+        if (entry.promptId !== null) {
+          yield* records.promptedApproval(id, entry.promptId);
         }
 
         yield* Deferred.succeed(entry.ready, undefined);
@@ -129,10 +158,6 @@ export const actionApprovals = (adapter: GatewayAdapter["Service"]) => {
             pending.delete(id);
             yield* Deferred.succeed(entry.ready, undefined);
 
-            if (entry.promptId === null || !adapter.approvals) {
-              return;
-            }
-
             const state: ApprovalState = Exit.isSuccess(exit)
               ? exit.value
                 ? "approved"
@@ -142,6 +167,16 @@ export const actionApprovals = (adapter: GatewayAdapter["Service"]) => {
                 : expired
                   ? "expired"
                   : "unavailable";
+
+            if (opened) {
+              yield* records
+                .settleApproval(id, state)
+                .pipe(Effect.catch(() => Effect.logWarning("messaging approval record failed")));
+            }
+
+            if (entry.promptId === null || !adapter.approvals) {
+              return;
+            }
 
             const settlement: ApprovalSettlement = {
               ...(entry.decidedBy !== undefined &&
@@ -186,6 +221,54 @@ export const actionApprovals = (adapter: GatewayAdapter["Service"]) => {
       Deferred.await(entry.ready).pipe(Effect.andThen(effect)),
     );
 
+  // Answers an approval that is no longer waiting, such as one left by an earlier worker.
+  const endedReply = (
+    requestId: string,
+    conversation: string | null,
+    source: IncomingMessage,
+    button: boolean,
+  ) =>
+    records
+      .approval(requestId)
+      .pipe(
+        Effect.map((saved) =>
+          saved === null ||
+          saved.state === "pending" ||
+          saved.conversationId !== conversation ||
+          saved.conversationId !== source.conversationId ||
+          saved.parentId !== source.parentId ||
+          (button && saved.messageId !== source.messageId)
+            ? missing
+            : ended(saved.state),
+        ),
+      );
+
+  // Expires approvals left pending by an earlier worker and marks their prompts.
+  const recover = Effect.gen(function* () {
+    const stale = yield* records.expireApprovals(adapter.id, yield* adapter.accountId);
+    const native = adapter.approvals;
+
+    if (native === undefined) {
+      return;
+    }
+
+    yield* Effect.forEach(
+      stale,
+      ({ id, conversationId, messageId }) =>
+        messageId === null
+          ? Effect.void
+          : native
+              .update(conversationId, messageId, id, "expired", {
+                text: formatApprovalStatus("expired"),
+              })
+              .pipe(
+                Effect.timeout("5 seconds"),
+                Effect.catch(() => Effect.void),
+              ),
+      { discard: true },
+    );
+  });
+
   const answer = (conversation: string, source: IncomingMessage) =>
     Effect.gen(function* () {
       if (!authorized(adapter.policy, source)) {
@@ -196,10 +279,15 @@ export const actionApprovals = (adapter: GatewayAdapter["Service"]) => {
       const requestId = reply?.[2];
       const match = requestId === undefined ? undefined : pending.get(requestId);
 
+      if (reply === null || requestId === undefined) {
+        return missing;
+      }
+
+      if (match === undefined) {
+        return yield* endedReply(requestId, conversation, source, false);
+      }
+
       if (
-        reply === null ||
-        requestId === undefined ||
-        match === undefined ||
         match.conversation !== conversation ||
         source.conversationId !== conversation ||
         source.parentId !== match.source.parentId
@@ -220,8 +308,11 @@ export const actionApprovals = (adapter: GatewayAdapter["Service"]) => {
 
       const entry = pending.get(requestId);
 
+      if (entry === undefined) {
+        return yield* endedReply(requestId, source.conversationId, source, true);
+      }
+
       if (
-        entry === undefined ||
         source.conversationId !== entry.conversation ||
         source.parentId !== entry.source.parentId
       ) {
@@ -247,7 +338,7 @@ export const actionApprovals = (adapter: GatewayAdapter["Service"]) => {
       Effect.catchTag("GatewayError", () => Effect.void),
     );
 
-  return { request, answer, answerAction };
+  return { request, answer, answerAction, recover };
 };
 
 export type ActionApprovals = ReturnType<typeof actionApprovals>;
