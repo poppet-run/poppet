@@ -1,228 +1,137 @@
 # Web chat
 
-[Documentation index](README.md)
+[Engineering notes](README.md)
 
-Web chat lets you send messages, reopen saved conversations, and read replies as
-they arrive. It works on desktop and mobile browsers. The worker runs the chats and
-saves their history, so closing a page or signing out does not cancel a reply.
+Web chat is a browser client for the worker. The worker serves the built page and
+a chat-only HTTP API when `<data directory>/web.json` exists. Runs use the shared
+agent, so web replies follow the same slots, budgets, and tool rules as other
+chat. The [user guide](https://poppet.run/docs/web-chat/) covers setup and the
+reverse proxy.
 
-## Build and enable
+| Path                                       | Owns                                                          |
+| ------------------------------------------ | ------------------------------------------------------------- |
+| `apps/cli/src/commands/web-chat/server.ts` | The listener, authentication, assets, and API routes          |
+| `apps/cli/src/commands/web-chat/chat.ts`   | Submission receipts, runs, snapshots, stop, and delete        |
+| `apps/web/src/api/`                        | The HTTP client and the protocol types shared with the server |
+| `apps/web/src/stores/`                     | Nanostores chat state                                         |
+| `apps/web/src/components/`                 | UI in `auth/`, `chat/`, and `shared/`, one component per file |
+| `apps/web/src/app/`                        | The app and its DOM tests                                     |
+| `apps/web/src/styles/`                     | The Tailwind theme and Markdown styles                        |
+| `apps/web/src/main.tsx`                    | The browser entry point                                       |
 
-From the repository root:
+Chat components are grouped into `sidebar/`, `transcript/`, and `composer/`.
 
-Bash / Zsh:
+## Build
 
-```sh
-bun install
-bun run build:web
-```
+`bun run build:web` runs the Tailwind CLI into `apps/web/.generated`, which Git
+ignores, then bundles `index.html` with Bun and writes Brotli and gzip copies of
+each asset. `bun run check` includes this build. The worker loads assets into
+memory at start, so frontend changes need a rebuild and a worker restart. It
+serves the compressed copy the browser accepts. Hashed scripts and styles are
+cached for a year. `index.html` and the API are never cached. The Markdown
+renderer is a separate script that loads after the page starts.
 
-fish:
+## Settings
 
-```fish
-bun install
-bun run build:web
-```
+`web.json` must be a `0600` file owned by the Poppet user:
 
-Configure and sign in to a provider using the CLI first. New web conversations use
-`provider` and `model` from `config.json`. Existing conversations keep their saved
-provider and model. Provider credentials stay on the host.
+| Field           | Rule                                                                  |
+| --------------- | --------------------------------------------------------------------- |
+| `origin`        | The exact public origin. HTTP is accepted only for a loopback origin. |
+| `hostname`      | A loopback address: `127.0.0.1`, `::1`, or `localhost`.               |
+| `port`          | The listener port.                                                    |
+| `accessKeyHash` | The lowercase hex SHA-256 of the access key.                          |
+| `trustProxy`    | Optional. Use the last valid `X-Forwarded-For` from a loopback proxy. |
 
-The worker serves web chat only when `<data directory>/web.json` exists. The default
-data directory is `~/.config/poppet`; set `POPPET_DATA_DIR` to use another directory.
-Create `web.json` with these fields:
+Remote access needs an HTTPS reverse proxy that keeps the public `Host` header and
+does not buffer server-sent events. HTTPS also gives the page the secure context
+it needs to create submission IDs. If the listener cannot start, the worker logs
+why and keeps running everything else.
 
-```json
-{
-  "origin": "https://chat.example.com",
-  "hostname": "127.0.0.1",
-  "port": 8080,
-  "accessKeyHash": "replace-with-the-64-character-lowercase-sha256-hash"
-}
-```
+## Listener
 
-Use a random access key, separate from provider credentials. Generate one locally
-and save it in your password manager:
+- The server checks `Host`, and requires `Origin` to equal `origin` on every
+  non-GET request.
+- The access key is 32 to 256 characters. The server compares its hash in
+  constant time.
+- Logins live in memory: at most 32, each for 12 hours, as HttpOnly,
+  `SameSite=Strict` cookies that are `Secure` over HTTPS. A 33rd login replaces
+  the oldest. Sign-out, a worker restart, or a changed hash ends them.
+- Login is limited to 10 attempts per minute per client address and 60 per minute
+  in total.
+- Ordinary connections have a 10-second idle timeout, and JSON bodies must arrive
+  within 10 seconds.
+- At most 32 event streams stay open (`limits.webChatStreams`). The next one
+  gets 429.
+- A JSON body is at most 256 KiB (`limits.webChatBodyBytes`).
 
-Bash / Zsh:
+## API
 
-```sh
-openssl rand -hex 32
-```
+| Route                                   | Purpose                                                        |
+| --------------------------------------- | -------------------------------------------------------------- |
+| `POST /api/login`, `POST /api/logout`   | Sign in and out                                                |
+| `GET /api/sessions`                     | Every session, most recent first                               |
+| `GET /api/session-list?source=<origin>` | Sessions with one origin, plus the gateways that have sessions |
+| `POST /api/submissions`                 | Submit a message with a client ID. Returns 202.                |
+| `GET /api/submissions/<id>`             | Read a submission receipt, or 404                              |
+| `GET /api/sessions/<id>`                | A conversation snapshot                                        |
+| `GET /api/sessions/<id>/events`         | Server-sent snapshots                                          |
+| `POST /api/sessions/<id>/stop`          | Stop a web-started reply                                       |
+| `DELETE /api/sessions/<id>`             | Delete a session. 404 if unknown, 409 while a reply runs.      |
 
-fish:
+The API never exposes credentials, continuation, or the worker socket. The
+sidebar filters on `sessions.origin`, which store migration 6 added: `chat`,
+`scheduled`, or `gateway:<id>`. `all` lists every origin. A
+task that delivers to a gateway still counts as a scheduled session.
 
-```fish
-openssl rand -hex 32
-```
+## Submissions and runs
 
-Hash the key without putting it in shell history. Paste the resulting digest, without
-its label, into `accessKeyHash`:
+The browser makes a UUID for each message and keeps it in session storage until
+the worker confirms receipt. `chat.ts` saves receipts in SQLite with their own
+migration ledger. Reusing an ID returns the saved receipt, and reusing it with
+different input fails, so recovery after a lost response never starts a second
+run. Deleting a session removes its receipts.
 
-Bash / Zsh:
+Accepted replies run in worker-scoped fibers and keep going after a browser
+disconnects or signs out. Stop interrupts only a reply started from the web. A
+worker restart leaves unfinished replies interrupted, with no replay. A completed
+answer stays saved even when updating its receipt was interrupted.
 
-```sh
-printf 'Access key: ' >&2
-IFS= read -rs poppet_web_key
-printf '\n' >&2
-printf '%s' "$poppet_web_key" | openssl dgst -sha256
-unset poppet_web_key
-chmod 600 ~/.config/poppet/web.json
-```
+Web runs have no attachments, no task destination context, and no approval
+callback. A command or reviewed MCP action that needs a person stops the run. The
+first message supplies the title. `$name` mentions work, because `Agent.send`
+resolves them.
 
-fish:
+## Event stream
 
-```fish
-read --silent --prompt-str 'Access key: ' poppet_web_key
-printf '%s' "$poppet_web_key" | openssl dgst -sha256
-set --erase poppet_web_key
-chmod 600 ~/.config/poppet/web.json
-```
+`/events` checks the session's change marker twice a second. When it changes, the
+server sends the whole current snapshot, so a reconnect needs no replay of
+earlier deltas and never resubmits input. The page reopens the stream after a
+proxy error, and two devices can watch the same reply.
 
-The browser accepts keys between 32 and 256 characters. The server stores only the
-configured hash and compares it in constant time. Keep `web.json` owned by your user
-and set its mode to `0600`. Replace the example hash before
-starting the worker.
+## Frontend state
 
-Start or restart the worker from this checkout:
+Chat state lives in Nanostores, with `@nanostores/preact` for subscriptions. Each
+mounted app has its own store. Each sign-in and sign-out starts a new generation,
+so a late response cannot restore a signed-out session. Sign-out also clears the
+send state and the pending message. SSE snapshots update the store directly, and
+the session list is polled every five seconds while signed in. Nothing retries a
+submission by itself. Browser back and forward clear the error and the sidebar.
 
-Bash / Zsh:
+Forget recovery checks for a saved receipt first. A receipt opens its
+conversation. A missing receipt clears the tab's pending submission, which does
+not prove the message was lost. If the check fails, the tab keeps the recovery
+ID.
 
-```sh
-bun apps/cli/src/main.ts worker run
-```
+## Rendering
 
-fish:
+`marked` renders replies with raw HTML escaped. A few plain tags such as `<br>`,
+`<sub>`, and `<kbd>` survive. Inline images and task-list checkboxes are dropped.
+Links keep only `http`, `https`, `mailto`, and relative targets, and open in a new
+tab. Markdown styles are scoped in the stylesheet, because generated HTML has no
+utility classes.
 
-```fish
-bun apps/cli/src/main.ts worker run
-```
+## Not supported
 
-If an installed worker already owns this data directory, stop it first. Make sure its
-launch command points at this checkout.
-The worker prints the public web address when the listener starts.
-Rebuild the app and restart the worker after frontend changes. The worker loads
-assets into memory at startup. The build also writes Brotli (`.br`) and gzip (`.gz`)
-copies of each asset, and the worker serves the copy the browser accepts. Bundled scripts and styles have content-hashed
-names, so browsers cache them for a year; `index.html` and the API are never cached.
-The proxy does not need to compress responses.
-
-`build:web` runs the [Tailwind CLI](https://tailwindcss.com/docs/installation/tailwind-cli)
-before bundling the page with Bun. Edit utility classes in `apps/web/src/components`
-and the brand theme in `apps/web/src/styles/style.css`. The build writes generated CSS to
-`apps/web/.generated` and Git ignores it. Markdown styles stay scoped in the
-stylesheet because provider-generated HTML does not contain utility classes.
-
-## Access from other devices
-
-Put an HTTPS reverse proxy on the Poppet host in front of `127.0.0.1:8080`, with the
-public address matching `origin` exactly. For example, an existing Caddy installation
-can use:
-
-```caddyfile
-chat.example.com {
-    reverse_proxy 127.0.0.1:8080 {
-        flush_interval -1
-    }
-}
-```
-
-See [Caddy's reverse proxy reference](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)
-for streaming and header settings. Configure DNS and certificates for your hostname.
-Your devices must be able to reach the proxy. The proxy must preserve the public
-`Host` header and must not buffer server-sent events. The proxy handles HTTPS; `hostname` must be a loopback address (`127.0.0.1`,
-`::1`, or `localhost`). You must set up DNS, certificates, and the proxy yourself. If the
-listener cannot start, the worker logs why and keeps running tasks and messaging.
-
-For same-machine development, `origin` may be `http://127.0.0.1:8080`. Poppet rejects
-HTTP origins for LAN addresses or public hostnames. Remote access requires HTTPS,
-which also provides the browser secure context used to create submission IDs.
-
-Enter the original access key at the sign-in screen. Sessions use HttpOnly,
-SameSite=Strict cookies, with Secure cookies for HTTPS. They expire after 12 hours
-and end on sign-out or when the worker restarts. Anyone with the access key can read
-and use all conversations. Changing the key hash and restarting revokes all logins.
-
-Poppet allows ten login attempts per minute per client address and 60 per minute
-across the listener. Set `"trustProxy": true` in `web.json` to use the last valid
-`X-Forwarded-For` address from a loopback proxy that manages this header.
-Ordinary connections have a 10-second idle timeout, and JSON bodies must arrive
-within 10 seconds. Up to 32 authenticated event streams can stay open at once
-(`limits.webChatStreams`), and JSON bodies are limited to 256 KiB (`limits.webChatBodyBytes`).
-Poppet also keeps at most 32 logins. A new login then replaces the oldest one.
-
-## Conversation behavior
-
-The sidebar opens on **Chats**, which includes web and CLI conversations. Use
-**Show** to see **Scheduled tasks**, a gateway such as **Slack** or **Discord**,
-or **All sessions**. Each view shows the most recently active sessions first.
-A task that sends its result to a gateway stays under **Scheduled tasks**.
-
-Changing the filter keeps the open conversation and draft in place. Direct
-links open sessions in any category. **+ New conversation** returns the sidebar
-to **Chats**.
-
-- Enter sends; Shift+Enter inserts a newline. Enter does not send while you are composing text with an IME.
-- You can draft the next message while a reply runs. Send becomes available when it
-  finishes. There is no message queue yet.
-- Stop cancels a web-started run. Partial text is not saved as a completed answer.
-- Delete in the conversation header removes the open conversation after you confirm.
-  It is unavailable while a reply runs or the page is reconnecting. See
-  [delete old sessions](storage.md#session-deletion) for what else is removed.
-  `DELETE /api/sessions/<id>` returns 404 for an unknown conversation and 409 while
-  it has a reply in progress.
-- The browser assigns each message an ID and keeps it in this tab's session storage
-  until the worker confirms receipt. After a lost response, Recover submission
-  uses the same ID. The worker returns its saved receipt instead of starting it again.
-- Refresh or reopen a conversation URL to receive its current history and active
-  reply. Reconnection never resubmits a message. Two devices can observe the same reply.
-- After a worker restart, unfinished requests stay interrupted and do not run again.
-  Completed answers remain saved, including when the receipt update was interrupted.
-- Drafts remain in memory while navigating within the page. Refresh discards drafts
-  that were never submitted. Signing out clears drafts; an unacknowledged submission
-  remains in this tab for recovery after signing in again.
-- Tool permissions still apply. A Bash command or reviewed MCP action that
-  needs human approval stops the run. Request the operation in Discord or
-  Slack for human approval.
-
-The web API exposes chat operations. It does not expose provider credentials,
-provider continuation data, or the worker's general command endpoint. The browser
-renders Markdown without raw HTML: tags in a reply show as text, apart from a few
-plain formatting tags such as `<br>`, `<sub>` and `<kbd>`. It drops inline images
-and task-list checkboxes, keeps only `http`, `https`, `mailto` and relative links,
-and opens links in a new tab. The Markdown renderer loads as a separate script after
-the page starts, so a reply shows as plain text until it arrives. The worker saves submission receipts
-in SQLite and tracks their schema migrations separately.
-
-Use your browser's usual modified clicks to open a sidebar conversation in a
-separate tab or window.
-
-The event stream checks for changes twice per second. When something changes, it
-sends the full conversation snapshot. Reconnecting therefore needs no replay of
-earlier text updates. The page reopens the stream after a proxy error.
-
-## Current scope
-
-Attachments, message queues, search, renaming, model and skill selection, reasoning
-display, copy buttons, and run details are not available yet. Use `poppet chat show`
-to inspect saved runs. A message can still
-[name a skill](skills.md#mentions) with `$name`. Web chat uses the first message as the conversation title.
-
-The frontend keeps chat state in Nanostores and uses `@nanostores/preact` for UI
-subscriptions. The store polls the session list every five seconds while signed in.
-Each mounted app has its own store; each sign-in and sign-out starts a new
-generation so a late response cannot restore a signed-out session. SSE snapshots
-update the store directly, and submissions are never retried automatically.
-
-Web source is grouped under `apps/web/src`: `app/` contains the app and its DOM
-tests, `api/` contains the HTTP client and shared protocol, `components/` contains
-the UI components grouped into `auth/`, `chat/`, and `shared/`. Chat components
-are further grouped into `sidebar/`, `transcript/`, and `composer/`, with one
-component per file. `stores/` contains chat state, and `styles/` contains the
-Tailwind theme and Markdown styles. `main.tsx` is the browser entry point.
-
-If recovery keeps failing, use Forget recovery. It checks for a saved receipt first.
-An existing receipt opens its conversation. A missing receipt clears this tab's
-pending submission, but does not prove delivery failed or cancel a running reply.
-Check history before sending the message again. If the receipt check fails,
-the browser keeps the recovery ID.
+Attachments, a message queue, search, renaming, model and skill selection,
+reasoning display, copy buttons, and run details.

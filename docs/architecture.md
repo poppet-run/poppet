@@ -407,26 +407,6 @@ including when its PID has been reused. Invalid marker files fail closed. Lock
 databases are protected and are never removed while an owner might hold them.
 They contain no user credentials or records.
 
-## Web chat
-
-`apps/web` builds the Preact UI and shared API types. Nanostores owns browser state;
-marked renders Markdown with raw HTML escaped and links limited to safe schemes. The worker's `commands/web-chat/server.ts`
-serves built assets and a separate chat-only HTTP API when protected `web.json`
-exists. HTTPS remote access uses an owner-configured reverse proxy. Startup failures
-disable web chat while scheduling and messaging continue. See [web chat](web-chat.md).
-
-The listener checks Host and Origin, authenticates an access-key hash, and keeps
-bounded, expiring cookie logins in memory. `chat.ts` owns submission receipts in
-SQLite with a separate migration ledger. Reusing a submission ID returns its
-receipt; using it with different input fails. Accepted replies run in worker-scoped
-fibers and survive browser disconnects and sign-out. Restart leaves unfinished work
-interrupted, with no automatic replay. Stop interrupts only a web-started reply.
-
-SSE sends a complete current snapshot when its change marker changes. Reconnection
-reads state without resubmitting input. Web requests use the shared agent and its
-normal permissions, but have no attachments, task destination context, or command
-approval callback. Provider credentials and continuation data stay on the host.
-
 ## Messaging gateway
 
 `conversation-naming.ts` owns rename reconciliation and owner-override handling.
