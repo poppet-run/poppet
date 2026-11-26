@@ -7,3 +7,4 @@ coverage/
 !.env.example
 .poppet/
 apps/web/.generated/
+.build/
