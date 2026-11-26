@@ -51,11 +51,24 @@ export const Message = Schema.Struct({
 
 export type Message = typeof Message.Type;
 
+export const CallbackQuery = Schema.Struct({
+  id: Schema.String,
+  from: User,
+  message: Schema.optionalKey(Message),
+  data: Schema.optionalKey(Schema.String),
+});
+
+export type CallbackQuery = typeof CallbackQuery.Type;
+
 export const Me = Schema.Struct({ id: Schema.Number, username: Schema.String });
 
 // Each update is decoded separately so one unexpected shape cannot stall the offset.
 export const Updates = Schema.Array(
-  Schema.Struct({ update_id: Schema.Number, message: Schema.optionalKey(Schema.Unknown) }),
+  Schema.Struct({
+    update_id: Schema.Number,
+    message: Schema.optionalKey(Schema.Unknown),
+    callback_query: Schema.optionalKey(Schema.Unknown),
+  }),
 );
 
 export const Chat = Schema.Struct({
@@ -74,6 +87,8 @@ export const ForumTopic = Schema.Struct({ message_thread_id: Schema.Number, name
 export const Sent = Schema.Struct({ message_id: Schema.Number });
 
 export const Done = Schema.Literal(true);
+
+export const Edited = Schema.Union([Sent, Done]);
 
 const Envelope = Schema.Struct({
   ok: Schema.Boolean,

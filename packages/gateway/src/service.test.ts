@@ -353,6 +353,12 @@ describe.concurrent("Gateway", () => {
       const updates: Array<ApprovalState> = [];
       const replies: Array<string> = [];
       const prompts: Array<string> = [];
+
+      let receivedPrompt: {
+        readonly canonicalPayload: string;
+        readonly truncated: boolean;
+      } | null = null;
+
       const args = { target: "Services/42", message: "Restart after deploy " + "`😀`".repeat(400) };
 
       const definition = {
@@ -394,7 +400,11 @@ describe.concurrent("Gateway", () => {
           send,
           approvals: {
             actions: Stream.never,
-            send,
+            send: (conversation, prompt) => {
+              receivedPrompt = prompt;
+
+              return send(conversation, prompt.fallbackText);
+            },
             update: (_conversation, _messageId, _id, resultState) =>
               Effect.gen(function* () {
                 updates.push(resultState);
@@ -497,17 +507,10 @@ describe.concurrent("Gateway", () => {
             yield* TestClock.adjust(0);
 
             if (kind === "mcp") {
-              expect(prompts[0]).toContain('Target: `"Services/42"`');
-              expect(prompts[0]).toContain(
-                'Expected effects: `"Interrupt service while it restarts"`',
-              );
-
-              const exact = prompts
-                .slice(1, -1)
-                .map((chunk) => chunk.slice(1, -1))
-                .join("");
-
-              expect(JSON.parse(exact)).toEqual({
+              expect(prompts[0]).toContain("Target: Services/42");
+              expect(prompts[0]).toContain("Expected effects: Interrupt service while it restarts");
+              expect(receivedPrompt?.truncated).toBe(true);
+              expect(JSON.parse(receivedPrompt!.canonicalPayload)).toEqual({
                 server: "fixture",
                 tool: "restart_service",
                 origin: "https://mcp.example.test",
@@ -787,7 +790,7 @@ describe.concurrent("Gateway", () => {
 
             expect(item.status).toBe("failed");
             expect(item.reason).toContain("Command needs approval");
-            expect(item.reason).toContain("restart-service");
+            expect(item.reason).toContain("Needs owner confirmation");
             expect(executed).toBe(0);
             expect(errors).toContainEqual(
               expect.stringContaining(
@@ -821,7 +824,7 @@ describe.concurrent("Gateway", () => {
           Effect.gen(function* () {
             const tasks = yield* TaskRepository;
             expect((yield* tasks.occurrence(id)).status).toBe("failed");
-            expect((yield* tasks.occurrence(id)).reason).toContain("restart-service");
+            expect((yield* tasks.occurrence(id)).reason).toContain("Needs owner confirmation");
             expect(
               (yield* (yield* TaskDeliveries).forOccurrence(id)).map((part) => part.state),
             ).toEqual(queuedNotice ? ["failed", "sent"] : ["sent"]);

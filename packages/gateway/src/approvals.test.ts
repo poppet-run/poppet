@@ -4,7 +4,14 @@ import { Deferred, Effect, Fiber, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
 import { GatewayError } from "#src/adapter";
-import type { ApprovalAction, ApprovalState, IncomingMessage, GatewayAdapter } from "#src/adapter";
+import type {
+  ApprovalAction,
+  ApprovalSettlement,
+  ApprovalState,
+  GatewayAdapter,
+  IncomingMessage,
+} from "#src/adapter";
+import type { ApprovalPrompt } from "#src/approval-format";
 import { actionApprovals } from "#src/approvals";
 import type { ActionApprovals } from "#src/approvals";
 
@@ -67,22 +74,31 @@ const prompted = (sent: Array<string>, approvals: ActionApprovals) =>
 
 const interactive = () => {
   const sent: Array<string> = [];
-  const updates: Array<ApprovalState> = [];
+  const prompts: Array<ApprovalPrompt> = [];
+
+  const updates: Array<{
+    readonly state: ApprovalState;
+    readonly settlement?: ApprovalSettlement;
+  }> = [];
+
   const base = channel(sent);
 
   const adapter: GatewayAdapter["Service"] = {
     ...base,
     approvals: {
       actions: Stream.never,
-      send: base.send,
-      update: (_conversation, _message, _id, state) =>
+      send: (conversation, prompt, nonce) =>
         Effect.sync(() => {
-          updates.push(state);
+          prompts.push(prompt);
+        }).pipe(Effect.andThen(base.send(conversation, prompt.fallbackText, nonce))),
+      update: (_conversation, _message, _id, state, settlement) =>
+        Effect.sync(() => {
+          updates.push({ state, ...(settlement && { settlement }) });
         }),
     },
   };
 
-  return { sent, updates, adapter };
+  return { sent, prompts, updates, adapter };
 };
 
 const click = (
@@ -109,7 +125,7 @@ describe("actionApprovals", () => {
         const fiber = yield* approvals
           .request(message, "thread", {
             ...approval,
-            command: "echo \u202e",
+            command: "echo \u202e```",
             reason: "`approve`\n\u2066",
           })
           .pipe(Effect.forkChild);
@@ -118,8 +134,8 @@ describe("actionApprovals", () => {
           yield* Effect.yieldNow;
         }
 
-        expect(sent[0]).toContain('Review reason: `"\\u0060approve\\u0060\\n\\u2066"`');
-        expect(sent[0]).toContain(String.raw`"command":"echo \u202e"`);
+        expect(sent[0]).toContain(String.raw`Reason: \u0060approve\u0060\u000a\u2066`);
+        expect(sent[0]).toContain(String.raw`echo \u202e\u0060\u0060\u0060`);
         yield* Fiber.interrupt(fiber);
       }),
     );
@@ -129,7 +145,7 @@ describe("actionApprovals", () => {
     "when the %s answer arrives before the send acknowledgement, waits for complete delivery",
     async (transport) => {
       const { adapter } = interactive();
-      const published = Deferred.makeUnsafe<string>();
+      const published = Deferred.makeUnsafe<ApprovalPrompt>();
       const acknowledge = Deferred.makeUnsafe<void>();
       const replies: Array<string> = [];
 
@@ -137,9 +153,9 @@ describe("actionApprovals", () => {
         ...adapter,
         approvals: {
           ...adapter.approvals!,
-          send: (_conversation, _text, _nonce, id) =>
+          send: (_conversation, prompt) =>
             Effect.gen(function* () {
-              yield* Deferred.succeed(published, id);
+              yield* Deferred.succeed(published, prompt);
               yield* Deferred.await(acknowledge);
 
               return "sent-1";
@@ -153,18 +169,21 @@ describe("actionApprovals", () => {
             .request(message, "thread", approval)
             .pipe(Effect.forkChild);
 
-          const id = yield* Deferred.await(published);
+          const prompt = yield* Deferred.await(published);
+          expect(prompt.expiresAt).toBe(120_000);
 
           const answering = yield* (
             transport === "button"
-              ? approvals.answerAction(click(id, replies))
-              : approvals.answer("thread", { ...message, text: `/approve ${id}` }).pipe(
-                  Effect.tap((text) =>
-                    Effect.sync(() => {
-                      replies.push(text);
-                    }),
-                  ),
-                )
+              ? approvals.answerAction(click(prompt.requestId, replies))
+              : approvals
+                  .answer("thread", { ...message, text: `/approve ${prompt.requestId}` })
+                  .pipe(
+                    Effect.tap((text) =>
+                      Effect.sync(() => {
+                        replies.push(text);
+                      }),
+                    ),
+                  )
           ).pipe(Effect.forkChild);
 
           yield* TestClock.adjust(0);
@@ -210,7 +229,15 @@ describe("actionApprovals", () => {
           expect(
             [...replies, text].filter((reply) => reply.startsWith("No matching")),
           ).toHaveLength(1);
-          expect(updates).toEqual([approved ? "approved" : "denied"]);
+          expect(updates).toEqual([
+            {
+              state: approved ? "approved" : "denied",
+              settlement: {
+                senderId: "owner",
+                text: approved ? "Approved once" : "Denied",
+              },
+            },
+          ]);
         }),
       );
     },
@@ -244,7 +271,7 @@ describe("actionApprovals", () => {
         yield* Deferred.succeed(release, undefined);
         yield* Fiber.join(answering);
         expect(replies[0]).toStartWith("No matching pending approval");
-        expect(updates).toEqual(["expired"]);
+        expect(updates).toEqual([{ state: "expired", settlement: { text: "Expired" } }]);
       }).pipe(Effect.provide(TestClock.layer())),
     );
   });
@@ -316,27 +343,24 @@ describe("actionApprovals", () => {
   });
 
   test.each([false, true])(
-    "when a long prompt has failed delivery=%j, only a complete invocation can get buttons",
+    "when a long prompt on an interactive adapter has failed delivery=%j, sends a truncated prompt with full canonical payload",
     async (fail) => {
-      const { sent, adapter } = interactive();
-      const buttons: Array<{ text: string; id: string }> = [];
+      const { prompts, adapter } = interactive();
       const ready = Deferred.makeUnsafe<void>();
 
       const approvals = actionApprovals({
         ...adapter,
-        send: (conversation, text, nonce) =>
-          sent.length === 1 && fail
-            ? Effect.fail(new GatewayError({ reason: "unavailable", message: "Send failed" }))
-            : adapter.send(conversation, text, nonce),
         approvals: {
           ...adapter.approvals!,
-          send: (_conversation, text, _nonce, id) =>
-            Effect.sync(() => {
-              buttons.push({ text, id });
-              Deferred.doneUnsafe(ready, Effect.void);
+          send: (_conversation, prompt) =>
+            fail
+              ? Effect.fail(new GatewayError({ reason: "unavailable", message: "Send failed" }))
+              : Effect.sync(() => {
+                  prompts.push(prompt);
+                  Deferred.doneUnsafe(ready, Effect.void);
 
-              return "controls";
-            }),
+                  return "controls";
+                }),
         },
       });
 
@@ -353,32 +377,23 @@ describe("actionApprovals", () => {
               "failure.reason",
               "command-approval-required",
             );
-            expect(buttons).toEqual([]);
+            expect(prompts).toEqual([]);
           } else {
             yield* Deferred.await(ready);
-            expect(sent.every((part) => part.length <= adapter.textLimit)).toBe(true);
-
-            const invocation = sent
-              .slice(1)
-              .map((part) => {
-                expect(part).toStartWith("`");
-                expect(part).toEndWith("`");
-                expect(part.slice(1, -1)).not.toContain("`");
-
-                return part.slice(1, -1);
-              })
-              .join("");
-
-            expect(JSON.parse(invocation)).toEqual({
+            expect(prompts).toHaveLength(1);
+            expect(prompts[0]!.truncated).toBe(true);
+            expect(JSON.parse(prompts[0]!.canonicalPayload)).toEqual({
               command,
               cwd: approval.cwd,
               timeoutSeconds: approval.timeoutSeconds,
             });
-            expect(buttons).toHaveLength(1);
-            expect(buttons[0]!.text).toContain(
-              `\`/approve ${buttons[0]!.id}\` or \`/deny ${buttons[0]!.id}\``,
+            expect(prompts[0]!.fallbackText).toContain(
+              `\`/approve ${prompts[0]!.requestId}\` or \`/deny ${prompts[0]!.requestId}\``,
             );
-            yield* approvals.answer("thread", { ...message, text: `/deny ${buttons[0]!.id}` });
+            yield* approvals.answer("thread", {
+              ...message,
+              text: `/deny ${prompts[0]!.requestId}`,
+            });
             expect(yield* Fiber.join(fiber)).toBe(false);
           }
         }),
@@ -386,17 +401,18 @@ describe("actionApprovals", () => {
     },
   );
 
-  test("when MCP invocation details cannot be delivered, leaves no approval to settle", async () => {
-    const { adapter, sent } = interactive();
+  test("when MCP invocation details cannot be delivered on a text-only adapter, leaves no approval to settle", async () => {
+    const sent: Array<string> = [];
+    const base = { ...channel(sent), textLimit: 300 };
 
     const approvals = actionApprovals({
-      ...adapter,
+      ...base,
       send: (_conversation, part) => {
-        if (part.startsWith("`")) {
+        if (sent.length === 1) {
           return Effect.fail(new GatewayError({ reason: "unavailable", message: "Send failed" }));
         }
 
-        return adapter.send("thread", part, "summary");
+        return base.send("thread", part, "summary");
       },
     });
 
@@ -424,7 +440,7 @@ describe("actionApprovals", () => {
 
     expect(result.reason).toBe("mcp-approval-required");
     expect(sent).toHaveLength(1);
-    expect(sent[0]).toContain("Exact invocation:");
+    expect(sent[0]).toContain("MCP action approval required");
     expect(sent[0]).not.toContain("/approve");
     expect(recorded).toBe(false);
   });
@@ -440,9 +456,10 @@ describe("actionApprovals", () => {
       Effect.gen(function* () {
         const { fiber, id } = yield* prompted(sent, approvals);
 
-        expect(sent[0]).toContain(
-          'Exact invocation: `{"command":"ls","cwd":"/tmp","timeoutSeconds":10}`',
-        );
+        expect(sent[0]).toContain("Bash approval required");
+        expect(sent[0]).toContain("```sh\nls\n```");
+        expect(sent[0]).toContain("Working directory: `/tmp`");
+        expect(sent[0]).toContain("Timeout: 10 seconds");
         expect(yield* approvals.answer("thread", { ...message, text: `/${action} ${id}` })).toBe(
           reply,
         );

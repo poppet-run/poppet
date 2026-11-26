@@ -1,12 +1,14 @@
 import { GatewayAdapter, GatewayError } from "@poppet/gateway";
-import type { IncomingMessage } from "@poppet/gateway";
+import type { ApprovalAction, ApprovalPrompt, IncomingMessage } from "@poppet/gateway";
 import { timeoutSeconds } from "@poppet/io";
 import { Deferred, Duration, Effect, Layer, Option, Queue, Schedule, Schema, Stream } from "effect";
 
 import {
+  CallbackQuery,
   Chat,
   ChatMember,
   Done,
+  Edited,
   ForumTopic,
   Me,
   Message,
@@ -16,6 +18,14 @@ import {
   telegramApi,
 } from "#src/api";
 import type { Fetch } from "#src/api";
+import {
+  approvalCallback,
+  approvalDetailsHtml,
+  approvalHtml,
+  approvalMarkup,
+  settledMarkup,
+  telegramSettlementHtml,
+} from "#src/approvals";
 import { ConversationId } from "#src/settings";
 import type { TelegramSettings } from "#src/settings";
 
@@ -111,7 +121,10 @@ export const telegramAdapterLayer = (
       const call = telegramApi(settings.token, fetcher, requestSeconds * 1000);
       const chatId = Number(settings.chatId);
       const messages = yield* Queue.make<IncomingMessage>({ capacity: 64, strategy: "dropping" });
+      const actions = yield* Queue.make<ApprovalAction>({ capacity: 64, strategy: "dropping" });
+      const callbacks = yield* Queue.make<CallbackQuery>({ capacity: 64, strategy: "dropping" });
       const nameChanges = yield* Queue.make<string>({ capacity: 64, strategy: "dropping" });
+      const prompts = new Map<string, ApprovalPrompt>();
       // The Bot API cannot read a topic's name, so names come from service messages and our edits.
       const topicNames = new Map<string, string>();
       const identity = yield* Deferred.make<string>();
@@ -242,7 +255,7 @@ export const telegramAdapterLayer = (
         try: (signal) =>
           call(
             "getUpdates",
-            { offset, timeout: pollSeconds, allowed_updates: ["message"] },
+            { offset, timeout: pollSeconds, allowed_updates: ["message", "callback_query"] },
             Updates,
             signal,
             (pollSeconds + requestSeconds) * 1000,
@@ -260,6 +273,12 @@ export const telegramAdapterLayer = (
 
               if (Option.isSome(message)) {
                 incoming(message.value);
+              }
+
+              const query = Schema.decodeUnknownOption(CallbackQuery)(update.callback_query);
+
+              if (Option.isSome(query) && !Queue.offerUnsafe(callbacks, query.value)) {
+                dropped++;
               }
             }
           }),
@@ -288,6 +307,90 @@ export const telegramAdapterLayer = (
           try: (signal) => call(method, params, schema, signal),
           catch: (cause) => telegramFailure(cause, sending),
         });
+
+      const answerCallback = (queryId: string, text: string, showAlert = false) =>
+        request(
+          "answerCallbackQuery",
+          {
+            callback_query_id: queryId,
+            text: text.slice(0, 200),
+            ...(showAlert && { show_alert: true }),
+          },
+          Done,
+        ).pipe(Effect.asVoid);
+
+      const handleCallback = (query: CallbackQuery) =>
+        Effect.gen(function* () {
+          if (bot === null) {
+            return;
+          }
+
+          const click = approvalCallback(query, settings, bot.id);
+
+          if (click.kind === "ignored") {
+            return;
+          }
+
+          if (click.kind === "rejected") {
+            yield* answerCallback(
+              click.queryId,
+              "Only the configured owner can answer this approval.",
+              true,
+            );
+
+            return;
+          }
+
+          if (click.kind === "details") {
+            const saved = prompts.get(click.requestId);
+
+            if (!saved) {
+              yield* answerCallback(
+                click.queryId,
+                "Full details are no longer available for this approval.",
+                true,
+              );
+
+              return;
+            }
+
+            yield* answerCallback(click.queryId, "Showing full payload.");
+
+            for (const part of approvalDetailsHtml(saved.canonicalPayload)) {
+              yield* request(
+                "sendMessage",
+                withTopic(
+                  {
+                    chat_id: chatId,
+                    text: part,
+                    parse_mode: "HTML",
+                    link_preview_options: { is_disabled: true },
+                  },
+                  click.threadId,
+                ),
+                Sent,
+                true,
+              );
+            }
+
+            return;
+          }
+
+          const reply = (text: string) => answerCallback(click.queryId, text);
+
+          if (
+            !Queue.offerUnsafe(actions, {
+              requestId: click.requestId,
+              decision: click.decision,
+              source: click.source,
+              reply,
+            })
+          ) {
+            yield* reply("Poppet is busy. Try this approval again before it expires.");
+          }
+        }).pipe(Effect.catch(() => Effect.void));
+
+      yield* Stream.fromQueue(callbacks).pipe(Stream.runForEach(handleCallback), Effect.forkScoped);
 
       const authorize = (message: IncomingMessage) => {
         if (
@@ -490,6 +593,58 @@ export const telegramAdapterLayer = (
             ),
             Effect.map((sent) => String(sent.message_id)),
           ),
+        approvals: {
+          actions: Stream.fromQueue(actions),
+          send: (conversationId, prompt) =>
+            Effect.try({ try: () => target(conversationId), catch: telegramFailure }).pipe(
+              Effect.flatMap((threadId) =>
+                request(
+                  "sendMessage",
+                  withTopic(
+                    {
+                      chat_id: chatId,
+                      text: approvalHtml(prompt),
+                      parse_mode: "HTML",
+                      reply_markup: approvalMarkup(prompt.requestId, prompt.truncated),
+                      link_preview_options: { is_disabled: true },
+                    },
+                    threadId,
+                  ),
+                  Sent,
+                  true,
+                ),
+              ),
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  prompts.set(prompt.requestId, prompt);
+                }),
+              ),
+              Effect.map((sent) => String(sent.message_id)),
+            ),
+          update: (_conversationId, messageId, requestId, state, settlement) =>
+            Effect.gen(function* () {
+              const saved = prompts.get(requestId);
+              prompts.delete(requestId);
+
+              const text = saved
+                ? approvalHtml(saved, { state, ...(settlement && { settlement }) })
+                : telegramSettlementHtml(state, settlement);
+
+              yield* request(
+                "editMessageText",
+                {
+                  chat_id: chatId,
+                  message_id: Number(messageId),
+                  text,
+                  parse_mode: "HTML",
+                  reply_markup: settledMarkup,
+                  link_preview_options: { is_disabled: true },
+                },
+                Edited,
+                true,
+              );
+            }),
+        },
       } satisfies GatewayAdapter["Service"];
     }),
   );

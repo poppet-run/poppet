@@ -334,11 +334,11 @@ describe.concurrent("conversation", () => {
             expect(JSON.parse(calls[0]!.output!)).toEqual(receipt);
           } else {
             expect(calls[0]!.startedAt).toBeNull();
+            expect(JSON.parse(calls[0]!.arguments)).toEqual(args);
             const messages = yield* store.messages(session.id);
             expect(
               messages.some(
-                (entry) =>
-                  entry.message.role === "tool" && entry.message.output.includes("Invocation"),
+                (entry) => entry.message.role === "tool" && entry.message.output.length > 0,
               ),
             ).toBe(true);
           }

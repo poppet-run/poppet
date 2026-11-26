@@ -8,13 +8,14 @@ project-directory restriction, no OS sandbox, and no sudo password. A model
 reviews every invocation before it runs. The
 [user guide](https://poppet.run/docs/commands/) explains this to owners.
 
-| Module                                  | Owns                                                 |
-| --------------------------------------- | ---------------------------------------------------- |
-| `packages/agent/src/bash.ts`            | Tool definition, argument schema, and command policy |
-| `packages/agent/src/action-review.ts`   | Reviewer requests for Bash and MCP actions           |
-| `packages/agent/src/action-approval.ts` | Owner approval requests                              |
-| `apps/cli/src/bash.ts`                  | The process runner                                   |
-| `packages/gateway/src/approvals.ts`     | Pending approvals in the gateway                     |
+| Module                                    | Owns                                                 |
+| ----------------------------------------- | ---------------------------------------------------- |
+| `packages/agent/src/bash.ts`              | Tool definition, argument schema, and command policy |
+| `packages/agent/src/action-review.ts`     | Reviewer requests for Bash and MCP actions           |
+| `packages/agent/src/action-approval.ts`   | Owner approval requests                              |
+| `apps/cli/src/bash.ts`                    | The process runner                                   |
+| `packages/gateway/src/approvals.ts`       | Pending approvals in the gateway                     |
+| `packages/gateway/src/approval-format.ts` | Shared approval view model and Markdown formatting   |
 
 ## Arguments
 
@@ -69,16 +70,27 @@ run, but Bash stays available because each later command is reviewed again.
 ## Owner approval
 
 The gateway keeps pending approvals in memory for `timeouts.approvalSeconds`,
-two minutes by default. Bash
+two minutes by default, setting `expiresAt` before the prompt is sent. Bash
 commands and [reviewed MCP actions](mcp.md#reviewed-actions) share the same IDs.
 A request ends when it expires, when the run is cancelled, or when the worker
 restarts. An expired ID cannot come back.
 
-The approval prompt shows the exact invocation and the reviewer's reason. It
-escapes control characters and markup so both read as data. Every gateway
-accepts `/approve <id>` and `/deny <id>` as control messages. An adapter that
-implements the optional `approvals` capability also shows buttons and updates
-them with the outcome. Discord and Slack implement it. Telegram uses text only.
+`approval-format.ts` builds a structured view model and Markdown fallback for
+each request. It escapes control characters, bidi characters, and code fences so
+untrusted text stays data. Every gateway accepts `/approve <id>` and `/deny <id>`
+as control messages. An adapter that implements the optional `approvals`
+capability renders native controls and updates the prompt once settled:
+
+- Discord renders an amber embed with a live countdown (`<t:unix:R>`), **Approve
+  once** and **Deny** buttons, and a **Show details** button when truncated
+  (replying ephemerally or attaching `approval-details.json`). On settlement it
+  removes the buttons and updates the embed with the outcome and decider.
+- Slack renders structured Block Kit `mrkdwn` blocks with `<!date^...>` expiry
+  and the same buttons, replacing the buttons with a status context line once
+  settled.
+- Telegram renders HTML-formatted prompts with inline **Approve once**,
+  **Deny**, and (when truncated) **Show details** buttons, answering callback
+  queries and editing the message to remove buttons once settled.
 
 - Only the configured owner, in the same conversation, can answer.
 - The gateway checks access again before running the command.
@@ -97,6 +109,6 @@ For MCP actions, the journal records the owner's answer before dispatch.
 A scheduled run reviews each command against the saved prompt. A command that
 needs approval fails the occurrence at once. The run never waits and never posts
 an approval prompt. The worker logs the failure reason code, and `tasks show`
-keeps the full reason and the blocked invocation. Earlier commands in the run are
+keeps the full reason. Earlier commands in the run are
 not rolled back, and the recurring schedule stays active. A task with a messaging
 destination can post a [failure notice](tasks.md#failure-notices).

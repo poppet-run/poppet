@@ -1,5 +1,5 @@
 import { GatewayAdapter, GatewayError } from "@poppet/gateway";
-import type { IncomingMessage } from "@poppet/gateway";
+import type { ApprovalPrompt, IncomingMessage } from "@poppet/gateway";
 import { timeout, timeoutSeconds } from "@poppet/io";
 import {
   ChannelType,
@@ -15,7 +15,12 @@ import {
 import type { Message, MessageCreateOptions } from "discord.js";
 import { Deferred, Effect, Layer, Queue, Redacted, Stream } from "effect";
 
-import { approvalActions, approvalComponents } from "#src/approvals";
+import {
+  approvalActions,
+  approvalComponents,
+  approvalEmbed,
+  settledFallbackEmbed,
+} from "#src/approvals";
 import { downloadAttachment, incomingAttachments } from "#src/attachments";
 import type { DiscordSettings } from "#src/settings";
 
@@ -98,9 +103,16 @@ export const discordAdapterLayer = (
         connectionError = null;
       };
 
-      const actions = yield* approvalActions(client, settings, (error) => {
-        connectionError = error;
-      });
+      const prompts = new Map<string, ApprovalPrompt>();
+
+      const actions = yield* approvalActions(
+        client,
+        settings,
+        (error) => {
+          connectionError = error;
+        },
+        (requestId) => prompts.get(requestId),
+      );
 
       const requireReady = () => {
         if (!client.isReady()) {
@@ -329,7 +341,7 @@ export const discordAdapterLayer = (
           Effect.tapError(reportError),
         );
 
-      const send = (conversationId: string, text: string, nonce: string, requestId?: string) =>
+      const send = (conversationId: string, text: string, nonce: string) =>
         Effect.tryPromise({
           try: async () => {
             requireReady();
@@ -349,11 +361,35 @@ export const discordAdapterLayer = (
               allowedMentions: { parse: [], repliedUser: false },
             };
 
-            if (requestId) {
-              options.components = approvalComponents(requestId);
+            return (await target.send(options)).id;
+          },
+          catch: (cause) => discordFailure(cause, true),
+        });
+
+      const sendApproval = (conversationId: string, prompt: ApprovalPrompt, nonce: string) =>
+        Effect.tryPromise({
+          try: async () => {
+            requireReady();
+            const target = await guildChannel(conversationId);
+
+            if (target === null) {
+              throw new GatewayError({
+                reason: "permission",
+                message: "Discord text channel or thread is unavailable.",
+              });
             }
 
-            return (await target.send(options)).id;
+            const sent = await target.send({
+              embeds: [approvalEmbed(prompt)],
+              components: approvalComponents(prompt.requestId, prompt.truncated),
+              nonce,
+              enforceNonce: true,
+              allowedMentions: { parse: [], repliedUser: false },
+            });
+
+            prompts.set(prompt.requestId, prompt);
+
+            return sent.id;
           },
           catch: (cause) => discordFailure(cause, true),
         });
@@ -510,8 +546,8 @@ export const discordAdapterLayer = (
         send,
         approvals: {
           actions,
-          send,
-          update: (conversationId, messageId, requestId, state) =>
+          send: sendApproval,
+          update: (conversationId, messageId, requestId, state, settlement) =>
             Effect.tryPromise({
               try: async () => {
                 const botId = requireReady();
@@ -533,8 +569,16 @@ export const discordAdapterLayer = (
                   });
                 }
 
+                const saved = prompts.get(requestId);
+                prompts.delete(requestId);
+
+                const embed = saved
+                  ? approvalEmbed(saved, { state, ...(settlement && { settlement }) })
+                  : settledFallbackEmbed(prompt.embeds[0], state, settlement);
+
                 await prompt.edit({
-                  components: approvalComponents(requestId, state),
+                  embeds: [embed],
+                  components: [],
                   allowedMentions: { parse: [], repliedUser: false },
                 });
               },

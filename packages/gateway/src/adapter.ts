@@ -1,6 +1,8 @@
 import type { Effect, Stream } from "effect";
 import { Context, Data, Schema } from "effect";
 
+import type { ApprovalPrompt } from "#src/approval-format";
+
 export class GatewayError extends Data.TaggedError("GatewayError")<{
   readonly reason: "unavailable" | "permission" | "uncertain" | "configuration" | "overloaded";
   readonly message: string;
@@ -37,6 +39,11 @@ export interface GatewayPolicy {
 }
 
 export type ApprovalState = "approved" | "denied" | "expired" | "cancelled" | "unavailable";
+
+export interface ApprovalSettlement {
+  readonly senderId?: string;
+  readonly text: string;
+}
 
 export interface ApprovalAction {
   readonly requestId: string;
@@ -76,15 +83,15 @@ export class GatewayAdapter extends Context.Service<
       readonly actions: Stream.Stream<ApprovalAction, GatewayError>;
       readonly send: (
         conversationId: string,
-        text: string,
+        prompt: ApprovalPrompt,
         nonce: string,
-        requestId: string,
       ) => Effect.Effect<string, GatewayError>;
       readonly update: (
         conversationId: string,
         messageId: string,
         requestId: string,
         state: ApprovalState,
+        settlement?: ApprovalSettlement,
       ) => Effect.Effect<void, GatewayError>;
     };
     readonly status: Effect.Effect<Schema.JsonObject>;

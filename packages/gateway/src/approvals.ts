@@ -1,15 +1,25 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { AgentError, escapedApprovalJSON } from "@poppet/agent";
+import { AgentError } from "@poppet/agent";
 import type { ActionApproval, ApproveAction } from "@poppet/agent";
 import { timeoutSeconds } from "@poppet/io";
 import { StoreError } from "@poppet/store";
 import type { ToolApproval } from "@poppet/store";
 import { Cause, Clock, Deferred, Duration, Effect, Exit } from "effect";
 
-import type { ApprovalAction, ApprovalState, GatewayAdapter, IncomingMessage } from "#src/adapter";
+import type {
+  ApprovalAction,
+  ApprovalSettlement,
+  ApprovalState,
+  GatewayAdapter,
+  IncomingMessage,
+} from "#src/adapter";
+import {
+  formatApprovalMessages,
+  formatApprovalPrompt,
+  formatApprovalStatus,
+} from "#src/approval-format";
 import { authorized } from "#src/context";
-import { chunks } from "#src/replies";
 
 interface PendingApproval {
   readonly conversation: string;
@@ -19,6 +29,7 @@ interface PendingApproval {
   readonly ready: Deferred.Deferred<void>;
   promptId: string | null;
   expiresAt: number;
+  decidedBy?: string;
 }
 
 const missing =
@@ -57,68 +68,32 @@ export const actionApprovals = (adapter: GatewayAdapter["Service"]) => {
 
         yield* adapter.checkAccess(message, conversation);
 
-        const invocation =
-          approval.kind === "mcp"
-            ? approval.invocation
-            : escapedApprovalJSON({
-                command: approval.command,
-                cwd: approval.cwd,
-                timeoutSeconds: approval.timeoutSeconds,
-              });
-
-        const fields =
-          approval.kind === "mcp"
-            ? ([
-                ["Target", approval.target],
-                ["Expected effects", approval.effects],
-                ["Review reason", approval.reason],
-              ] as const)
-            : ([["Review reason", approval.reason]] as const);
-
-        const headingParts = [
-          approval.kind === "mcp" ? "MCP action approval required" : "Bash approval required",
-          ...fields.flatMap(([label, value]) =>
-            chunks(escapedApprovalJSON(value), adapter.textLimit - label.length - 4).map(
-              (part) => `${label}: \`${part}\``,
-            ),
-          ),
-          "Exact invocation:",
-        ];
-
-        const heading = headingParts.join("\n");
-        const details = `${heading} \`${invocation}\``;
         const expiresAfter = yield* timeoutSeconds("approvalSeconds");
+        entry.expiresAt = (yield* Clock.currentTimeMillis) + expiresAfter * 1000;
 
-        const expiry =
-          expiresAfter % 60 === 0
-            ? `${expiresAfter / 60} ${expiresAfter === 60 ? "minute" : "minutes"}`
-            : `${expiresAfter} seconds`;
+        const prompt = formatApprovalPrompt({
+          requestId: id,
+          approval,
+          expiresAt: entry.expiresAt,
+          expiresAfterSeconds: expiresAfter,
+        });
 
-        const controls = `Reply \`/approve ${id}\` or \`/deny ${id}\`. Expires in ${expiry}; permits one execution only.`;
+        if (adapter.approvals) {
+          const nonce = createHash("sha256").update(`${id}-0`).digest("hex").slice(0, 24);
+          entry.promptId = yield* adapter.approvals.send(conversation, prompt, nonce);
+        } else {
+          const parts = formatApprovalMessages(prompt, adapter.textLimit);
 
-        const parts =
-          `${details}\n${controls}`.length <= adapter.textLimit
-            ? [`${details}\n${controls}`]
-            : [
-                ...(heading.length <= adapter.textLimit ? [heading] : headingParts),
-                ...chunks(invocation, adapter.textLimit - 2).map((part) => `\`${part}\``),
-                controls,
-              ];
+          for (const [index, part] of parts.entries()) {
+            const nonce = createHash("sha256").update(`${id}-${index}`).digest("hex").slice(0, 24);
+            const sent = yield* adapter.send(conversation, part, nonce);
 
-        for (const [index, part] of parts.entries()) {
-          const nonce = createHash("sha256").update(`${id}-${index}`).digest("hex").slice(0, 24);
-          const last = index === parts.length - 1;
-
-          const sent = yield* last && adapter.approvals
-            ? adapter.approvals.send(conversation, part, nonce, id)
-            : adapter.send(conversation, part, nonce);
-
-          if (last) {
-            entry.promptId = sent;
+            if (index === parts.length - 1) {
+              entry.promptId = sent;
+            }
           }
         }
 
-        entry.expiresAt = (yield* Clock.currentTimeMillis) + expiresAfter * 1000;
         yield* Deferred.succeed(entry.ready, undefined);
 
         const answer = yield* Deferred.await(decision).pipe(
@@ -168,10 +143,18 @@ export const actionApprovals = (adapter: GatewayAdapter["Service"]) => {
                   ? "expired"
                   : "unavailable";
 
-            yield* adapter.approvals.update(conversation, entry.promptId, id, state).pipe(
-              Effect.timeout("5 seconds"),
-              Effect.catch(() => Effect.void),
-            );
+            const settlement: ApprovalSettlement = {
+              ...(entry.decidedBy !== undefined &&
+                (state === "approved" || state === "denied") && { senderId: entry.decidedBy }),
+              text: formatApprovalStatus(state),
+            };
+
+            yield* adapter.approvals
+              .update(conversation, entry.promptId, id, state, settlement)
+              .pipe(
+                Effect.timeout("5 seconds"),
+                Effect.catch(() => Effect.void),
+              );
           }),
         ),
       );
@@ -186,6 +169,7 @@ export const actionApprovals = (adapter: GatewayAdapter["Service"]) => {
       }
 
       pending.delete(id);
+      entry.decidedBy = source.senderId;
       yield* Deferred.succeed(entry.decision, {
         decision: approved ? "approved" : "denied",
         adapter: adapter.id,
