@@ -306,44 +306,6 @@ iterator's cleanup, so a pending network read cannot block cancellation. SDK
 retries are disabled. Shared adapter tests use injected HTTP responses and a test
 clock.
 
-## Conversation store
-
-`@poppet/store` exposes a scoped `Store` service through `StoreLive`. The CLI
-provides configuration through its store runtime layer; `store status` migrates the
-schema and reports counts without opening authentication services.
-
-`database.ts` protects `<data directory>/store`, acquires the process ownership
-lock, and opens one Effect SQL client on Bun SQLite with foreign keys, WAL, and full
-synchronous commits. Rows come back with camelCase names. Scope finalizers close
-SQLite before releasing ownership. Database files and WAL sidecars use owner-only
-permissions.
-
-`migrations.ts` provides `migrate`, which runs one package's migrations with
-Effect's SQL migrator and its own ledger table, refusing a ledger newer than the
-build. The store's baseline holds only conversation tables; memory, tasks, and
-gateway define and migrate their own when their layers start. The store layer
-also refuses databases it did not create.
-
-`schema.ts` defines session, message, run, and terminal-outcome records with
-Effect Schema. `service.ts` validates caller input, checks continuation identity
-before saving messages, and decodes rows on read. Table checks enforce valid run
-and tool-call states, runs take their provider and model from their
-session when read, and a partial unique index permits only one pending or
-running run per session. Services rely on these rules instead of repeating them.
-
-`queueRun` persists its pending run and input messages in one transaction.
-`startRun` accepts only pending work. Pending work can fail or be interrupted;
-successful completion requires a running run. `recordToolCalls`, `startToolCall`, and
-`finishToolCall` journal tool exchanges and their outcomes. `finishRun` atomically saves a successful response and assistant
-message, or records a failure/interruption reason. Read methods retain message
-order and provider continuation. The `Store` record API exposes no raw SQLite
-handle; repositories query the shared `SqlClient` that `StoreLive` also provides.
-
-A new owner marks unfinished runs interrupted with `process-exit`, preserving
-their inputs without replaying them. A hard crash releases the OS-held SQLite lock; the next owner replaces any
-leftover PID marker through the shared scoped lock helper. Credentials, facts, jobs, context
-assembly, and model execution are outside this store's record APIs.
-
 ## Current authentication flow
 
 `CredentialStoreLive` owns the shared storage lock while any of its builds in the
@@ -394,18 +356,6 @@ against the saved prompt and fails the occurrence if human approval is needed.
 
 Do not automatically retry a side effect whose completion is uncertain. Record
 its state and require an explicit retry. Database updates use transactions. Exactly-once external execution is not assumed.
-
-## Storage ownership lock
-
-`@poppet/credentials/lock` shares storage ownership between conversation storage,
-ChatGPT credentials, and API-key mutations. A small lock database uses
-[SQLite exclusive locking](https://www.sqlite.org/pragma.html#pragma_locking_mode),
-which remains held across transactions and is released by the OS after a crash.
-An atomic PID marker records the owner for diagnostics. Once the SQLite lock is
-acquired, a leftover regular marker is replaced without checking PID liveness,
-including when its PID has been reused. Invalid marker files fail closed. Lock
-databases are protected and are never removed while an owner might hold them.
-They contain no user credentials or records.
 
 ## Messaging gateway
 
