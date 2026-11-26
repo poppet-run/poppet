@@ -182,7 +182,7 @@ the model should ask about ambiguity rather than invent a recurring schedule.
 In messaging, scheduled results default to the home channel. Request delivery
 here to use the current thread, or local delivery to keep results on the machine.
 CLI chat creates tasks with local results. See [tasks](tasks.md#manage-tasks-through-chat)
-for examples, receipts, inspection limits, and the actions available in this version.
+for examples, receipts, inspection limits, and the available actions.
 
 Edits apply to the task's current definition; skip-next, snooze and run-now act
 on its current next execution, the pending occurrence if one exists or otherwise

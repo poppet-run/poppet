@@ -57,8 +57,7 @@ inputs before execution, then transition through running to completed, failed,
 or interrupted. Successful completion writes its assistant message and result
 in one transaction. The store validates continuation identity on write and read.
 It permits one pending or running run per session; different sessions can run at
-the same time. Store migration 2 replaced the earlier rule of one active run across
-all sessions.
+the same time.
 
 Store migration 3 adds the `attachments` table. A run's attachment bytes are saved
 in the same transaction as the user message that references them, keyed by
