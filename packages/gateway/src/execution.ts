@@ -134,7 +134,7 @@ const execute = (context: GatewayContext, execution: Execution, entry: Inbox) =>
             runId: entry.runId,
             attachments,
             approveAction: (request, recordAnswer) =>
-              approvals.request(entry.message, conversation, request, recordAnswer),
+              approvals.request(entry.message, conversation, entry.runId, request, recordAnswer),
             home: taskDestination(),
             here: taskDestination(conversation),
             destination: taskDestination,

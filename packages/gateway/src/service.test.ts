@@ -332,6 +332,92 @@ describe.concurrent("Gateway", () => {
     }
   });
 
+  test("when the worker stops with approvals pending, expires them on restart and answers late replies", async () => {
+    const updates: Array<{ messageId: string; requestId: string; state: ApprovalState }> = [];
+    const replies: Array<string> = [];
+
+    const f = await fixture({
+      approvals: {
+        actions: Stream.never,
+        send: () => Effect.die("Unexpected prompt"),
+        update: (_conversation, messageId, requestId, state) =>
+          Effect.sync(() => {
+            updates.push({ messageId, requestId, state });
+          }),
+      },
+    });
+
+    const prompted = "00000000-0000-4000-8000-000000000001";
+    const unsent = "00000000-0000-4000-8000-000000000002";
+
+    try {
+      await f.run(
+        Effect.gen(function* () {
+          const repo = yield* GatewayRepository;
+
+          for (const id of [prompted, unsent]) {
+            yield* repo.openApproval({
+              id,
+              adapter: "discord",
+              account: "bot",
+              conversationId: "thread",
+              parentId: "parent",
+              runId: `run-${id}`,
+              kind: "bash",
+              expiresAt: 120_000,
+            });
+          }
+
+          yield* repo.promptedApproval(prompted, "prompt-message");
+        }),
+      );
+      await f.run(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+          yield* gateway.recover;
+          expect(updates).toEqual([
+            { messageId: "prompt-message", requestId: prompted, state: "expired" },
+          ]);
+
+          yield* gateway.answerApproval({
+            requestId: prompted,
+            decision: "approve",
+            source: message("prompt-message", "thread"),
+            reply: (text) =>
+              Effect.sync(() => {
+                replies.push(text);
+              }),
+          });
+          yield* gateway.answerApproval({
+            requestId: prompted,
+            decision: "approve",
+            source: message("prompt-message", "other-thread"),
+            reply: (text) =>
+              Effect.sync(() => {
+                replies.push(text);
+              }),
+          });
+          expect(replies).toEqual([
+            "This approval has ended: Expired. Nothing was executed; request the operation again.",
+            expect.stringContaining("No matching pending approval"),
+          ]);
+
+          const sql = yield* SqlClient.SqlClient;
+          expect(yield* sql`SELECT id, state FROM gateway_approvals ORDER BY id`).toEqual([
+            { id: prompted, state: "expired" },
+            { id: unsent, state: "expired" },
+          ]);
+          expect(f.requests).toEqual([]);
+
+          yield* gateway.recover;
+          expect(updates).toHaveLength(1);
+        }),
+      );
+    } finally {
+      await f.close();
+    }
+  });
+
   test.each(
     ["text", "button"]
       .flatMap((transport) =>
@@ -615,7 +701,11 @@ describe.concurrent("Gateway", () => {
             revoked = false;
             yield* gateway.accept(message("replay", "thread", `/approve ${id}`));
             yield* gateway.answerApproval(click());
-            expect(replies.at(-1)).toStartWith("No matching pending approval");
+            expect(replies.at(-1)).toStartWith(
+              approved || action === "deny"
+                ? "This approval was already answered"
+                : "This approval has ended",
+            );
             expect(yield* gateway.processNext).toBe(false);
             expect(executed).toBe(approved ? 1 : 0);
           }),

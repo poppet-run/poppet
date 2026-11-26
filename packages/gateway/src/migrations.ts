@@ -70,4 +70,22 @@ export const gatewaySchema = packageSchema("gateway_migrations", {
       SELECT session_id, adapter FROM gateway_inbox WHERE occurrence_id IS NULL
     ) AS history WHERE sessions.id = history.session_id AND sessions.origin = 'chat'`,
   ],
+  "4_approvals": [
+    `CREATE TABLE gateway_approvals (
+      id TEXT PRIMARY KEY,
+      adapter TEXT NOT NULL,
+      account TEXT NOT NULL,
+      conversation_id TEXT NOT NULL,
+      parent_id TEXT NOT NULL,
+      run_id TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('bash', 'mcp')),
+      message_id TEXT,
+      state TEXT NOT NULL CHECK (state IN
+        ('pending', 'approved', 'denied', 'expired', 'cancelled', 'unavailable')),
+      expires_at INTEGER NOT NULL
+    ) STRICT`,
+
+    `CREATE INDEX pending_gateway_approvals ON gateway_approvals (adapter, account)
+      WHERE state = 'pending'`,
+  ],
 });

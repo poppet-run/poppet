@@ -14,6 +14,7 @@ import { Array, Clock, Context, Effect, Layer, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 
 import { GatewayError, IncomingMessage } from "#src/adapter";
+import type { ApprovalState } from "#src/adapter";
 import { gatewaySchema } from "#src/migrations";
 import { isControl } from "#src/request";
 
@@ -61,6 +62,27 @@ const Binding = Schema.Struct({
   namingDisabled: Schema.BooleanFromBit,
   creationMessageId: Schema.NullOr(Schema.String),
 });
+
+export interface OpenApproval {
+  readonly id: string;
+  readonly adapter: string;
+  readonly account: string;
+  readonly conversationId: string;
+  readonly parentId: string;
+  readonly runId: string;
+  readonly kind: "bash" | "mcp";
+  readonly expiresAt: number;
+}
+
+const SavedApproval = Schema.Struct({
+  id: Schema.String,
+  conversationId: Schema.String,
+  parentId: Schema.String,
+  messageId: Schema.NullOr(Schema.String),
+  state: Schema.Literals(["pending", "approved", "denied", "expired", "cancelled", "unavailable"]),
+});
+
+export type SavedApproval = typeof SavedApproval.Type;
 
 const gatewayFailure = (cause: unknown) =>
   cause instanceof GatewayError
@@ -466,6 +488,31 @@ const repository = Effect.gen(function* () {
             AND inbox_id IN (SELECT id FROM gateway_inbox
               WHERE adapter = ${adapter} AND account = ${account})`;
         }),
+      ),
+    ),
+    openApproval: operation((approval: OpenApproval) =>
+      sql`INSERT INTO gateway_approvals ${sql.insert({ ...approval, state: "pending" })}`.pipe(
+        Effect.asVoid,
+      ),
+    ),
+    promptedApproval: operation((id: string, messageId: string) =>
+      sql`UPDATE gateway_approvals SET message_id = ${messageId} WHERE id = ${id}`.pipe(
+        Effect.asVoid,
+      ),
+    ),
+    settleApproval: operation((id: string, state: ApprovalState) =>
+      sql`UPDATE gateway_approvals SET state = ${state}
+        WHERE id = ${id} AND state = 'pending'`.pipe(Effect.asVoid),
+    ),
+    approval: operation((id: string) =>
+      sql`SELECT id, conversation_id, parent_id, message_id, state FROM gateway_approvals
+        WHERE id = ${id}`.pipe(decodeRow(SavedApproval)),
+    ),
+    expireApprovals: operation((adapter: string, account: string) =>
+      sql`UPDATE gateway_approvals SET state = 'expired'
+        WHERE adapter = ${adapter} AND account = ${account} AND state = 'pending'
+        RETURNING id, conversation_id, parent_id, message_id, state`.pipe(
+        decodeRows(SavedApproval),
       ),
     ),
     status: operation(() =>

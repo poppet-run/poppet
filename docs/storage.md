@@ -51,7 +51,7 @@ migrator records IDs only, so it cannot detect an edited migration.
 | `@poppet/store`   | `store/src/migrations/`                  | `sessions`, `runs`, `messages`, `tool_calls`, `attachments`, `session_search`, and the `searchable_messages` view |
 | `@poppet/memory`  | `memory/src/migrations.ts`               | `memory_revisions` and the `memories` view                                                                        |
 | `@poppet/tasks`   | `tasks/src/migrations.ts`                | `jobs`, `job_occurrences`, `job_skips`, `job_provider_pauses`, `job_notes`                                        |
-| `@poppet/gateway` | `gateway/src/migrations.ts`              | `gateway_bindings`, `gateway_inbox`, `gateway_deliveries`                                                         |
+| `@poppet/gateway` | `gateway/src/migrations.ts`              | `gateway_bindings`, `gateway_inbox`, `gateway_deliveries`, `gateway_approvals`                                    |
 | Web chat          | `apps/cli/src/commands/web-chat/chat.ts` | `web_chat_submissions`                                                                                            |
 
 The store migrates its own tables first. Each other package migrates when its
@@ -154,7 +154,10 @@ was turned off. `gateway_inbox` is the durable request queue.
 `gateway_deliveries` holds reply and scheduled result chunks. A unique
 `(occurrence_id, run_id)` index stops duplicate scheduled entries and still lets
 a successful retry deliver. Delivery state is independent of task execution, so
-queued replies survive clearing tasks. See [gateways](gateways.md).
+queued replies survive clearing tasks. Gateway migration 4 added
+`gateway_approvals`, one row per [owner approval](commands.md#owner-approval)
+request with its conversation, run ID, prompt message ID, state, and expiry. See
+[gateways](gateways.md).
 
 ## Session deletion
 

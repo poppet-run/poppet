@@ -69,11 +69,17 @@ run, but Bash stays available because each later command is reviewed again.
 
 ## Owner approval
 
-The gateway keeps pending approvals in memory for `timeouts.approvalSeconds`,
-two minutes by default, setting `expiresAt` before the prompt is sent. Bash
-commands and [reviewed MCP actions](mcp.md#reviewed-actions) share the same IDs.
-A request ends when it expires, when the run is cancelled, or when the worker
-restarts. An expired ID cannot come back.
+The gateway waits for an answer in memory for `timeouts.approvalSeconds`, two
+minutes by default, setting `expiresAt` before the prompt is sent. Bash commands
+and [reviewed MCP actions](mcp.md#reviewed-actions) share the same IDs. A request
+ends when it expires, when the run is cancelled, or when the worker restarts. An
+expired ID cannot come back.
+
+`gateway_approvals` records each request before its prompt is sent, with its
+conversation, run, prompt message, and final state. When a gateway starts, it
+marks requests left pending by an earlier worker as expired and updates their
+native prompts to say so, best effort. A late answer to a known request gets a
+reply that says how it ended instead of "No matching pending approval".
 
 `approval-format.ts` builds a structured view model and Markdown fallback for
 each request. It escapes control characters, bidi characters, and code fences so
