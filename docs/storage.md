@@ -46,13 +46,13 @@ migrations keyed `<id>_<name>`, one SQL statement per array entry. `migrate` in
 migrator in a single transaction, so a failure rolls back the batch. The
 migrator records IDs only, so it cannot detect an edited migration.
 
-| Package           | Defined in                               | Tables                                                                                                            |
-| ----------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `@poppet/store`   | `store/src/migrations/`                  | `sessions`, `runs`, `messages`, `tool_calls`, `attachments`, `session_search`, and the `searchable_messages` view |
-| `@poppet/memory`  | `memory/src/migrations.ts`               | `memory_revisions` and the `memories` view                                                                        |
-| `@poppet/tasks`   | `tasks/src/migrations.ts`                | `jobs`, `job_occurrences`, `job_skips`, `job_provider_pauses`, `job_notes`                                        |
-| `@poppet/gateway` | `gateway/src/migrations.ts`              | `gateway_bindings`, `gateway_inbox`, `gateway_deliveries`, `gateway_approvals`                                    |
-| Web chat          | `apps/cli/src/commands/web-chat/chat.ts` | `web_chat_submissions`                                                                                            |
+| Package           | Defined in                               | Tables                                                                                                                         |
+| ----------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `@poppet/store`   | `store/src/migrations/`                  | `sessions`, `runs`, `messages`, `tool_calls`, `attachments`, `approvals`, `session_search`, and the `searchable_messages` view |
+| `@poppet/memory`  | `memory/src/migrations.ts`               | `memory_revisions` and the `memories` view                                                                                     |
+| `@poppet/tasks`   | `tasks/src/migrations.ts`                | `jobs`, `job_occurrences`, `job_skips`, `job_provider_pauses`, `job_notes`                                                     |
+| `@poppet/gateway` | `gateway/src/migrations.ts`              | `gateway_bindings`, `gateway_inbox`, `gateway_deliveries`, `gateway_approvals`                                                 |
+| Web chat          | `apps/cli/src/commands/web-chat/chat.ts` | `web_chat_submissions`                                                                                                         |
 
 The store migrates its own tables first. Each other package migrates when its
 layer starts. The gateway migrates the task schema first, because it reads
@@ -95,9 +95,35 @@ Table checks define valid states, and services rely on them:
 - A partial unique index allows one pending or running run per session. Other
   sessions run at the same time.
 - Runs read their provider and model from the session.
+- A running run with a pending approval reads as `waiting`. See
+  [approvals](#approvals).
 
-A new owner marks unfinished runs interrupted with `process-exit`. Their inputs
-stay, and nothing replays them.
+A new owner marks unfinished runs interrupted with `process-exit`, except waiting
+runs and their calls, which stay so the run can resume. Inputs stay, and nothing
+replays them.
+
+## Approvals
+
+Store migration 7 added `approvals`, one row per tool call that waits for the
+owner. A row holds the kind (`bash` or `mcp`), the request shown to the owner, a
+digest of the call's name and arguments, the requester's route, the state, the
+expiry, and the decision. One approval per run can be pending.
+
+- `parkRun` saves a pending approval for a pending call whose review is
+  `needs_approval` with no answer yet. The run then reads as `waiting`, keeps its
+  session busy, and cannot start or record tool calls.
+- `decideApproval` settles a pending, unexpired approval with one guarded update
+  and saves the answer in the call's review in the same transaction. A later or
+  late answer gets `null`, so the first answer wins across processes and
+  restarts. The run then reads as `running` again.
+- `expireApprovals` expires overdue approvals and fails their runs with
+  `agent:command-approval-required` or `agent:mcp-approval-required`. Their calls
+  become interrupted.
+- Finishing a waiting run as failed or interrupted cancels its approval.
+
+The stored run status stays `running` while it waits. Widening the `runs` check
+would need a table rebuild, which would drop the triggers other packages put on
+`runs`.
 
 ## Tool call journal
 
@@ -169,8 +195,9 @@ missing or any session has a reply in progress. `chat prune --days <n>` (1 to 36
 sessions with a reply in progress. Renaming is not activity. Both go through the
 worker when it owns storage.
 
-Deleting a session removes its search entries, tool calls, messages,
-attachments, runs, and the session in one transaction. Each package detaches its
+Deleting a session removes its search entries, approvals, tool calls, messages,
+attachments, runs, and the session in one transaction. A waiting run counts as a
+reply in progress. Each package detaches its
 own references through `BEFORE DELETE` triggers from its migrations:
 
 | Migration  | Trigger effect                                 |

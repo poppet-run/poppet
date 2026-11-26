@@ -52,6 +52,7 @@ export const sessionOperations = (sql: SqlClient.SqlClient, records: StoreRecord
 
       yield* sql`DELETE FROM session_search
         WHERE rowid IN (SELECT id FROM messages WHERE ${sessions})`;
+      yield* sql`DELETE FROM approvals WHERE run_id IN (${runs})`;
       yield* sql`DELETE FROM tool_calls WHERE run_id IN (${runs})`;
       yield* sql`DELETE FROM messages WHERE ${sessions}`;
       yield* sql`DELETE FROM attachments WHERE ${sessions}`;

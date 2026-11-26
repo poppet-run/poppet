@@ -3,6 +3,7 @@ import type { Message as ModelMessage } from "@poppet/provider";
 import { Clock, Context, Effect, Layer, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 
+import { approvalOperations } from "#src/approvals";
 import { StoreDatabase, StoreDatabaseLive } from "#src/database";
 import type { StoreError } from "#src/errors";
 import { reportAs, storeFailure } from "#src/errors";
@@ -11,6 +12,8 @@ import { readSession } from "#src/recall";
 import { storeRecords } from "#src/records";
 import { runOperations } from "#src/runs";
 import type {
+  Approval,
+  NewApproval,
   Run,
   RunOutcome,
   Session,
@@ -25,6 +28,7 @@ import type {
   SessionSearchResult,
   SessionReadQuery,
   SessionReadResult,
+  ToolApproval,
   ToolReview,
   StoreStatus,
 } from "#src/schema";
@@ -102,6 +106,20 @@ export interface StoreOperations {
     review: ToolReview,
   ) => Effect.Effect<void, StoreError>;
   readonly startToolCall: (runId: string, callId: string) => Effect.Effect<void, StoreError>;
+  // Saves a pending approval for a call whose review needs the owner, so the run waits.
+  readonly parkRun: (
+    runId: string,
+    callId: string,
+    approval: NewApproval,
+  ) => Effect.Effect<Approval, StoreError>;
+  readonly approval: (id: string) => Effect.Effect<Approval | null, StoreError>;
+  // Settles a pending, unexpired approval once. Returns null when it is no longer open.
+  readonly decideApproval: (
+    id: string,
+    answer: ToolApproval,
+  ) => Effect.Effect<Approval | null, StoreError>;
+  // Expires overdue approvals and fails their runs.
+  readonly expireApprovals: Effect.Effect<ReadonlyArray<Approval>, StoreError>;
   readonly finishToolCall: (
     runId: string,
     callId: string,
@@ -124,6 +142,10 @@ export const StoreLive = Layer.effect(
     const records = storeRecords(sql);
     const { transaction } = records;
 
+    // Waiting runs and their calls survive a new owner, which can still resume them.
+    const parked = (column: string) =>
+      sql`${sql(column)} NOT IN (SELECT run_id FROM approvals WHERE state = 'pending')`;
+
     yield* transaction(
       Effect.gen(function* () {
         const at = yield* Clock.currentTimeMillis;
@@ -132,12 +154,12 @@ export const StoreLive = Layer.effect(
           SET status = CASE WHEN status = 'running' THEN 'uncertain' ELSE 'interrupted' END,
             finished_at = MAX(created_at, COALESCE(started_at, 0), ${at}),
             failure_reason = 'process-exit'
-          WHERE status IN ('pending', 'running')`;
+          WHERE status IN ('pending', 'running') AND ${parked("run_id")}`;
 
         yield* sql`UPDATE runs SET status = 'interrupted',
             finished_at = MAX(created_at, COALESCE(started_at, 0), ${at}),
             failure_reason = 'process-exit'
-          WHERE status IN ('pending', 'running')`;
+          WHERE status IN ('pending', 'running') AND ${parked("id")}`;
       }),
     );
 
@@ -145,6 +167,7 @@ export const StoreLive = Layer.effect(
       ...sessionOperations(sql, records),
       ...runOperations(sql, records),
       ...toolCallOperations(sql, records),
+      ...approvalOperations(sql, records),
       searchSessions: (query, maxBytes) =>
         searchSessions(sql, query, maxBytes).pipe(reportAs(storeFailure)),
       readSession: (query, maxBytes) =>

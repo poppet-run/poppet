@@ -140,7 +140,10 @@ export const runOperations = (sql: SqlClient.SqlClient, records: StoreRecords) =
 
         if (
           run.status !== "running" &&
-          !(run.status === "pending" && terminal.status !== "completed")
+          !(
+            (run.status === "pending" || run.status === "waiting") &&
+            terminal.status !== "completed"
+          )
         ) {
           return yield* conflict(
             "Only an active run can be finished; completion requires a running run.",
@@ -150,6 +153,8 @@ export const runOperations = (sql: SqlClient.SqlClient, records: StoreRecords) =
         const finishedAt = Math.max(at, run.createdAt, run.startedAt ?? 0);
 
         if (terminal.status !== "completed") {
+          yield* sql`UPDATE approvals SET state = 'cancelled', decided_at = ${finishedAt}
+              WHERE run_id = ${id} AND state = 'pending'`;
           yield* interruptTools(id, finishedAt, terminal.reason);
           yield* sql`UPDATE runs SET status = ${terminal.status}, finished_at = ${finishedAt},
               failure_reason = ${terminal.reason} WHERE id = ${id}`;
