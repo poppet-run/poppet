@@ -162,7 +162,7 @@ const prepareExternal = (entry: ExternalTool, call: ToolCall, context: ToolConte
               return yield* Effect.fail(
                 new AgentError({
                   reason: "mcp-approval-required",
-                  message: `MCP action needs approval: ${result.reason}. Nothing was executed. ${context.origin === "scheduled" ? "This occurrence has stopped." : "Request this operation in Discord or Slack to approve it."}`,
+                  message: `MCP action needs approval: ${result.reason}. Nothing was executed. ${context.origin === "scheduled" ? "This occurrence has stopped." : "Retry in a messaging conversation that supports approvals."}`,
                 }),
               );
             }

@@ -4,9 +4,20 @@ export {
   IncomingAttachment,
   IncomingMessage,
   type ApprovalAction,
+  type ApprovalSettlement,
   type ApprovalState,
   type GatewayPolicy,
 } from "#src/adapter";
+
+export {
+  formatApprovalDuration,
+  formatApprovalPrompt,
+  formatApprovalStatus,
+  type ApprovalArgument,
+  type ApprovalCodeBlock,
+  type ApprovalField,
+  type ApprovalPrompt,
+} from "#src/approval-format";
 
 export { GatewayEnvironment, GatewayInput, type GatewayRegistration } from "#src/registration";
 

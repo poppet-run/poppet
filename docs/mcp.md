@@ -122,9 +122,9 @@ description and input schema. The escaped invocation is limited to 8 KiB and the
 JSON-encoded owner message to 32 KiB. Larger requests fail before dispatch.
 
 The journal records the decision on the pending call. Only an allowed or
-owner-approved call reaches dispatch. Approval prompts show the target, the
-expected effects, the reason, and the exact invocation. See
-[owner approval](commands.md#owner-approval).
+owner-approved call reaches dispatch. Approval prompts show the server, tool,
+target, expected effects, reason, and arguments, with long values truncated
+behind **Show details**. See [owner approval](commands.md#owner-approval).
 
 The HTTP transport binds the prepared sign-in and permits one POST for a reviewed
 call. A redirect or an authorization challenge stops dispatch without a resend.

@@ -8,12 +8,13 @@ has no SDK dependency and needs no public webhook. The
 [user guide](https://poppet.run/docs/gateways/telegram/) covers bot setup. See
 [gateways](../gateways.md) for the shared contract.
 
-| Module            | Owns                                                       |
-| ----------------- | ---------------------------------------------------------- |
-| `registration.ts` | The registration entry                                     |
-| `settings.ts`     | `channels/telegram.json` and conversation ID parsing       |
-| `api.ts`          | Bot API calls and error mapping                            |
-| `adapter.ts`      | Polling, conversations, sends, reactions, and topic naming |
+| Module            | Owns                                                        |
+| ----------------- | ----------------------------------------------------------- |
+| `registration.ts` | The registration entry                                      |
+| `settings.ts`     | `channels/telegram.json` and conversation ID parsing        |
+| `api.ts`          | Bot API calls and error mapping                             |
+| `approvals.ts`    | HTML approval prompts, inline buttons, and callback queries |
+| `adapter.ts`      | Polling, conversations, sends, reactions, and topic naming  |
 
 ## Settings
 
@@ -34,8 +35,9 @@ The gateway serves one configured chat and one owner.
 Conversation IDs are the chat ID, or `<chat-id>:<topic-id>` for a forum topic.
 The adapter strips `@BotName` mentions and command suffixes such as
 `/status@BotName` before the gateway sees the text, so the shared controls work
-unchanged. Approvals are text only. Progress shows 👀 while working and 👍 when
-finished.
+unchanged. Approval prompts use HTML formatting with inline **Approve once**,
+**Deny**, and (when truncated) **Show details** buttons, removing the buttons on
+settlement. Progress shows 👀 while working and 👍 when finished.
 
 ## Topic names
 

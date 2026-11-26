@@ -2,7 +2,7 @@ import { isAbsolute } from "node:path";
 
 import { toolParameters } from "@poppet/provider";
 import type { ModelOperations } from "@poppet/provider";
-import type { Run, StoreError } from "@poppet/store";
+import type { Run } from "@poppet/store";
 import { Context, Effect, Option, Schema } from "effect";
 
 import { BashReview, reviewAction } from "#src/action-review";
@@ -128,14 +128,6 @@ const prepareBash = (
   Effect.gen(function* () {
     const request = yield* toolArguments(bashDefinition, Arguments)(call.arguments);
 
-    const explainFailure = (error: AgentError | StoreError) =>
-      error instanceof AgentError && error.reason.startsWith("command-")
-        ? new AgentError({
-            reason: error.reason,
-            message: `${error.message}\nInvocation: ${JSON.stringify(request)}`,
-          })
-        : error;
-
     return {
       authorize: () =>
         Effect.gen(function* () {
@@ -155,7 +147,7 @@ const prepareBash = (
               return yield* Effect.fail(
                 new AgentError({
                   reason: "command-approval-required",
-                  message: `Command needs approval: ${review.reason}. Nothing was executed. ${origin === "scheduled" ? "This occurrence has stopped." : "Request this operation in Discord or Slack to approve it."}`,
+                  message: `Command needs approval: ${review.reason}. Nothing was executed. ${origin === "scheduled" ? "This occurrence has stopped." : "Retry in a messaging conversation that supports approvals."}`,
                 }),
               );
             }
@@ -172,7 +164,6 @@ const prepareBash = (
 
           return {
             execute: Effect.suspend(() => runner.run(request, Math.max(128, maxBytes - 128))).pipe(
-              Effect.mapError(explainFailure),
               Effect.map((result) =>
                 JSON.stringify({
                   status: "completed",
@@ -182,7 +173,7 @@ const prepareBash = (
               ),
             ),
           };
-        }).pipe(Effect.mapError(explainFailure)),
+        }),
     } satisfies ReviewableCall;
   });
 

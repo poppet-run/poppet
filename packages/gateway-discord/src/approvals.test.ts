@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { setImmediate } from "node:timers/promises";
 
-import { GatewayAdapter } from "@poppet/gateway";
+import { formatApprovalPrompt, GatewayAdapter } from "@poppet/gateway";
 import {
   ButtonInteraction,
   ChannelType,
@@ -26,6 +26,32 @@ const settings = {
   token: Redacted.make("secret"),
 };
 
+const bashPrompt = formatApprovalPrompt({
+  requestId: id,
+  approval: {
+    kind: "bash",
+    command: "ls",
+    cwd: "/tmp",
+    timeoutSeconds: 10,
+    reason: "List files",
+  },
+  expiresAt: 1_700_000_120_000,
+  expiresAfterSeconds: 120,
+});
+
+const longPrompt = formatApprovalPrompt({
+  requestId: id,
+  approval: {
+    kind: "bash",
+    command: "echo hello\n".repeat(300),
+    cwd: "/tmp",
+    timeoutSeconds: 10,
+    reason: "Print many lines",
+  },
+  expiresAt: 1_700_000_120_000,
+  expiresAfterSeconds: 120,
+});
+
 const fixture = () => {
   const client = new Client({ intents: [] });
   Object.defineProperty(client, "user", { value: user });
@@ -49,7 +75,7 @@ const fixture = () => {
     channel_id: "400",
     guild_id: "500",
     author: user,
-    content: "Exact invocation",
+    content: "",
     mentions: [],
     mention_roles: [],
     attachments: [],
@@ -170,7 +196,7 @@ const fixture = () => {
 };
 
 describe("Discord approval components", () => {
-  test("sends both buttons and disables the controls on settlement without changing the invocation", async () => {
+  test("when sending and settling an approval, renders an amber embed with live countdown and removes buttons on settlement", async () => {
     const f = fixture();
 
     try {
@@ -178,17 +204,29 @@ describe("Discord approval components", () => {
         Effect.gen(function* () {
           const channel = yield* GatewayAdapter;
           yield* channel.accountId;
-          expect(yield* channel.approvals!.send("400", "Exact invocation", "nonce", id)).toBe(
-            "600",
-          );
+          expect(yield* channel.approvals!.send("400", bashPrompt, "nonce")).toBe("600");
           expect(f.post).toHaveBeenCalledWith(
             "/channels/400/messages",
             expect.objectContaining({
               body: expect.objectContaining({
-                content: "Exact invocation",
                 nonce: "nonce",
                 enforce_nonce: true,
                 allowed_mentions: { parse: [], replied_user: false },
+                embeds: [
+                  expect.objectContaining({
+                    color: 0xe3_a0_08,
+                    title: "Bash approval required",
+                    description: expect.stringContaining("```sh\nls\n```"),
+                    fields: expect.arrayContaining([
+                      { name: "Working directory", value: "`/tmp`", inline: true },
+                      { name: "Timeout", value: "10 seconds", inline: true },
+                      { name: "Expires", value: "<t:1700000120:R>", inline: true },
+                    ]),
+                    footer: {
+                      text: "Permits one execution only",
+                    },
+                  }),
+                ],
                 components: [
                   {
                     type: 1,
@@ -206,29 +244,28 @@ describe("Discord approval components", () => {
               }),
             }),
           );
-          yield* channel.approvals!.update("400", "600", id, "approved");
+          yield* channel.approvals!.update("400", "600", id, "approved", {
+            senderId: owner.id,
+            text: "Approved once",
+          });
           expect(f.patch).toHaveBeenLastCalledWith(
             "/channels/400/messages/600",
             expect.objectContaining({
               body: expect.objectContaining({
-                components: [
-                  {
-                    type: 1,
-                    components: [
-                      {
-                        type: 2,
-                        custom_id: `poppet:approval:approve:${id}`,
-                        label: "Approved once",
-                        style: 3,
-                        disabled: true,
-                      },
-                    ],
-                  },
+                components: [],
+                allowed_mentions: { parse: [], replied_user: false },
+                embeds: [
+                  expect.objectContaining({
+                    color: 0x22_c5_5e,
+                    title: "Bash approval required",
+                    fields: expect.arrayContaining([
+                      { name: "Status", value: `Approved by <@${owner.id}>`, inline: false },
+                    ]),
+                  }),
                 ],
               }),
             }),
           );
-          expect(f.patch.mock.calls[0]![1]!.body).toHaveProperty("content", undefined);
           f.prompt.author = owner;
           expect(
             yield* channel.approvals!.update("400", "600", id, "expired").pipe(Effect.result),
@@ -241,7 +278,69 @@ describe("Discord approval components", () => {
     }
   });
 
-  test("filters invalid clicks and privately acknowledges valid buttons before channel lookup", async () => {
+  test("when a prompt is truncated, includes a Show details button that replies with a json attachment", async () => {
+    const f = fixture();
+
+    try {
+      await f.run(
+        Effect.gen(function* () {
+          const channel = yield* GatewayAdapter;
+          yield* channel.accountId;
+          expect(yield* channel.approvals!.send("400", longPrompt, "nonce")).toBe("600");
+          expect(f.post).toHaveBeenCalledWith(
+            "/channels/400/messages",
+            expect.objectContaining({
+              body: expect.objectContaining({
+                components: [
+                  {
+                    type: 1,
+                    components: [
+                      expect.objectContaining({ custom_id: `poppet:approval:approve:${id}` }),
+                      expect.objectContaining({ custom_id: `poppet:approval:deny:${id}` }),
+                      {
+                        type: 2,
+                        custom_id: `poppet:approval:details:${id}`,
+                        label: "Show details",
+                        style: 2,
+                      },
+                    ],
+                  },
+                ],
+              }),
+            }),
+          );
+
+          f.client.emit(
+            Events.InteractionCreate,
+            f.interaction("7010", {
+              data: {
+                custom_id: `poppet:approval:details:${id}`,
+                component_type: ComponentType.Button,
+              },
+            }),
+          );
+          yield* Effect.promise(() => setImmediate());
+          expect(f.post).toHaveBeenCalledWith(
+            "/interactions/7010/token/callback",
+            expect.objectContaining({
+              files: [expect.objectContaining({ name: "approval-details.json" })],
+              body: expect.objectContaining({
+                type: 4,
+                data: expect.objectContaining({
+                  flags: MessageFlags.Ephemeral,
+                  content: "Full canonical approval payload:",
+                }),
+              }),
+            }),
+          );
+        }),
+      );
+    } finally {
+      f.close();
+    }
+  });
+
+  test("when invalid clicks arrive, filters them and privately acknowledges valid buttons before channel lookup", async () => {
     const f = fixture();
 
     try {

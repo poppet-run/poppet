@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
+import { formatApprovalPrompt } from "@poppet/gateway";
 import { Redacted } from "effect";
 
-import { approvalBlocks, approvalClick } from "#src/approvals";
+import { approvalBlocks, approvalClick, approvalDetailsBlocks } from "#src/approvals";
 
 const id = "a1234567-1234-1234-1234-123456789012";
 
@@ -14,6 +15,19 @@ const settings = {
   appToken: Redacted.make("app"),
 };
 
+const bashPrompt = formatApprovalPrompt({
+  requestId: id,
+  approval: {
+    kind: "bash",
+    command: "ls -la",
+    cwd: "/tmp",
+    timeoutSeconds: 10,
+    reason: "List <files> & folders",
+  },
+  expiresAt: 1_700_000_120_000,
+  expiresAfterSeconds: 120,
+});
+
 const body = {
   type: "block_actions" as const,
   team: { id: "T123" },
@@ -24,9 +38,37 @@ const body = {
 };
 
 describe("approvalBlocks", () => {
-  test("when pending, offers approve and deny buttons for the request", () => {
-    const blocks = approvalBlocks("Exact invocation", id);
+  test("when pending, renders structured mrkdwn blocks, Slack date expiry, and approve/deny buttons", () => {
+    const blocks = approvalBlocks(bashPrompt);
 
+    expect(blocks[0]).toEqual({
+      type: "header",
+      text: { type: "plain_text", text: "Bash approval required", emoji: false },
+    });
+    expect(blocks[1]).toEqual({
+      type: "section",
+      text: { type: "mrkdwn", text: "*Reason:* List &lt;files&gt; &amp; folders" },
+    });
+    expect(blocks[2]).toEqual({
+      type: "section",
+      text: { type: "mrkdwn", text: "*Command*\n```\nls -la\n```" },
+    });
+    expect(blocks[3]).toEqual({
+      type: "section",
+      fields: [
+        { type: "mrkdwn", text: "*Working directory*\n`/tmp`" },
+        { type: "mrkdwn", text: "*Timeout*\n10 seconds" },
+      ],
+    });
+    expect(blocks[4]).toEqual({
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: "Expires <!date^1700000120^{ago}|in 2 minutes> · Permits one execution only",
+        },
+      ],
+    });
     expect(blocks.at(-1)).toMatchObject({
       type: "actions",
       elements: [
@@ -36,26 +78,52 @@ describe("approvalBlocks", () => {
     });
   });
 
-  test("when settled, replaces the buttons with the outcome and keeps the invocation", () => {
-    const blocks = approvalBlocks("Exact <invocation>", id, "expired");
+  test("when settled, replaces the buttons with a status context line and mentions the approver", () => {
+    const blocks = approvalBlocks(bashPrompt, {
+      state: "approved",
+      settlement: { senderId: "U123", text: "Approved once" },
+    });
 
-    expect(blocks).toEqual([
-      {
-        type: "section",
-        text: { type: "plain_text", text: "Exact &lt;invocation&gt;", emoji: false },
-      },
-      { type: "context", elements: [{ type: "mrkdwn", text: "Expired" }] },
-    ]);
+    expect(blocks.some((block) => block.type === "actions")).toBe(false);
+    expect(blocks.at(-1)).toEqual({
+      type: "context",
+      elements: [{ type: "mrkdwn", text: ":white_check_mark: Approved by <@U123>" }],
+    });
   });
 
-  test("when escaping expands a long invocation, keeps every section within Slack's limit", () => {
-    const blocks = approvalBlocks("&".repeat(3000), id);
+  test("when truncated, adds a Show details button and keeps details blocks within Slack's limit", () => {
+    const longPrompt = formatApprovalPrompt({
+      requestId: id,
+      approval: {
+        kind: "bash",
+        command: "&".repeat(2000),
+        cwd: "/tmp",
+        timeoutSeconds: 10,
+        reason: "Long command",
+      },
+      expiresAt: 1_700_000_120_000,
+      expiresAfterSeconds: 120,
+    });
 
-    const lengths = blocks.flatMap((block) =>
+    const blocks = approvalBlocks(longPrompt);
+    const actionsBlock = blocks.at(-1);
+
+    expect(actionsBlock).toMatchObject({
+      type: "actions",
+      elements: [
+        expect.objectContaining({ action_id: `poppet:approval:approve:${id}` }),
+        expect.objectContaining({ action_id: `poppet:approval:deny:${id}` }),
+        { type: "button", action_id: `poppet:approval:details:${id}` },
+      ],
+    });
+
+    const detailSections = approvalDetailsBlocks(longPrompt.canonicalPayload);
+
+    const lengths = detailSections.flatMap((block) =>
       block.type === "section" ? [block.text?.text.length ?? 0] : [],
     );
 
-    expect(lengths).toHaveLength(5);
+    expect(lengths.length).toBeGreaterThan(1);
     expect(Math.max(...lengths)).toBeLessThanOrEqual(3000);
   });
 });
@@ -76,6 +144,22 @@ describe("approvalClick", () => {
         text: "",
         mentioned: false,
       },
+    });
+  });
+
+  test("when the owner clicks Show details, returns a details action", () => {
+    expect(
+      approvalClick(
+        { ...body, actions: [{ action_id: `poppet:approval:details:${id}` }] },
+        settings,
+        "U999",
+      ),
+    ).toEqual({
+      kind: "details",
+      requestId: id,
+      channel: "C123",
+      user: "U123",
+      thread: "100.001",
     });
   });
 

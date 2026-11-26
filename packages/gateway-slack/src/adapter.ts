@@ -1,12 +1,23 @@
-import { boundedAttachment, GatewayAdapter, GatewayError } from "@poppet/gateway";
-import type { ApprovalAction, IncomingMessage } from "@poppet/gateway";
+import {
+  boundedAttachment,
+  formatApprovalStatus,
+  GatewayAdapter,
+  GatewayError,
+} from "@poppet/gateway";
+import type { ApprovalAction, ApprovalPrompt, IncomingMessage } from "@poppet/gateway";
 import { timeout, timeoutSeconds } from "@poppet/io";
 import { SocketModeClient } from "@slack/socket-mode";
 import { ErrorCode, WebClient } from "@slack/web-api";
 import type { ChatPostMessageArguments } from "@slack/web-api";
 import { Deferred, Effect, Exit, Layer, Queue, Redacted, Schema, Stream } from "effect";
 
-import { ActionBody, approvalBlocks, approvalClick } from "#src/approvals";
+import {
+  ActionBody,
+  approvalBlocks,
+  approvalClick,
+  approvalDetailsBlocks,
+  settledFallbackBlocks,
+} from "#src/approvals";
 import type { SlackSettings } from "#src/settings";
 
 export const escapeSlackText = (text: string) =>
@@ -197,7 +208,7 @@ export const slackAdapterLayer = (settings: SlackSettings) =>
     Effect.gen(function* () {
       const messages = yield* Queue.make<IncomingMessage>({ capacity: 64, strategy: "dropping" });
       const actions = yield* Queue.make<ApprovalAction>({ capacity: 64, strategy: "dropping" });
-      const prompts = new Map<string, string>();
+      const prompts = new Map<string, ApprovalPrompt>();
       const identity = yield* Deferred.make<string>();
 
       const requestSeconds = yield* timeoutSeconds("gatewayRequestSeconds");
@@ -346,6 +357,31 @@ export const slackAdapterLayer = (settings: SlackSettings) =>
           return;
         }
 
+        if (click.kind === "details") {
+          const saved = prompts.get(click.requestId);
+
+          if (!saved) {
+            await ephemeral(
+              click.channel,
+              click.user,
+              "Full details are no longer available for this approval.",
+              click.thread,
+            );
+
+            return;
+          }
+
+          await web.chat.postEphemeral({
+            channel: click.channel,
+            user: click.user,
+            text: "Full canonical approval payload",
+            blocks: approvalDetailsBlocks(saved.canonicalPayload),
+            ...(click.thread && { thread_ts: click.thread }),
+          });
+
+          return;
+        }
+
         const reply = (text: string) =>
           Effect.tryPromise({
             try: () => ephemeral(click.source.parentId, click.source.senderId, text, click.thread),
@@ -366,7 +402,7 @@ export const slackAdapterLayer = (settings: SlackSettings) =>
         }
       };
 
-      const send = (id: string, text: string, requestId?: string) =>
+      const send = (id: string, text: string) =>
         Effect.tryPromise({
           try: async () => {
             const target = parseConversation(id);
@@ -384,17 +420,41 @@ export const slackAdapterLayer = (settings: SlackSettings) =>
               args.thread_ts = target.ts;
             }
 
-            const reply = await web.chat.postMessage(
-              requestId ? { ...args, blocks: approvalBlocks(text, requestId) } : args,
-            );
+            const reply = await web.chat.postMessage(args);
 
             if (!reply.ts) {
               throw new Error("Missing message timestamp");
             }
 
-            if (requestId) {
-              prompts.set(requestId, text);
+            return reply.ts;
+          },
+          catch: (cause) => failure(cause, true),
+        });
+
+      const sendApproval = (id: string, prompt: ApprovalPrompt) =>
+        Effect.tryPromise({
+          try: async () => {
+            const target = parseConversation(id);
+
+            const args: ChatPostMessageArguments = {
+              channel: target.channel,
+              text: escapeSlackText(prompt.fallbackText),
+              blocks: approvalBlocks(prompt),
+              unfurl_links: false,
+              unfurl_media: false,
+            };
+
+            if (target.ts) {
+              args.thread_ts = target.ts;
             }
+
+            const reply = await web.chat.postMessage(args);
+
+            if (!reply.ts) {
+              throw new Error("Missing message timestamp");
+            }
+
+            prompts.set(prompt.requestId, prompt);
 
             return reply.ts;
           },
@@ -499,18 +559,20 @@ export const slackAdapterLayer = (settings: SlackSettings) =>
         send: (id, text) => send(id, text),
         approvals: {
           actions: Stream.fromQueue(actions),
-          send: (id, text, _nonce, requestId) => send(id, text, requestId),
-          update: (id, messageId, requestId, state) =>
+          send: (id, prompt) => sendApproval(id, prompt),
+          update: (id, messageId, requestId, state, settlement) =>
             Effect.tryPromise({
               try: async () => {
-                const text = prompts.get(requestId) ?? "";
+                const saved = prompts.get(requestId);
                 prompts.delete(requestId);
 
                 await web.chat.update({
                   channel: parseConversation(id).channel,
                   ts: messageId,
-                  text: escapeSlackText(text),
-                  blocks: approvalBlocks(text, requestId, state),
+                  text: escapeSlackText(saved?.fallbackText ?? formatApprovalStatus(state)),
+                  blocks: saved
+                    ? approvalBlocks(saved, { state, ...(settlement && { settlement }) })
+                    : settledFallbackBlocks(state, settlement),
                 });
               },
               catch: (cause) => failure(cause, true),
