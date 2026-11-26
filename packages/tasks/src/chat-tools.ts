@@ -124,7 +124,7 @@ const authorizeControl = (task: Task, context: ChatTaskContext) =>
         new AgentError({
           reason: "tool-permission",
           message:
-            "This chat is not authorized to schedule or run work for the saved messaging destination.",
+            "This chat is not authorized to manage tasks for the saved messaging destination.",
         }),
       );
     }
@@ -367,12 +367,7 @@ export const ChatTasksLive = Layer.effect(
         const current =
           "id" in action ? yield* repo.task(action.id).pipe(Effect.mapError(invalid)) : null;
 
-        if (
-          current !== null &&
-          action.action !== "show" &&
-          action.action !== "pause" &&
-          action.action !== "delete"
-        ) {
+        if (current !== null && action.action !== "show" && action.action !== "pause") {
           yield* authorizeControl(current, context);
         }
 
