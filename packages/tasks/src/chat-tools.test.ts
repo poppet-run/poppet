@@ -116,7 +116,7 @@ const execute = (action: ChatTaskAction, context: ChatTaskContext) =>
   });
 
 describe("ChatTasks", () => {
-  test("when a task has an owner-only skill or a different messaging destination, denies changes that can run it", async () => {
+  test("when a task has an owner-only skill or a different messaging destination, denies changes that can run or delete it but allows pause", async () => {
     const state = await fixture();
 
     try {
@@ -161,6 +161,7 @@ describe("ChatTasks", () => {
               },
               { action: "run_now", id: job.id },
               { action: "resume", id: job.id },
+              { action: "delete", id: job.id },
             ];
 
             for (const action of actions) {
@@ -175,7 +176,17 @@ describe("ChatTasks", () => {
 
               expect(error.reason).toBe(job === manual ? "tool-arguments" : "tool-permission");
             }
+
+            const pause: ChatTaskAction = { action: "pause", id: job.id };
+            const { context } = yield* recorded(pause);
+            yield* execute(pause, context);
+            expect((yield* repo.task(job.id)).paused).toBeTruthy();
+            yield* repo.resume(job.id, now);
           }
+
+          expect((yield* repo.list()).map((task) => task.id).toSorted()).toEqual(
+            [manual.id, delivered.id].toSorted(),
+          );
 
           const action: ChatTaskAction = { action: "run_now", id: delivered.id };
           const { context } = yield* recorded(action);

@@ -184,9 +184,9 @@ missed.
 
 ## Manage tasks through chat
 
-Editing, resuming, rescheduling, or running a saved task from chat requires
-access to its saved messaging destination. Use the owner CLI to make these
-changes to tasks that use a manual-only skill.
+Editing, resuming, rescheduling, running, or deleting a saved task from chat
+requires access to its saved messaging destination. Use the owner CLI to make
+these changes to tasks that use a manual-only skill.
 
 Tool-capable models can create, list, inspect, pause, and resume tasks when you
 explicitly ask in CLI chat or an authorized messaging conversation. For example:
@@ -238,9 +238,11 @@ offset; ask about an unclear timezone. Each action reads only the fields it uses
 and ignores the rest. Create needs a name, prompt, schedule, and delivery; every
 action except create and list needs an ID; snooze needs `until`; and edit needs
 at least one of name, prompt, schedule, or `endAt`. A missing field fails with a message
-naming it. Ask "Delete my daily summary task" in Discord or CLI chat to use
-`delete`. Deletion permanently removes the selected task and its occurrence
-history, including pending work, while retaining conversations and runs.
+naming it. Ask "Delete my daily summary task" in the task's own authorized
+conversation to use `delete`; CLI chat can delete only tasks with local delivery.
+Use `poppet tasks remove` for other tasks. Deletion permanently removes the
+selected task and its occurrence history, including pending work, while
+retaining conversations and runs.
 A running occurrence prevents deletion; wait for it to finish or cancel it
 via CLI first. Retrying occurrences, cancelling active runs, and changing
 provider pauses remain CLI operations.
