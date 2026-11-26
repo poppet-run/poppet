@@ -5,6 +5,7 @@ import type { ModelOperations } from "@poppet/provider";
 import type { Run } from "@poppet/store";
 import { Context, Effect, Option, Schema } from "effect";
 
+import { ParkRequest, ownerDenied } from "#src/action-approval";
 import { BashReview, reviewAction } from "#src/action-review";
 import type {
   AgentTool,
@@ -122,13 +123,26 @@ export const reviewCommand = (
 const prepareBash = (
   call: ToolCall,
   runner: Bash["Service"],
-  { model, run, text: ownerRequest, origin, approveAction: approve }: ToolContext,
+  {
+    model,
+    run,
+    text: ownerRequest,
+    origin,
+    approveAction: approve,
+    approvalRequester: requester,
+  }: ToolContext,
   maxBytes: number,
 ) =>
   Effect.gen(function* () {
     const request = yield* toolArguments(bashDefinition, Arguments)(call.arguments);
 
+    const execute = (approvedBy: "owner" | "reviewer") =>
+      Effect.suspend(() => runner.run(request, Math.max(128, maxBytes - 128))).pipe(
+        Effect.map((result) => JSON.stringify({ status: "completed", approvedBy, ...result })),
+      );
+
     return {
+      approved: { execute: execute("owner") },
       authorize: (record) =>
         Effect.gen(function* () {
           const review = yield* reviewCommand(model, run, ownerRequest, request).pipe(
@@ -147,6 +161,12 @@ const prepareBash = (
           }
 
           if (review.decision === "needs_approval") {
+            const approval = { kind: "bash" as const, ...request, reason: review.reason };
+
+            if (origin !== "scheduled" && requester !== null) {
+              return yield* new ParkRequest({ approval });
+            }
+
             if (origin === "scheduled" || approve === null) {
               return yield* Effect.fail(
                 new AgentError({
@@ -156,32 +176,12 @@ const prepareBash = (
               );
             }
 
-            const approved = yield* approve(
-              { kind: "bash", ...request, reason: review.reason },
-              (approval) => record({ ...review, approval }),
-            );
-
-            if (!approved) {
-              return yield* Effect.fail(
-                new AgentError({
-                  reason: "command-denied",
-                  message: "The owner did not approve this command. Nothing was executed.",
-                }),
-              );
+            if (!(yield* approve(approval, (answer) => record({ ...review, approval: answer })))) {
+              return yield* Effect.fail(ownerDenied("bash"));
             }
           }
 
-          return {
-            execute: Effect.suspend(() => runner.run(request, Math.max(128, maxBytes - 128))).pipe(
-              Effect.map((result) =>
-                JSON.stringify({
-                  status: "completed",
-                  approvedBy: review.decision === "needs_approval" ? "owner" : "reviewer",
-                  ...result,
-                }),
-              ),
-            ),
-          };
+          return { execute: execute(review.decision === "needs_approval" ? "owner" : "reviewer") };
         }),
     } satisfies ReviewableCall;
   });

@@ -31,9 +31,9 @@ timeout. It has no tools, history, or continuation. It must return a valid
 decision within `timeouts.actionReviewSeconds`, 30 seconds by default:
 
 - `allow` runs this exact invocation once.
-- `needs_approval` asks the owner in the originating gateway conversation. Runs
-  without an approval callback stop instead. CLI, web chat, and scheduled runs
-  have none.
+- `needs_approval` asks the owner in the originating gateway conversation. A run
+  that can wait for the owner [parks instead](chat.md#waiting-runs). Runs with
+  neither stop. CLI, web chat, and scheduled runs have neither.
 - `deny` ends the run without running the command. The model cannot retry it in
   the same run.
 
@@ -41,7 +41,9 @@ A malformed decision, a reviewer failure, or a timeout stops the run without
 starting Bash. The agent never caches a decision. The review policy covers
 destructive operations, elevation, unknown scripts, credential access, data
 transfer, and attempts to disable review or stop Poppet. Review cannot cover
-scripts or files that change between review and execution.
+scripts or files that change between review and execution. A waiting run widens
+that gap to as long as the approval stays open, because a resumed run does not
+review the command again.
 
 The journal saves the reviewer's decision in the call's `review`, or
 `unavailable` when the review fails, and records dispatch only after review and

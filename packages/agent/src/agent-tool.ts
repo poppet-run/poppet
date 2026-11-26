@@ -7,9 +7,10 @@ import type {
   StoreError,
   ToolReview,
 } from "@poppet/store";
-import type { Effect } from "effect";
+import type { Approval } from "@poppet/store";
+import type { Effect, Schema } from "effect";
 
-import type { ApproveAction } from "#src/action-approval";
+import type { ApproveAction, ParkRequest } from "#src/action-approval";
 import type { AgentError } from "#src/errors";
 
 export type ToolCall = Extract<Output, { type: "tool-call" }>;
@@ -27,6 +28,10 @@ export interface RunContext {
   readonly mentionedSkills: ReadonlyArray<SkillSnapshot>;
   readonly taskNote: { readonly text: string | null } | null;
   readonly approveAction: ApproveAction | null;
+  // When set, a call that needs the owner parks the run with this route instead of blocking.
+  readonly approvalRequester: Schema.JsonObject | null;
+  // When set, the run continues from this decided approval instead of starting a turn.
+  readonly resume: Approval | null;
   readonly here: Effect.Effect<DeliveryDestination, AgentError> | null;
   readonly home: Effect.Effect<DeliveryDestination, AgentError> | null;
   readonly destination:
@@ -46,7 +51,9 @@ export interface PreparedCall {
 export interface ReviewableCall {
   readonly authorize: (
     record: (review: ToolReview) => Effect.Effect<void, StoreError>,
-  ) => Effect.Effect<PreparedCall, AgentError | StoreError>;
+  ) => Effect.Effect<PreparedCall, AgentError | StoreError | ParkRequest>;
+  // Runs the call as approved by the owner, without reviewing it again.
+  readonly approved: PreparedCall;
 }
 
 export interface FailurePolicy {

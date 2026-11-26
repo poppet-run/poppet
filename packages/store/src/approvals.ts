@@ -143,5 +143,16 @@ export const approvalOperations = (sql: SqlClient.SqlClient, records: StoreRecor
     expireApprovals,
     approval: (id) =>
       decodeInput(Id, id).pipe(Effect.flatMap(findApproval), reportAs(storeFailure)),
-  } satisfies Pick<StoreOperations, "parkRun" | "decideApproval" | "expireApprovals" | "approval">;
+    latestApproval: (runId) =>
+      decodeInput(Id, runId).pipe(
+        Effect.flatMap((id) =>
+          sql`SELECT * FROM approvals WHERE run_id = ${id}
+            ORDER BY created_at DESC, rowid DESC LIMIT 1`.pipe(decodeRow(ApprovalRow)),
+        ),
+        reportAs(storeFailure),
+      ),
+  } satisfies Pick<
+    StoreOperations,
+    "parkRun" | "decideApproval" | "expireApprovals" | "approval" | "latestApproval"
+  >;
 };

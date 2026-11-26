@@ -3,6 +3,7 @@ import { Store, StoreError } from "@poppet/store";
 import type { Run } from "@poppet/store";
 import { Effect } from "effect";
 
+import type { ParkRequest } from "#src/action-approval";
 import { reportedReasons, reportedStoreReasons } from "#src/agent-tool";
 import type { AgentTool, FailurePolicy, PreparedCall, ReviewableCall } from "#src/agent-tool";
 import { AgentError } from "#src/errors";
@@ -80,7 +81,8 @@ export const toolExecution = Effect.gen(function* () {
           ? yield* call
               .authorize((review) => store.recordToolReview(run.id, callId, review))
               .pipe(
-                Effect.catch((error) =>
+                // A park request leaves the call pending for the owner's decision.
+                Effect.catch((error): Effect.Effect<never, AgentError | StoreError | ParkRequest> =>
                   error instanceof AgentError
                     ? store
                         .finishToolCall(run.id, callId, {

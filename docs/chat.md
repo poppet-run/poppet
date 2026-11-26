@@ -134,6 +134,32 @@ affected state before asking again.
 Recorded usage sums every model turn when every turn reports usage. Otherwise it
 is null.
 
+## Waiting runs
+
+A caller that passes `approvalRequester` to `send` lets a run wait for the owner
+instead of blocking inside a tool call. When Bash or a reviewed MCP call needs
+approval, the loop saves the approval with `parkRun`, leaves that call and the
+rest of its batch pending, and ends the stream with a `waiting` event. The run
+releases its session permit, its request slot, and its deadline. See
+[storage](storage.md#approvals).
+
+Once the owner has decided, `Agent.resume(runId)` takes the session permit and a
+slot again, under a new `chat.runDeadlineSeconds`. It refuses a run whose
+approval is still pending or whose call has already started, and leaves the run
+as it is. Otherwise it rebuilds the loop from the journal:
+
+- the run's saved messages become the current exchange;
+- model turns and tool calls already used count against the budgets;
+- any finished call whose tool returns untrusted content, or whose tool is gone,
+  marks the run untrusted, as do attachments on the input.
+
+It then checks the call again: the saved digest must match, the tool must still
+be offered, and a tool withdrawn after untrusted content stays withdrawn. It does
+not ask the reviewer again. An approved call runs with `approvedBy: "owner"`; a
+denied one fails the run as a denial does today. The rest of the batch runs in
+order, and the loop continues with the next model turn. Usage is null for a
+resumed run, because earlier turns' usage is not saved.
+
 ## Untrusted content
 
 Fetched pages, MCP results, recalled conversations, skills, attachments, and Bash

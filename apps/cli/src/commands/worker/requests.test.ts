@@ -41,6 +41,7 @@ describe("WorkerRequestsLive", () => {
           tools: () => Effect.succeed([]),
         }),
         Layer.succeed(Agent, {
+          resume: () => Stream.die("Unexpected resume"),
           send: () =>
             Stream.fromEffect(
               Deferred.succeed(started, undefined).pipe(

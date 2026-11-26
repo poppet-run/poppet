@@ -1,5 +1,7 @@
 export { Store, StoreLive } from "#src/service";
 
+export { callDigest } from "#src/approvals";
+
 export { StoreError, reportAs } from "#src/errors";
 
 export { StoreDatabase, StoreDatabaseLive } from "#src/database";
