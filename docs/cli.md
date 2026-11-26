@@ -132,8 +132,9 @@ through `provider login openai-chatgpt`.
 API-key login always prompts with hidden input, even when an environment key is set. `--no-browser` and
 `--callback-port <port>` apply to browser sign-in; see
 [headless and remote machines](providers/openai-chatgpt.md#headless-and-remote-machines).
-See [ChatGPT](providers/openai-chatgpt.md), [OpenCode Go](providers/opencode-go.md),
-[OpenRouter](providers/openrouter.md), and [API-key handling](configuration.md#api-keys)
+See [ChatGPT](providers/openai-chatgpt.md), [OpenCode](providers/opencode.md),
+[OpenCode Go](providers/opencode-go.md), [OpenRouter](providers/openrouter.md),
+and [API-key handling](configuration.md#api-keys)
 for provider-specific setup and logout behavior.
 
 ## MCP servers

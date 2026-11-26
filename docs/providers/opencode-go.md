@@ -23,6 +23,9 @@ poppet provider login opencode-go
 poppet provider models opencode-go
 ```
 
+For OpenCode pay-as-you-go (workspace credit billing and Console model toggles), see
+[OpenCode](opencode.md).
+
 ## Models
 
 Discovery lists paid chat models from the OpenCode Go catalog, using each model's

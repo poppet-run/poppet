@@ -289,7 +289,7 @@ and the five editable chat controls. `POPPET_DATA_DIR`
 selects the data directory and file. Other environment settings are limited to
 credentials. Internal context/tool/memory limits use fixed defaults. Provider
 selection uses the file's `provider` and `model` fields.
-The registered providers are `openai-chatgpt`, `opencode-go`, and `openrouter`.
+The registered providers are `openai-chatgpt`, `opencode`, `opencode-go`, and `openrouter`.
 An explicit model is required for provider verification and new chat sessions.
 Help, configuration, and connection commands remain usable before selection.
 Credentials stay in separate
@@ -311,18 +311,22 @@ by index when the terminal snapshot omits them, along with the complete tool and
 reasoning history required for continuation.
 [OpenAI inference requirements](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
 
-OpenCode Go uses an API key and discovers chat models from
-`https://opencode.ai/inference/go/openai/v1/models`. When an API key is configured,
-discovery authenticates with that key so OpenCode filters the catalog to the models
-enabled for the user's workspace, caching results per credential; without a key, it
-falls back to the public Go catalog. Non-chat models (decision and embedding) and
-free-tier models restricted to OpenCode's own app are excluded. Models whose
-recommended API is Responses route through the Responses adapter; other chat models
-route through Chat Completions (using OpenCode Console's server-side protocol
-translation for Messages and Gemini models). Both protocols send the Poppet user
-agent and a stable `x-opencode-session` conversation ID. Inference reads the required
-key from `POPPET_OPENCODE_GO_API_KEY` or protected API-key storage. See the provider
+OpenCode (`opencode`) and OpenCode Go (`opencode-go`) share the
+`@poppet/provider-opencode` adapter and discover chat models from
+`https://opencode.ai/inference/openai/v1/models` and
+`https://opencode.ai/inference/go/openai/v1/models`, respectively. When an API key is
+configured, discovery authenticates with that key so OpenCode filters the catalog to
+the models enabled for the user's workspace, caching results per provider and
+credential; without a key, it falls back to the public catalog. Non-chat models
+(decision, embedding, image, realtime, and video) and free-tier models restricted to
+OpenCode's own app are excluded. Models whose recommended API is Responses route
+through the Responses adapter; other chat models route through Chat Completions
+(using OpenCode Console's server-side protocol translation for Messages and Gemini
+models). Both protocols send the Poppet user agent and a stable `x-opencode-session`
+conversation ID. Inference reads the required key from `POPPET_OPENCODE_API_KEY` or
+`POPPET_OPENCODE_GO_API_KEY`, or protected API-key storage. See the provider
 documentation for usage requirements.
+[OpenCode Console models](https://opencode.ai/docs/console/models/) and
 [OpenCode Go requirements](https://opencode.ai/docs/console/go/)
 
 The reusable protocol adapters in `@poppet/provider/protocol` bind a model

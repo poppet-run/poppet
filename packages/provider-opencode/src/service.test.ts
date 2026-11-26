@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { completeModel, verifyModel } from "@poppet/provider";
-import type { ModelRequest } from "@poppet/provider";
+import type { ModelRequest, ProviderId } from "@poppet/provider";
 import { Effect, Fiber, Redacted, Schema, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
@@ -34,6 +34,12 @@ interface FixtureModel {
     readonly context?: number | null;
     readonly output?: number | null;
   };
+  readonly cost?: {
+    readonly text?: {
+      readonly input?: { readonly price?: number };
+      readonly output?: { readonly price?: number };
+    };
+  };
   readonly go?: {
     readonly monthly_usage?: Record<string, number> | null;
   };
@@ -49,6 +55,7 @@ const defaultCatalog: ReadonlyArray<FixtureModel> = [
     modalities: { input: ["text", "image/jpeg", "image/png"], output: ["text"] },
     capabilities: { tools: { supported: true }, temperature: true },
     limit: { context: 1_050_000, output: 128_000 },
+    cost: { text: { input: { price: 0.75 }, output: { price: 4.5 } } },
     go: { monthly_usage: { go: 15, "go-plus": 60, "go-teams": 20 } },
   },
   {
@@ -60,6 +67,7 @@ const defaultCatalog: ReadonlyArray<FixtureModel> = [
     modalities: { input: ["text"], output: ["text"] },
     capabilities: { tools: { supported: true }, temperature: true },
     limit: { context: 1_000_000, output: 131_072 },
+    cost: { text: { input: { price: 1.4 }, output: { price: 4.4 } } },
     go: { monthly_usage: { go: 200, "go-plus": 400, "go-teams": 205 } },
   },
   {
@@ -71,6 +79,7 @@ const defaultCatalog: ReadonlyArray<FixtureModel> = [
     modalities: { input: ["text", "image/png", "application/pdf"], output: ["text"] },
     capabilities: { tools: { supported: true }, temperature: false },
     limit: { context: 1_000_000, output: 128_000 },
+    cost: { text: { input: { price: 1 }, output: { price: 5 } } },
     go: { monthly_usage: { go: 15, "go-plus": 60, "go-teams": 20 } },
   },
   {
@@ -82,6 +91,7 @@ const defaultCatalog: ReadonlyArray<FixtureModel> = [
     modalities: { input: ["text", "image/webp"], output: ["text"] },
     capabilities: { tools: { supported: true }, temperature: false },
     limit: { context: 1_048_576, output: 65_536 },
+    cost: { text: { input: { price: 0.5 }, output: { price: 3 } } },
     go: { monthly_usage: { go: 30, "go-plus": 120, "go-teams": 35 } },
   },
   {
@@ -92,7 +102,18 @@ const defaultCatalog: ReadonlyArray<FixtureModel> = [
     modalities: { input: ["text"], output: ["text"] },
     capabilities: { tools: { supported: true }, temperature: true },
     limit: { context: 1_048_576, output: 131_072 },
+    cost: { text: { input: { price: 0 }, output: { price: 0 } } },
     go: { monthly_usage: null },
+  },
+  {
+    id: "big-pickle",
+    name: "Big Pickle",
+    type: "chat",
+    recommended_api: "chat-completions",
+    modalities: { input: ["text"], output: ["text"] },
+    capabilities: { tools: { supported: true }, temperature: true },
+    limit: { context: 200_000, output: 32_000 },
+    cost: { text: { input: { price: 0 }, output: { price: 0 } } },
   },
   {
     id: "jev-1.14",
@@ -117,6 +138,9 @@ const defaultCatalog: ReadonlyArray<FixtureModel> = [
 ];
 
 const fixture = (options?: {
+  readonly id?: ProviderId;
+  readonly label?: string;
+  readonly baseUrl?: string;
   readonly catalog?: (authorization: string | null) => ReadonlyArray<FixtureModel>;
   readonly token?: () => string | null;
 }) => {
@@ -230,7 +254,13 @@ const fixture = (options?: {
     return token === null ? null : Redacted.make(token);
   });
 
-  const provider = makeOpenCodeProvider(key, http, "https://go.invalid/v1", optionalKey);
+  const provider = makeOpenCodeProvider(key, {
+    id: options?.id ?? "opencode-go",
+    label: options?.label ?? "OpenCode Go",
+    baseUrl: options?.baseUrl ?? "https://go.invalid/v1",
+    http,
+    optionalKey,
+  });
 
   return {
     provider,
@@ -246,9 +276,8 @@ describe("makeOpenCodeProvider", () => {
     const reading = Promise.withResolvers<void>();
     const signals: Array<AbortSignal> = [];
 
-    const provider = makeOpenCodeProvider(
-      Effect.die("Key must not be read"),
-      async (_input, init) => {
+    const provider = makeOpenCodeProvider(Effect.die("Key must not be read"), {
+      http: async (_input, init) => {
         const signal = init?.signal;
 
         if (!signal) {
@@ -270,9 +299,8 @@ describe("makeOpenCodeProvider", () => {
           }),
         );
       },
-      undefined,
-      Effect.succeed(null),
-    );
+      optionalKey: Effect.succeed(null),
+    });
 
     const result = await Effect.runPromise(
       Effect.gen(function* () {
@@ -382,6 +410,68 @@ describe("makeOpenCodeProvider", () => {
     expect(harness.keyReads()).toBe(0);
   });
 
+  test("when configured for pay-as-you-go OpenCode, uses the opencode provider ID and filters free-tier models by price", async () => {
+    const paygCatalog: ReadonlyArray<FixtureModel> = [
+      {
+        id: "claude-sonnet-5-5",
+        name: "Claude Sonnet 5.5",
+        type: "chat",
+        recommended_api: "messages",
+        modalities: { input: ["text", "image/png"], output: ["text"] },
+        capabilities: { tools: { supported: true }, temperature: false },
+        limit: { context: 1_000_000, output: 128_000 },
+        cost: { text: { input: { price: 2 }, output: { price: 10 } } },
+      },
+      {
+        id: "big-pickle",
+        name: "Big Pickle",
+        type: "chat",
+        recommended_api: "chat-completions",
+        modalities: { input: ["text"], output: ["text"] },
+        capabilities: { tools: { supported: true }, temperature: true },
+        limit: { context: 200_000, output: 32_000 },
+        cost: { text: { input: { price: 0 }, output: { price: 0 } } },
+      },
+    ];
+
+    const harness = fixture({
+      id: "opencode",
+      label: "OpenCode",
+      baseUrl: "https://opencode.invalid/inference/openai/v1",
+      catalog: (authorization) =>
+        authorization === "Bearer oc-payg-secret" ? paygCatalog : defaultCatalog,
+      token: () => "oc-payg-secret",
+    });
+
+    const models = await Effect.runPromise(harness.provider.models);
+
+    expect(harness.catalogAuthHeaders).toEqual(["Bearer oc-payg-secret"]);
+    expect(models).toEqual([
+      {
+        provider: "opencode",
+        id: "claude-sonnet-5-5",
+        name: "Claude Sonnet 5.5",
+        capabilities: {
+          tools: true,
+          images: true,
+          generationSettings: ["maxOutputTokens"],
+          contextWindow: 1_000_000,
+          maxOutputTokens: 128_000,
+        },
+      },
+    ]);
+
+    const resolved = await Effect.runPromise(harness.provider.resolve("claude-sonnet-5-5"));
+    await Effect.runPromise(verifyModel(resolved));
+    expect(harness.requests).toHaveLength(2);
+    expect(harness.requests.every((item) => item.path.endsWith("/chat/completions"))).toBe(true);
+    expect(
+      harness.requests.every(
+        (item) => item.headers.get("authorization") === "Bearer oc-payg-secret",
+      ),
+    ).toBe(true);
+  });
+
   test("when credentials are configured or change, authenticates catalog discovery and isolates cached catalogs per key", async () => {
     let activeToken: string | null = null;
 
@@ -479,7 +569,13 @@ describe("makeOpenCodeProvider", () => {
       catalog: () => defaultCatalog.filter((entry) => entry.id !== "gpt-6-luna"),
     });
 
-    for (const modelId of ["beam-free", "jev-1.14", "text-embedding-3-small", "gpt-6-luna"]) {
+    for (const modelId of [
+      "beam-free",
+      "big-pickle",
+      "jev-1.14",
+      "text-embedding-3-small",
+      "gpt-6-luna",
+    ]) {
       await expect(Effect.runPromise(harness.provider.resolve(modelId))).rejects.toMatchObject({
         reason: "invalid-request",
       });
@@ -489,12 +585,11 @@ describe("makeOpenCodeProvider", () => {
   });
 
   test("when the remote catalog has no decodable entries, fails with invalid-request", async () => {
-    const provider = makeOpenCodeProvider(
-      Effect.die("Key must not be read"),
-      async () => Response.json({ object: "list", data: [{ id: "glm-5.3" }] }),
-      "https://go.invalid/v1",
-      Effect.succeed(null),
-    );
+    const provider = makeOpenCodeProvider(Effect.die("Key must not be read"), {
+      baseUrl: "https://go.invalid/v1",
+      http: async () => Response.json({ object: "list", data: [{ id: "glm-5.3" }] }),
+      optionalKey: Effect.succeed(null),
+    });
 
     await expect(Effect.runPromise(provider.models)).rejects.toMatchObject({
       reason: "invalid-request",
