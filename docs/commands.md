@@ -1,93 +1,102 @@
 # Host commands
 
-[Documentation index](README.md)
+[Engineering notes](README.md)
 
-Poppet provides `poppet_system.bash` to tool-capable models in CLI, web chat,
-Discord, Slack, and scheduled runs. It runs with the filesystem and process permissions of the OS
-account running Poppet. There is no project-directory restriction or OS sandbox.
-It does not grant root access or supply a sudo password.
+`poppet_system.bash` runs shell commands as the OS account that runs Poppet, in
+every kind of run: CLI, web chat, gateways, and scheduled tasks. There is no
+project-directory restriction, no OS sandbox, and no sudo password. A model
+reviews every invocation before it runs. The
+[user guide](https://poppet.run/docs/commands/) explains this to owners.
 
-## Review and execution
+| Module                                  | Owns                                                 |
+| --------------------------------------- | ---------------------------------------------------- |
+| `packages/agent/src/bash.ts`            | Tool definition, argument schema, and command policy |
+| `packages/agent/src/action-review.ts`   | Reviewer requests for Bash and MCP actions           |
+| `packages/agent/src/action-approval.ts` | Owner approval requests                              |
+| `apps/cli/src/bash.ts`                  | The process runner                                   |
+| `packages/gateway/src/approvals.ts`     | Pending approvals in the gateway                     |
 
-The tool requires a command, an absolute working directory, and a timeout from
-one to 300 seconds. Before every invocation, a separate request to the current
-provider/model reviews the command against the current owner message or saved
-job prompt. This adds a model request per command. The reviewer has no tools,
-chat history, or conversation continuation.
+## Arguments
 
-The decision is one of:
+The tool takes a command, an absolute working directory, and a timeout of 1 to
+300 seconds.
 
-- `allow`: run the exact invocation once.
-- `needs_approval`: ask the owner in the originating Discord or Slack conversation.
-  CLI, web chat, and scheduled runs stop because they cannot obtain a human decision.
-- `deny`: end the run without executing the command.
+## Review
 
-Poppet records dispatch only after review and any required owner approval.
-Cancelling while either is pending records an interruption before dispatch.
+Before each invocation, `reviewAction` sends a separate request to the run's
+resolved provider and model. The reviewer gets only the owner's current message,
+or the saved prompt in a scheduled run, plus the command, working directory, and
+timeout. It has no tools, history, or continuation. It must return a valid
+decision within `timeouts.actionReviewSeconds`, 30 seconds by default:
 
-Malformed responses, reviewer failures, and review timeouts stop the run without
-starting Bash. A denial cannot be retried by the model within the same run.
-Review considers destructive operations, elevation, unknown scripts, credential
-access, data transfers, and attempts to disable review or stop Poppet itself.
-An LLM decision is fallible. It cannot guarantee the behavior of scripts, tools,
-or files that change between review and execution.
+- `allow` runs this exact invocation once.
+- `needs_approval` asks the owner in the originating gateway conversation. Runs
+  without an approval callback stop instead. CLI, web chat, and scheduled runs
+  have none.
+- `deny` ends the run without running the command. The model cannot retry it in
+  the same run.
 
-Bash starts with `--noprofile --norc` and `pipefail`. It inherits only
-`HOME`, `PATH`, `USER`, `LOGNAME`, `SHELL`, `TERM`, `TMPDIR`, `LANG`, `LC_ALL`,
-and `LC_CTYPE`. Commands retain the host account's filesystem permissions.
-Standard input is closed. Output includes stdout, stderr, exit code, and whether
-it was truncated. Truncated output ends on a UTF-8 character boundary. A
-nonzero exit is returned to the agent; an interrupted or
-timed-out command ends the run with an uncertain outcome and is never replayed.
-Completed receipts include `status: "completed"` and `approvedBy`, identifying
-the owner or reviewer. They describe a command that has already finished, even
-if it produced no output. The exit code determines whether it succeeded.
+A malformed decision, a reviewer failure, or a timeout stops the run without
+starting Bash. The agent never caches a decision. The review policy covers
+destructive operations, elevation, unknown scripts, credential access, data
+transfer, and attempts to disable review or stop Poppet. Review cannot cover
+scripts or files that change between review and execution.
 
-Each invocation has its own process group. Timeout and cancellation kill that
-group, and background children are also stopped when Bash exits. To manage a
-persistent service, use the machine's service manager rather than `command &`.
-Processes that deliberately detach from the group are outside that cleanup guarantee.
-Poppet closes its output pipes on timeout or cancellation, even if a detached
-process still has them open.
+The journal records dispatch only after review and any owner approval. Cancelling
+while either is pending records an interruption before dispatch. A fatal review
+failure also saves its reason in the transcript.
 
-## Messaging approval
+## Execution
 
-Poppet shows the exact invocation and reason in the originating Discord or Slack
-conversation. It escapes control characters and markup delimiters so both can
-be read as data. Reply `/approve <id>` or `/deny <id>` using the ID in the message.
-Discord and Slack also provide **Approve once** and **Deny** buttons. Both methods settle
-the same request; repeated clicks or replies cannot execute it again. Only the configured owner in
-the same authorized conversation can answer, and access is checked again before
-execution. Approval covers that command, directory, and timeout for one invocation.
-It grants no future permissions. [Reviewed MCP actions](mcp.md#review-an-action)
-use the same controls and show the target, expected effects, and exact tool arguments.
+`apps/cli/src/bash.ts` starts `/bin/bash --noprofile --norc` with `pipefail` and
+closed stdin. The child inherits only `HOME`, `PATH`, `USER`, `LOGNAME`, `SHELL`,
+`TERM`, `TMPDIR`, `LANG`, `LC_ALL`, and `LC_CTYPE`.
 
-Buttons appear after the full invocation, even when it spans several messages.
-Poppet confirms button clicks privately and replaces the buttons with the outcome
-when the request ends. Text replies update the buttons too. Updating the
-message is best effort; a failed update cannot reopen a settled request.
+Each invocation gets its own process group. The runner kills the group on exit,
+timeout, or cancellation, and closes its output pipes even when a detached
+process still holds them. A process that leaves the group on purpose escapes this
+cleanup.
 
-Requests expire after two minutes (`timeouts.approvalSeconds`) or when the run is cancelled or the worker
-restarts. Expired IDs cannot be revived. After a crash, an old prompt may still
-show buttons, but clicking them reports that the request is no longer available.
-Ask for the operation again to obtain a new reviewed invocation. CLI and web chat
-commands that need approval stop. Request the operation in Discord or Slack to
-obtain approval there. Commands the reviewer allows run normally on every surface.
+The result has stdout, stderr, the exit code, and a truncation flag. Truncation
+ends on a UTF-8 character boundary. A nonzero exit is an ordinary result. A
+timeout or interruption ends the run with an uncertain outcome, and nothing
+replays it. A completed receipt has `status: "completed"` and `approvedBy`, naming
+the owner or the reviewer.
+
+Command output is untrusted. It withdraws reviewed MCP tools for the rest of the
+run, but Bash stays available because each later command is reviewed again.
+
+## Owner approval
+
+The gateway keeps pending approvals in memory for `timeouts.approvalSeconds`,
+two minutes by default. Bash
+commands and [reviewed MCP actions](mcp.md#reviewed-actions) share the same IDs.
+A request ends when it expires, when the run is cancelled, or when the worker
+restarts. An expired ID cannot come back.
+
+The approval prompt shows the exact invocation and the reviewer's reason. It
+escapes control characters and markup so both read as data. Every gateway
+accepts `/approve <id>` and `/deny <id>` as control messages. An adapter that
+implements the optional `approvals` capability also shows buttons and updates
+them with the outcome. Discord and Slack implement it. Telegram uses text only.
+
+- Only the configured owner, in the same conversation, can answer.
+- The gateway checks access again before running the command.
+- Answers resolve outside the inference queue, so a busy session does not delay
+  them.
+- The first answer settles the request. Later clicks or replies cannot run it
+  again.
+- Approval covers one invocation with its command, directory, and timeout.
+- Updating the prompt message is best effort. A failed update cannot reopen a
+  settled request.
+
+For MCP actions, the journal records the owner's answer before dispatch.
 
 ## Scheduled runs
 
-Cron uses the same review. A command requiring human approval fails the
-occurrence immediately and is never left waiting. The worker logs its failure
-reason code; the full reason and blocked invocation remain available in `tasks show`.
-A failed occurrence with a messaging destination can post a fixed
-[failure notice](tasks.md#failure-notices) naming the task and reason code. Notices
-post once per failure streak and skip failures older than 24 hours. They contain
-no model output or error text. Scheduled runs never post approval prompts.
-Successful results go to the destination configured for that task.
-The recurring schedule remains active. Earlier commands may have completed;
-failure does not roll them back. Inspect the saved task and machine state before
-requesting a retry.
-
-Scheduled runs exclude memory writes and task management. MCP uses explicit,
-separate allowlists for [scheduled reads and reviewed actions](mcp.md#schedule-a-reviewed-action).
-The reviewed Bash tool can perform host changes authorized by the saved prompt.
+A scheduled run reviews each command against the saved prompt. A command that
+needs approval fails the occurrence at once. The run never waits and never posts
+an approval prompt. The worker logs the failure reason code, and `tasks show`
+keeps the full reason and the blocked invocation. Earlier commands in the run are
+not rolled back, and the recurring schedule stays active. A task with a messaging
+destination can post a [failure notice](tasks.md#failure-notices).

@@ -388,20 +388,7 @@ their inputs without replaying them. A hard crash releases the OS-held SQLite lo
 leftover PID marker through the shared scoped lock helper. Credentials, facts, jobs, context
 assembly, and model execution are outside this store's record APIs.
 
-## Reviewed host commands and MCP actions
-
-`agent/action-review.ts` makes the isolated reviewer request to the run's
-resolved model. `agent/bash.ts` supplies Bash's command policy. Review has no tools or continuation and receives only
-the owner request, command, working directory, and timeout. It must return a
-validated allow/needs-approval/deny decision within thirty seconds. Review failure
-stops execution. Each invocation is independently reviewed; approvals are not cached.
-
-The CLI supplies the process runner in `apps/cli/src/bash.ts`. It launches
-`/bin/bash` as the host account without profile/startup scripts, bounds output,
-and kills the process group on exit, timeout, or cancellation. The tool journal
-records invocation and outcome; fatal review failures also save their reason in
-the transcript and end the run. Command output is untrusted, but Bash stays
-available for subsequent independently reviewed commands.
+## Reviewed MCP actions
 
 For tools in `reviewedTools`, the CLI exposes the validated arguments through
 the external-tool adapter. The agent uses the same review request machinery
@@ -411,14 +398,9 @@ sign-in and permits one POST for the reviewed call. Redirects and authorization
 challenges stop dispatch without a resend. The store distinguishes
 pre-dispatch interruption from uncertain in-flight effects.
 
-The gateway shares pending approval IDs between Bash commands and reviewed MCP
-actions and holds them in memory for at most two minutes. The MCP journal records
-the authenticated owner's answer before dispatch. Discord
-and Slack buttons and text controls resolve them outside the inference queue
-and only in the originating conversation, with access rechecked before execution.
-Restart expires pending requests. CLI and web chat supply no approval callback,
-so commands needing a person stop without execution. Scheduled runs never wait for
-approval; a blocked command fails the occurrence. Failed occurrences log a reason code and retain details in task history
+## Scheduled delivery
+
+Failed occurrences log a reason code and retain details in task history
 without changing their recurring schedule. Completed results and fixed failure
 notices enter the durable delivery queue. Pending failure text queued under a
 failed run by older versions is stopped before delivery. Delivery is unique per
