@@ -13,7 +13,7 @@ Use `Effect<A, E, R>` for operations with I/O, expected failures, cancellation, 
 dependencies. Keep pure transformations as ordinary TypeScript functions.
 
 - Define external capabilities with `Context.Service` and provide implementations
-  with `Layer`. `AppConfig` is the first example. Add services when a capability
+  with `Layer`, as `AppConfig` does. Add services when a capability
   needs injection or resource ownership.
 - Validate configuration, tool arguments, and external records with Effect
   Schema. Keep expected failures in the typed error channel and distinguish them
@@ -34,29 +34,29 @@ in Effect 4, so dependency upgrades must include the CLI checks.
 
 The Bun monorepo uses private workspaces:
 
-| Workspace                     | Responsibility                                                                                                         | Workspace dependencies                                                                               |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition                                                     | Config, agent, MCP, memory, tasks, store, platform, gateway, channels, web protocol, provider layers |
-| `@poppet/web`                 | Preact browser chat, Nanostores state, and shared web API types                                                        | None                                                                                                 |
-| `@poppet/mcp`                 | Scoped stdio/HTTP clients, OAuth sign-in, bounded discovery, schema validation                                         | Credentials, I/O helpers, sign-in, provider contract                                                 |
-| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                                                        | Config, I/O helpers, memory, store, provider contract                                                |
-| `@poppet/io`                  | Bounded stream and subprocess I/O, shared HTTP URL and public-address validation                                       | None                                                                                                 |
-| `@poppet/config`              | Validated settings and the `AppConfig` service                                                                         | Provider contract, credential locks, MCP configuration schemas                                       |
-| `@poppet/credentials`         | Protected API-key and record storage, locks, and environment overrides                                                 | Provider contract                                                                                    |
-| `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle                                                  | Config, credentials, provider contract                                                               |
-| `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots                                                       | Config and store for the local implementation                                                        |
-| `@poppet/platform`            | Worker actions, errors, status, launch description, bounded log reading, and LaunchAgent and systemd user unit control | I/O helpers                                                                                          |
-| `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                                                              | Config, agent, store, worker transport, provider contract                                            |
-| `@poppet/worker`              | Protected local command transport and request lifecycle                                                                | Effect                                                                                               |
-| `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery                                               | Agent, config, credentials, I/O helpers, store, tasks, provider contract                             |
-| `@poppet/gateway-discord`     | Discord connections, mentions, threads, permissions, and protected settings                                            | Config, credentials, gateway contract                                                                |
-| `@poppet/gateway-slack`       | Slack Socket Mode, thread messages, attachments, permissions, and protected settings                                   | Config, credentials, gateway contract                                                                |
-| `@poppet/gateway-telegram`    | Telegram Bot API long polling, chats, forum topics, and protected settings                                             | Gateway contract                                                                                     |
-| `@poppet/provider`            | Shared contracts and operations, with protocol adapters through a separate export                                      | None                                                                                                 |
-| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing                                                        | Provider contract, credentials, protocol adapters                                                    |
-| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration                                                       | Provider contract, credentials, protocol adapters                                                    |
-| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference                                            | Credentials, sign-in, provider contract, protocol adapters                                           |
-| `@poppet/sign-in`             | Browser authorization: loopback callback, pasted callbacks, deadline                                                   | Effect                                                                                               |
+| Workspace                     | Responsibility                                                                                                         | Workspace dependencies                                                                                       |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `@poppet/cli`                 | Process startup, commands, terminal output, live layer composition                                                     | Config, agent, MCP, memory, tasks, store, platform, gateway, gateway adapters, web protocol, provider layers |
+| `@poppet/web`                 | Preact browser chat, Nanostores state, and shared web API types                                                        | None                                                                                                         |
+| `@poppet/mcp`                 | Scoped stdio/HTTP clients, OAuth sign-in, bounded discovery, schema validation                                         | Credentials, I/O helpers, sign-in, provider contract                                                         |
+| `@poppet/agent`               | Persisted chat, bounded context, deadlines, terminal run states                                                        | Config, I/O helpers, memory, store, provider contract                                                        |
+| `@poppet/io`                  | Bounded stream and subprocess I/O, shared HTTP URL and public-address validation                                       | None                                                                                                         |
+| `@poppet/config`              | Validated settings and the `AppConfig` service                                                                         | Provider contract, credential locks, MCP configuration schemas                                               |
+| `@poppet/credentials`         | Protected API-key and record storage, locks, and environment overrides                                                 | Provider contract                                                                                            |
+| `@poppet/store`               | SQLite ownership, migrations, conversation records, and run lifecycle                                                  | Config, credentials, provider contract                                                                       |
+| `@poppet/memory`              | Memory contract, local facts, bounded profile and fact snapshots                                                       | Config and store for the local implementation                                                                |
+| `@poppet/platform`            | Worker actions, errors, status, launch description, bounded log reading, and LaunchAgent and systemd user unit control | I/O helpers                                                                                                  |
+| `@poppet/tasks`               | Scheduling, task persistence, recovery, and task commands                                                              | Config, agent, store, worker transport, provider contract                                                    |
+| `@poppet/worker`              | Protected local command transport and request lifecycle                                                                | Effect                                                                                                       |
+| `@poppet/gateway`             | Authorized messaging, thread bindings, durable inbox, and reply delivery                                               | Agent, config, credentials, I/O helpers, store, tasks, provider contract                                     |
+| `@poppet/gateway-discord`     | Discord connections, mentions, threads, permissions, and protected settings                                            | Config, credentials, gateway contract                                                                        |
+| `@poppet/gateway-slack`       | Slack Socket Mode, thread messages, attachments, permissions, and protected settings                                   | Config, credentials, gateway contract                                                                        |
+| `@poppet/gateway-telegram`    | Telegram Bot API long polling, chats, forum topics, and protected settings                                             | Gateway contract                                                                                             |
+| `@poppet/provider`            | Shared contracts and operations, with protocol adapters through a separate export                                      | None                                                                                                         |
+| `@poppet/provider-opencode`   | OpenCode Go catalog, secret configuration, and protocol routing                                                        | Provider contract, credentials, protocol adapters                                                            |
+| `@poppet/provider-openrouter` | OpenRouter catalog, model capabilities, and secret configuration                                                       | Provider contract, credentials, protocol adapters                                                            |
+| `@poppet/provider-openai`     | OpenAI sign-in, credential lifecycle, model catalog, subscription inference                                            | Credentials, sign-in, provider contract, protocol adapters                                                   |
+| `@poppet/sign-in`             | Browser authorization: loopback callback, pasted callbacks, deadline                                                   | Effect                                                                                                       |
 
 The CLI lives in `apps/cli`, browser chat in `apps/web`, and libraries in `packages/`.
 Each workspace owns its dependencies, TypeScript config, and colocated tests. Libraries expose explicit package exports. Imports
@@ -98,8 +98,7 @@ services or layers of their own.
 Tests live beside their capability modules. The provider's `src/test/fixtures/` composes injected
 services with local OAuth and model servers shared by the behavior suites.
 
-Configuration, connection, credential, OAuth, sign-in, auth, model, and CLI
-modules are implemented. `runtime.ts` builds only the registered provider selected
+`runtime.ts` builds only the registered provider selected
 for an auth or inference command. Its store layer opens SQLite for saved-data operations and worker execution.
 Help, configuration, skill file inspection, and provider commands do not
 open the conversation database.

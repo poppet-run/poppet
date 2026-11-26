@@ -14,15 +14,8 @@ poppet config
 bun run check
 ```
 
-The repository uses Bun workspaces for `@poppet/cli`, `@poppet/config`,
-`@poppet/provider`, `@poppet/provider-openai`, `@poppet/provider-opencode`,
-`@poppet/provider-openrouter`, `@poppet/credentials`,
-`@poppet/store`, `@poppet/agent`, `@poppet/io`, `@poppet/mcp`,
-`@poppet/memory`, `@poppet/tasks`,
-`@poppet/platform`, `@poppet/worker`, `@poppet/gateway`,
-`@poppet/gateway-discord`, `@poppet/gateway-slack`, `@poppet/gateway-telegram`, and
-`@poppet/web`.
-Skills live inside `@poppet/agent`.
+The workspaces and their responsibilities are listed in
+[architecture](architecture.md#workspaces). Skills live inside `@poppet/agent`.
 `bun run format` formats files with Oxfmt.
 `bun run lint:fix` applies safe Oxlint fixes. `bun run check` checks formatting,
 linting, types, the production web build, and Bun tests. GitHub Actions runs the
@@ -140,116 +133,145 @@ Shared CLI code stays in `src/`; shared command helpers stay in `src/commands/`.
 
 ```text
 apps/
-  web/                    @poppet/web, Preact browser chat and shared API types
-  cli/                    @poppet/cli
+  cli/                      @poppet/cli
     src/
-      main.ts             Bun process entry point and Effect runtime
-      cli.ts              Command tree assembly and CLI parsing
-      commands/           Shared command context, flags, and single-file commands
-        chat/             Chat command, streaming output, and interactive prompt
-        doctor/           Read-only checks, report rendering, and worker observations
-        gateway/          Gateway command, adapter setup, and registrations
-        mcp/              MCP command, setup, and agent tool wiring
-        memory/           Memory command and operations
-        setup/            Interactive setup command
-        tasks/            Task command and argument parsing
-        web-chat/         Authenticated web listener, submission receipts, and chat lifecycle
-        worker/           Worker command, platform selection, host, transport, and logs
-      runtime.ts          Generic selection and host configuration layers
-      providers.ts        Provider registrations; first entry is the default
-      worker-background.ts Stable installed-service entry point, output capture, and shutdown forwarding
+      main.ts               Bun process entry point and Effect runtime
+      cli.ts                Command tree assembly and CLI parsing
+      runtime.ts            Provider selection and host configuration layers
+      providers.ts          Provider registrations; the first entry is the default
+      bash.ts               Bash process runner for reviewed host commands
+      output.ts             Shared table, JSON, and text output
+      worker-background.ts  Installed-service entry point, output capture, and shutdown forwarding
+      commands/             Shared command context, flags, and single-file commands
+        chat/               Chat command, streaming output, Markdown rendering, and interactive prompt
+        doctor/             Read-only checks, report rendering, and worker observations
+        gateway/            Gateway command, adapter setup, and registration loading
+        mcp/                MCP command, setup, and agent tool wiring
+        memory/             Memory command and operations
+        setup/              Interactive setup command
+        tasks/              Task command and argument parsing
+        web-chat/           Authenticated web listener, submission receipts, and chat lifecycle
+        worker/             Worker command, platform selection, host, transport, and logs
+  web/                      @poppet/web, Preact browser chat and shared API types
 packages/
-  gateway/                @poppet/gateway, shared acceptance, approvals, and delivery
-  gateway-discord/        @poppet/gateway-discord, Discord adapter and setup
-  gateway-slack/          @poppet/gateway-slack, Slack Socket Mode adapter and setup
-  gateway-telegram/       @poppet/gateway-telegram, Telegram Bot API adapter and setup
-  agent/                  @poppet/agent
-    src/service.ts        Persisted chat runner, deadlines, run finalization
-    src/conversation.ts   Sequential model/tool loop and run budgets
-    src/tool-execution.ts Tool dispatch, outcomes, and journal writes
-    src/skills.ts         Owner skill-file access
-    src/skill-index.ts    Bounded skill descriptions and indexing
-    src/skill-tools.ts    Skill view and management tools
-    src/skill-mentions.ts Skills named with $name in a message
-    src/reply.ts          Validated model stream completion
-    src/memory.ts         Memory snapshots formatted into model instructions
-    src/context-files.ts  Shared bounded skill/project file access
-    src/memory-tools.ts   Validated memory changes with budget checks and source runs
-    src/context.ts        Complete-exchange context assembly and limits
-    src/settings.ts       Validated chat budgets
-  io/                     @poppet/io
-    src/io.ts             Bounded stream reads and subprocess cleanup
-    src/public-url.ts     Shared HTTP URL validation and public-address policy
-  mcp/                    @poppet/mcp
-    src/service.ts        MCP contract, server registry, snapshots, and server probing
-    src/connection.ts     Connection state, transport/auth wiring, and tool discovery
-    src/tools.ts          Tool compilation, argument validation, and execution
-    src/config.ts         Server schemas and environment/file configuration
-    src/commands.ts       Read-only inspection commands
-    src/errors.ts         MCP failures adapted by the host
-    src/instructions.ts   Host-owned MCP tool policy
-    src/catalog.ts        Schema validation, stable names, bounded results
-    src/transport.ts      Awaited SDK stdio teardown
-  config/                 @poppet/config
-    src/config.ts         Validated settings and AppConfig service/layer
-  credentials/            @poppet/credentials
-    src/api-keys.ts       Protected API-key storage and environment overrides
-    src/lock.ts           Scoped ownership shared by credentials and SQLite storage
-  memory/                 @poppet/memory
-    src/service.ts        Memory service and domain errors
-    src/schema.ts         Facts, snapshot data, and snapshot limits
-    src/local.ts          Local fact operations and bounded snapshots
-    src/context-file.ts   Bounded UTF-8 personality and profile reads
-  store/                  @poppet/store
-    src/database.ts       Scoped SQLite client, ownership, permissions, migration
-    src/migrations.ts     Registered migrations and the current schema version
-    src/migrations/       Baseline schema and later migrations
-    src/sql.ts            Row decoding helpers shared with other packages
-    src/schema.ts         Durable session, message, and run schemas
-    src/service.ts        Validated record operations and run lifecycle
-  tasks/                  @poppet/tasks
-    src/scheduler.ts      Serialized scheduled runs and wake queue
-    src/commands.ts       Task operations and result inspection
-    src/task-store.ts     Durable scheduling and occurrence transitions
-    src/task-controls.ts  Atomic edit, snooze, skip, and run-now transactions
-    src/task-records.ts   Shared task and occurrence records
-    src/task-schema.ts    Typed commands, cron expressions, and timestamps
-    src/task-socket.ts    Task command client and JSON responses
-  worker/                 @poppet/worker
-    src/socket.ts         Protected command transport and request ownership
-  platform/               @poppet/platform
-    src/contract.ts       Worker actions, errors, status, and launch description
-    src/logs.ts           Protected log creation and bounded log reading
-    src/macos.ts          LaunchAgent control and plist generation
-    src/linux.ts          systemd user unit control and unit file generation
-  sign-in/                @poppet/sign-in
-    src/callback.ts       Scoped loopback callback with state and paste checks
-    src/authorize.ts      Browser launch or printed link, pasted callbacks, deadline
-  provider/               @poppet/provider
-    src/schema.ts         Normalized messages, tools, events, and continuation
-    src/service.ts        Provider service, model operations, and typed errors
-    src/verification.ts   Shared local tool round-trip verification
-    src/registration.ts   Connection interface, provider metadata, and host services
-    src/protocol/         Responses/Chat Completions codecs and cancellation
-  provider-openai/        @poppet/provider-openai
+  agent/                    @poppet/agent
+    src/service.ts          Persisted chat runner, request slots, deadlines, and run finalization
+    src/conversation.ts     Sequential model and tool loop, batch validation, and run budgets
+    src/tool-execution.ts   Tool dispatch, outcome classification, and journal writes
+    src/context.ts          Complete-exchange context assembly and limits
+    src/reply.ts            Validated model stream completion
+    src/settings.ts         Validated chat budgets
+    src/attachments.ts      Attachment type detection and limits
+    src/pages.ts            Supplied page reading tool, URL grants, and transport
+    src/search.ts           Conversation search and read tools
+    src/memory-tools.ts     Validated memory changes with budget checks and source runs
+    src/task-tools.ts       Chat task management tool
+    src/task-note.ts        Scheduled task note tool
+    src/bash.ts             Bash tool definition and command policy
+    src/action-review.ts    Isolated reviewer requests for Bash and MCP actions
+    src/action-approval.ts  Owner approval requests
+    src/external-tools.ts   Adapter for host-supplied tools such as MCP
+    src/skills.ts           Owner skill-file access
+    src/skill-index.ts      Bounded skill descriptions and indexing
+    src/skill-tools.ts      Skill view tool
+    src/skill-mentions.ts   Skills named with $name in a message
+    src/title.ts            Fallback and generated session titles
+    src/no-reply.ts         NO_REPLY detection for conditional scheduled prompts
+  config/                   @poppet/config, validated settings, quiet hours, and the AppConfig service
+  credentials/              @poppet/credentials, protected API keys and records, and the ownership lock
+  gateway/                  @poppet/gateway
+    src/registration.ts     GatewayRegistration contract for bundled and external gateways
+    src/adapter.ts          GatewayAdapter contract and incoming message types
+    src/accept.ts           Sender authorization and durable acceptance
+    src/execution.ts        Inbox processing and crash recovery
+    src/delivery.ts         Durable reply and scheduled result delivery
+    src/approvals.ts        In-memory approval requests for Bash and reviewed MCP actions
+    src/conversation-naming.ts Managed thread title synchronization
+    src/settings.ts         Shared protected settings files
+  gateway-discord/          @poppet/gateway-discord, Discord adapter, approvals, attachments, and setup
+  gateway-slack/            @poppet/gateway-slack, Slack Socket Mode adapter, approvals, and setup
+  gateway-telegram/         @poppet/gateway-telegram, Telegram Bot API adapter and settings
+  io/                       @poppet/io
+    src/io.ts               Bounded stream reads and subprocess cleanup
+    src/budget.ts           Byte-budget text fitting
+    src/files.ts            Private directories and missing-file handling
+    src/log.ts              logfmt diagnostics
+    src/public-url.ts       Shared HTTP URL validation and public-address policy
+    src/settings.ts         Every configurable timeout and limit, with defaults and ranges
+  mcp/                      @poppet/mcp
+    src/service.ts          MCP contract, server registry, snapshots, and server probing
+    src/connection.ts       Connection state, transport and auth wiring, and tool discovery
+    src/tools.ts            Tool compilation, argument validation, and execution
+    src/catalog.ts          Schema validation, stable names, and bounded results
+    src/config.ts           Server schemas and environment and file configuration
+    src/oauth.ts            OAuth sign-in, token storage, and refresh
+    src/oauth-network.ts    OAuth endpoint address checks
+    src/transport.ts        Scoped stdio teardown and bounded HTTP requests
+    src/commands.ts         Read-only inspection commands
+    src/instructions.ts     Host-owned MCP tool policy
+  memory/                   @poppet/memory
+    src/service.ts          Memory service and domain errors
+    src/schema.ts           Facts, snapshot data, and snapshot limits
+    src/local.ts            Local fact operations and bounded snapshots
+    src/context-file.ts     Bounded UTF-8 personality and profile reads
+  platform/                 @poppet/platform
+    src/contract.ts         Worker actions, errors, status, and launch description
+    src/logs.ts             Protected log creation and bounded log reading
+    src/macos.ts            LaunchAgent control and plist generation
+    src/linux.ts            systemd user unit control and unit file generation
+  provider/                 @poppet/provider
+    src/schema.ts           Normalized messages, tools, events, and continuation
+    src/service.ts          Provider service, model operations, and typed errors
+    src/registration.ts     Connection interface, provider metadata, and host services
+    src/verification.ts     Shared local tool round-trip verification
+    src/protocol/           Responses and Chat Completions codecs and cancellation
+  provider-openai/          @poppet/provider-openai
     src/
-      index.ts            Public services, live layers, and connection errors
-      connection.ts       Credential schemas and redacted secrets
-      auth/               Login, refresh, status, protected credential storage
-      oauth/              Discovery, token exchange, JWT identity validation
-      sign-in/            ChatGPT authorization request and callback checks
-      model/              Model catalog, subscription errors, verification
-      registration.ts     Provider-owned live composition and connection operations
-      test/fixtures/      Local OAuth and model servers for behavior tests
-  provider-opencode/      @poppet/provider-opencode
-    src/service.ts        Go catalog, secret configuration, and protocol routing
-    src/protocol.ts       Go session headers and reasoning continuation
-  provider-openrouter/    @poppet/provider-openrouter
-    src/service.ts        OpenRouter catalog, capabilities, and secret configuration
-    src/protocol.ts       Routing, reasoning continuation, and stream error rules
-docs/                     User guides, architecture, and implementation plan
+      registration.ts       Provider-owned live composition and connection operations
+      connection.ts         Credential schemas and redacted secrets
+      auth/                 Login, refresh, status, and protected credential storage
+      oauth/                Discovery, token exchange, and JWT identity validation
+      sign-in/              ChatGPT authorization request and callback checks
+      model/                Model catalog, subscription errors, and verification
+      test/fixtures/        Local OAuth and model servers for behaviour tests
+  provider-opencode/        @poppet/provider-opencode
+    src/service.ts          OpenCode and OpenCode Go catalogs, keys, and protocol routing
+    src/protocol.ts         Session headers and reasoning continuation
+  provider-openrouter/      @poppet/provider-openrouter
+    src/service.ts          OpenRouter catalog, capabilities, and key configuration
+    src/protocol.ts         Routing, reasoning continuation, and stream error rules
+  sign-in/                  @poppet/sign-in
+    src/callback.ts         Scoped loopback callback with state and paste checks
+    src/authorize.ts        Browser launch or printed link, pasted callbacks, and deadline
+  store/                    @poppet/store
+    src/database.ts         Scoped SQLite client, ownership, and permissions
+    src/migrations.ts       PackageSchema, the migrator, and the store's schema version
+    src/migrations/         Store baseline and later migrations
+    src/schema.ts           Durable session, message, and run schemas
+    src/service.ts          Store service and record operations
+    src/sessions.ts         Session records, titles, and deletion
+    src/runs.ts             Run lifecycle transitions
+    src/tool-calls.ts       Tool call journal
+    src/search.ts           Conversation search index queries
+    src/recall.ts           Bounded session reads for conversation recall
+    src/sql.ts              Row decoding helpers shared with other packages
+  tasks/                    @poppet/tasks
+    src/scheduler.ts        Serialized scheduled runs and wake queue
+    src/task-store.ts       Durable scheduling and occurrence transitions
+    src/task-controls.ts    Atomic edit, snooze, skip, and run-now transactions
+    src/task-records.ts     Shared task and occurrence records
+    src/task-schema.ts      Typed commands, cron expressions, and timestamps
+    src/commands.ts         Task operations and result inspection
+    src/chat-tools.ts       Task management for the chat tool
+    src/task-socket.ts      Task command client and JSON responses
+    src/migrations.ts       Task schema and migrations
+  worker/                   @poppet/worker
+    src/socket.ts           Protected command transport and request ownership
+docs/                       Engineering notes for contributors and agents
 tools/
-  oxlint/anti-slop/        Vendored lint rules
+  hooks/                    Agent hook that refuses commit-hook bypasses
+  oxlint/anti-slop/         Vendored lint rules
+  testing/                  Isolated test runner
 ```
 
 Each workspace declares its own dependencies. Imports between workspaces use
@@ -282,9 +304,8 @@ to shared schemas, storage, or command routing. Lint enforces the import boundar
 See [provider registration and ownership](architecture.md#provider-registration-and-ownership)
 for the contract and integration steps.
 
-`provider models` now returns normalized model descriptions for every provider,
-including ChatGPT. Wire protocol names are internal and omitted from those descriptions.
-Existing credential files and conversation records keep their formats.
+`provider models` returns normalized model descriptions for every provider. Wire
+protocol names stay internal to the provider package.
 
 ## Adding a gateway
 

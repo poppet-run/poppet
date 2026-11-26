@@ -41,4 +41,4 @@ for persistent settings.
 
 - [Development](development.md): workspace layout, checks, tests, and adding providers or gateways.
 - [Architecture](architecture.md): service boundaries, Effect conventions, storage, and execution contracts.
-- [Planned work](https://github.com/poppet-run/poppet/issues): GitHub issues, one per phase.
+- [Planned work](https://github.com/poppet-run/poppet/issues): GitHub issues.
