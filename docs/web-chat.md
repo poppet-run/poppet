@@ -206,7 +206,7 @@ earlier text updates. The page reopens the stream after a proxy error.
 Attachments, message queues, search, renaming, model and skill selection, reasoning
 display, copy buttons, and run details are not available yet. Use `poppet chat show`
 to inspect saved runs. A message can still
-[name a skill](skills.md#name-a-skill-in-a-message) with `$name`. Web chat uses the first message as the conversation title.
+[name a skill](skills.md#mentions) with `$name`. Web chat uses the first message as the conversation title.
 
 The frontend keeps chat state in Nanostores and uses `@nanostores/preact` for UI
 subscriptions. The store polls the session list every five seconds while signed in.

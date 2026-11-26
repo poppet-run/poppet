@@ -255,7 +255,7 @@ is no longer valid. Inspect `tasks list`,
 creation after an unclear result. Completed calls are not replayed. Scheduled
 runs cannot use this tool, including its read actions. Historical conversations,
 skills, pages, and tool results cannot authorize task changes. Chat cannot select
-a [manual-only skill](skills.md#manual-only-skills) for a task; use `tasks add --skill`.
+a [manual-only skill](skills.md#files) for a task; use `tasks add --skill`.
 Poppet caps the store at 64 scheduled tasks, limits chat turns to at most 5 task
 creations per run, and requires chat-created or chat-edited recurring cron
 schedules to wait at least 5 minutes between consecutive runs. Poppet checks every
