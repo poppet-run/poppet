@@ -12,6 +12,8 @@ has no SDK dependency and needs no public webhook. The
 | ----------------- | ----------------------------------------------------------- |
 | `registration.ts` | The registration entry                                      |
 | `settings.ts`     | `channels/telegram.json` and conversation ID parsing        |
+| `setup.ts`        | Interactive setup                                           |
+| `probe.ts`        | Read-only `getMe` and `getUpdates` calls that setup uses    |
 | `api.ts`          | Bot API calls and error mapping                             |
 | `approvals.ts`    | HTML approval prompts, inline buttons, and callback queries |
 | `adapter.ts`      | Polling, conversations, sends, reactions, and topic naming  |
@@ -49,7 +51,8 @@ since. An edit by anyone else stops renaming that topic.
 ## Limits
 
 - Only one `getUpdates` client may run per token, so one worker per token and no
-  webhook.
+  webhook. While a worker polls the token, setup cannot list recent chats and
+  asks for the IDs instead.
 - Updates queued on Telegram's side, for up to 24 hours, are processed at start.
   The inbox ignores messages it already accepted.
 - Only text messages are read. There is no `download`, so a message with files
