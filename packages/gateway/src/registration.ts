@@ -32,6 +32,8 @@ export interface GatewayPromptSetup {
     GatewayEnvironment | Prompt.Environment
   >;
   readonly remove: Effect.Effect<string, GatewayError, GatewayEnvironment>;
+  /** How the owner starts a conversation, shown in setup's next steps. */
+  readonly firstMessage: string;
 }
 
 export interface GatewayRegistration {

@@ -91,7 +91,7 @@ const finish = (context: CLIContext, service: typeof inspectService, hasGateways
 
     const rows = [
       ["poppet chat", "Chat in the terminal"],
-      ...configured.map(({ name }) => [name, "Mention the bot in a channel to start a thread"]),
+      ...configured.map(({ name, setup }) => [name, setup.firstMessage]),
       ...(hasGateways && configured.length === 0
         ? [["poppet setup gateways", "Connect a messaging gateway later"]]
         : []),
