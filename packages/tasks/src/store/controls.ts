@@ -3,9 +3,9 @@ import { isDeepStrictEqual } from "node:util";
 import { Effect, Schema } from "effect";
 import type { SqlClient } from "effect/sql";
 
-import { nextTime, taskRecords, recurringExpiry } from "#src/task-records";
-import { TaskControl, TaskError } from "#src/task-schema";
-import type { Occurrence } from "#src/task-schema";
+import { TaskControl, TaskError } from "#src/schema";
+import type { Occurrence } from "#src/schema";
+import { nextTime, taskRecords, recurringExpiry } from "#src/store/records";
 
 export interface ControlReceipt {
   readonly action: TaskControl["action"];

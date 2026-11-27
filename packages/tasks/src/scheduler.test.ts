@@ -31,10 +31,10 @@ import { TestClock } from "effect/testing";
 import { ChatTasksLive } from "#src/chat-tools";
 import { TaskDestinations, executeTaskCommand } from "#src/commands";
 import { executeOccurrence, reconcileTasks, makeTaskWorker } from "#src/scheduler";
-import { TaskError } from "#src/task-schema";
-import type { NewTask } from "#src/task-schema";
-import { remoteTaskCommand, taskResponse } from "#src/task-socket";
-import { TaskRepository, TaskRepositoryLive } from "#src/task-store";
+import { TaskError } from "#src/schema";
+import type { NewTask } from "#src/schema";
+import { remoteTaskCommand, taskResponse } from "#src/socket";
+import { TaskRepository, TaskRepositoryLive } from "#src/store/store";
 
 const runTaskWorker = Effect.scoped(
   Effect.gen(function* () {

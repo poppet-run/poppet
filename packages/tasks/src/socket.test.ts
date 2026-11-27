@@ -5,9 +5,9 @@ import { join } from "node:path";
 
 import { Effect } from "effect";
 
-import { remoteTaskCommand, taskResponse } from "#src/task-socket";
+import { remoteTaskCommand, taskResponse } from "#src/socket";
 
-describe("task-socket.ts", () => {
+describe("socket.ts", () => {
   test("when task controls omit required fields or add unknown fields, rejects them before dispatch", async () => {
     let dispatched = 0;
 

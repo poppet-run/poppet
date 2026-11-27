@@ -2,7 +2,7 @@ import { timeoutAfter, timeoutSeconds } from "@poppet/io";
 import { requestWorkerReply, workerReply } from "@poppet/worker";
 import { Effect, Option, Schema } from "effect";
 
-import { TaskCommand, TaskError, isTaskControl } from "#src/task-schema";
+import { TaskCommand, TaskError, isTaskControl } from "#src/schema";
 
 export const remoteTaskCommand = (path: string, command: TaskCommand) =>
   Effect.flatMap(timeoutSeconds("taskOperationSeconds"), (seconds) =>

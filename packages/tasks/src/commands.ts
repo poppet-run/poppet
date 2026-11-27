@@ -5,10 +5,10 @@ import { Store } from "@poppet/store";
 import type { Run } from "@poppet/store";
 import { Context, Effect, Option, Schema } from "effect";
 
-import type { TaskCommand } from "#src/task-schema";
-import { TaskError, isTaskControl } from "#src/task-schema";
-import { TaskRepository } from "#src/task-store";
-import type { TaskStore } from "#src/task-store";
+import type { TaskCommand } from "#src/schema";
+import { TaskError, isTaskControl } from "#src/schema";
+import { TaskRepository } from "#src/store/store";
+import type { TaskStore } from "#src/store/store";
 
 export class TaskDestinations extends Context.Service<
   TaskDestinations,

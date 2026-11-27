@@ -2,7 +2,7 @@ import { fitPrefix, longestFit } from "@poppet/io";
 import { StoreError } from "@poppet/store";
 import { Effect } from "effect";
 
-import type { Occurrence, Task, TaskTarget } from "#src/task-schema";
+import type { Occurrence, Task, TaskTarget } from "#src/schema";
 
 export const summary = (task: Task) => ({
   id: task.id,

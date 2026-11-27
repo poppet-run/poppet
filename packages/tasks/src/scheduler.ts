@@ -20,10 +20,10 @@ import {
 } from "effect";
 
 import { TaskDestinations, executeTaskCommand, noAction } from "#src/commands";
-import { isTaskControl, nextSlot } from "#src/task-schema";
-import type { Occurrence, ProviderPause, TaskError, TaskCommand } from "#src/task-schema";
-import { TaskRepository } from "#src/task-store";
-import type { TaskStore } from "#src/task-store";
+import { isTaskControl, nextSlot } from "#src/schema";
+import type { Occurrence, ProviderPause, TaskError, TaskCommand } from "#src/schema";
+import { TaskRepository } from "#src/store/store";
+import type { TaskStore } from "#src/store/store";
 
 export class WorkerConnections extends Context.Service<
   WorkerConnections,

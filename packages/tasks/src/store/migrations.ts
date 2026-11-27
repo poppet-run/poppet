@@ -1,9 +1,9 @@
 import { packageSchema } from "@poppet/store";
 
-import { removeWorkload } from "#src/migrations/0002_remove_workload";
-import { taskEnd } from "#src/migrations/0003_task_end";
-import { taskNotes } from "#src/migrations/0004_task_notes";
-import { sessionRemoval } from "#src/migrations/0005_session_removal";
+import { removeWorkload } from "#src/store/migrations/0002_remove_workload";
+import { taskEnd } from "#src/store/migrations/0003_task_end";
+import { taskNotes } from "#src/store/migrations/0004_task_notes";
+import { sessionRemoval } from "#src/store/migrations/0005_session_removal";
 
 const baseline: ReadonlyArray<string> = [
   `CREATE TABLE jobs (

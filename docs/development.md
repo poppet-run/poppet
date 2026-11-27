@@ -251,14 +251,12 @@ packages/
     src/sql.ts              Row decoding helpers shared with other packages
   tasks/                    @poppet/tasks
     src/scheduler.ts        Serialized scheduled runs and wake queue
-    src/task-store.ts       Durable scheduling and occurrence transitions
-    src/task-controls.ts    Atomic edit, snooze, skip, and run-now transactions
-    src/task-records.ts     Shared task and occurrence records
-    src/task-schema.ts      Typed commands, cron expressions, and timestamps
+    src/schema.ts           Typed commands, cron expressions, and timestamps
     src/commands.ts         Task operations and result inspection
     src/chat-tools.ts       Task management for the chat tool
-    src/task-socket.ts      Task command client and JSON responses
-    src/migrations.ts       Task schema and migrations
+    src/output.ts           Formatted task tool responses
+    src/socket.ts           Task command client and JSON responses
+    src/store/              Task repository, controls, records, and schema migrations
   worker/                   @poppet/worker
     src/socket.ts           Protected command transport and request ownership
 docs/                       Engineering notes for contributors and agents

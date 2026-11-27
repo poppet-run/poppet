@@ -14,7 +14,7 @@ import { Store, StoreError } from "@poppet/store";
 import type { Run } from "@poppet/store";
 import { Clock, Cron, Effect, Layer, Match, Option, Schema } from "effect";
 
-import { bounded, detailsOutput, listOutput, summary } from "#src/task-output";
+import { bounded, detailsOutput, listOutput, summary } from "#src/output";
 import {
   NewTask,
   checkEndTime,
@@ -23,9 +23,9 @@ import {
   parseTimestamp,
   TaskError,
   TaskPatch,
-} from "#src/task-schema";
-import type { Schedule, Task, TaskControl } from "#src/task-schema";
-import { TaskRepository } from "#src/task-store";
+} from "#src/schema";
+import type { Schedule, Task, TaskControl } from "#src/schema";
+import { TaskRepository } from "#src/store/store";
 
 const checkChatCronCadence = (schedule: Schedule, now: number, intervalMinutes: number) => {
   if (schedule.type !== "cron") {

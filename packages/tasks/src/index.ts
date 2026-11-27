@@ -11,11 +11,11 @@ export {
   nextOccurrence,
   checkEndTime,
   parseTimestamp,
-} from "#src/task-schema";
+} from "#src/schema";
 
-export { TaskRepository, TaskRepositoryLive } from "#src/task-store";
+export { TaskRepository, TaskRepositoryLive } from "#src/store/store";
 
-export type { ControlReceipt } from "#src/task-controls";
+export type { ControlReceipt } from "#src/store/controls";
 
 export {
   TaskDeliveries,
@@ -30,8 +30,8 @@ export {
 
 export { executeOccurrence, makeTaskWorker, WorkerConnections } from "#src/scheduler";
 
-export { remoteTaskCommand, taskResponse } from "#src/task-socket";
+export { remoteTaskCommand, taskResponse } from "#src/socket";
 
 export { ChatTasksLive } from "#src/chat-tools";
 
-export { taskSchema } from "#src/migrations";
+export { taskSchema } from "#src/store/migrations";

@@ -8,14 +8,14 @@ a fresh scheduled chat run and can deliver the answer to a gateway. The
 
 | Module                                   | Owns                                                             |
 | ---------------------------------------- | ---------------------------------------------------------------- |
-| `packages/tasks/src/task-schema.ts`      | Commands, schedules, timestamps, and `nextSlot`                  |
-| `packages/tasks/src/task-store.ts`       | `TaskRepository`, scheduling, claims, and occurrence transitions |
-| `packages/tasks/src/task-controls.ts`    | Edit, skip, snooze, and run-now transactions                     |
-| `packages/tasks/src/task-records.ts`     | Task and occurrence records shared with the scheduler            |
+| `packages/tasks/src/schema.ts`           | Commands, schedules, timestamps, and `nextSlot`                  |
+| `packages/tasks/src/store/store.ts`      | `TaskRepository`, scheduling, claims, and occurrence transitions |
+| `packages/tasks/src/store/controls.ts`   | Edit, skip, snooze, and run-now transactions                     |
+| `packages/tasks/src/store/records.ts`    | Task and occurrence records shared with the scheduler            |
 | `packages/tasks/src/scheduler.ts`        | The wake queue, `reconcileTasks`, and `executeOccurrence`        |
 | `packages/tasks/src/commands.ts`         | Task operations, inspection, and delivery state                  |
 | `packages/tasks/src/chat-tools.ts`       | `ChatTasksLive` for the chat tool                                |
-| `packages/tasks/src/task-socket.ts`      | The task command client for the worker socket                    |
+| `packages/tasks/src/socket.ts`           | The task command client for the worker socket                    |
 | `packages/agent/src/tools/task-tools.ts` | `poppet_tasks.manage_tasks` and the `ChatTasks` capability       |
 | `packages/agent/src/tools/task-note.ts`  | `poppet_tasks.save_note`                                         |
 | `apps/cli/src/commands/tasks/`           | The `tasks` command and its argument parsing                     |
@@ -52,7 +52,7 @@ Cron keeps local wall time. A local time skipped by a spring DST change moves
 forward, and a time repeated in autumn runs once.
 
 A cron task can have an end time, `jobs.end_at`, set with `--until` or `endAt`.
-`nextSlot` in `task-schema.ts` is the only rule: a slot later than the end time
+`nextSlot` in `schema.ts` is the only rule: a slot later than the end time
 does not exist, and one exactly at it does. Creation, reconciliation, resume, the
 controls, and schedule edits all advance `next_at` through `nextSlot`. So
 `next_at` is never later than `end_at`, and a null `next_at` on a cron task means
@@ -124,7 +124,7 @@ answer. Such a run completes, posts nothing, logs `completed no-action`, and sho
 Controls act on the task's current definition. `skip_next`, `snooze`, and
 `run` act on its next execution: the pending occurrence if there is one,
 otherwise the unqueued `next_at` slot. Nothing needs a prior `show`.
-`task-controls.ts` checks paused and running state, holds, expiry, and future
+`store/controls.ts` checks paused and running state, holds, expiry, and future
 times in the same transaction as the change. A running occurrence blocks every
 control until it finishes or is cancelled. Paused tasks can be edited. A lost
 worker response never falls back to a local change.
