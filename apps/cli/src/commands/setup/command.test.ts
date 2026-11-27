@@ -62,7 +62,7 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
     channelError: "",
   };
 
-  const replies = new Map(
+  const replies = new Map<string, unknown>(
     Object.entries({
       "/api/auth.test": { ok: true, team_id: "T123", team: "Home", user: "poppet" },
       "/api/apps.connections.open": { ok: true, url: "wss://example.invalid" },
@@ -283,7 +283,7 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
     return result;
   };
 
-  return { directory, path, state, actions, output, run };
+  return { directory, path, state, actions, output, replies, run };
 };
 
 const saveDiscord = (directory: string) =>
@@ -498,6 +498,29 @@ describe("setup", () => {
       "Setup cannot read the saved Discord settings and will replace them.",
     );
     expect(JSON.parse(await readFile(credentials, "utf8"))).toEqual({ token: "discord-secret" });
+  });
+
+  test("when a team owns the Discord application, setup suggests the team owner", async () => {
+    const f = await fixture();
+    f.replies.set("/api/v10/oauth2/applications/@me", {
+      owner: null,
+      team: { owner_user_id: "250" },
+    });
+    expect(
+      await f.run([
+        answer(),
+        answer(),
+        answer(),
+        selectAll,
+        answer("discord-secret"),
+        answer(),
+        answer(),
+        answer(),
+        answer(),
+        answer(),
+      ]),
+    ).toBeNull();
+    expect(JSON.parse(await readFile(f.path, "utf8")).discord.ownerId).toBe("250");
   });
 
   test("setup gateways fails clearly when no gateway supports interactive setup", async () => {
