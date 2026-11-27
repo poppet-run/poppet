@@ -1,6 +1,6 @@
 export { Store, StoreLive } from "#src/service";
 
-export { callDigest } from "#src/queries/approvals";
+export { callDigest, ruleMatchDigest } from "#src/queries/approvals";
 
 export { StoreError, reportAs } from "#src/errors";
 
@@ -29,8 +29,14 @@ export {
   RunStatus,
   RunOutcome,
   Approval,
+  ApprovalRule,
+  ApprovalRuleCreator,
+  ApprovalRuleMatcher,
   ApprovalState,
+  BashRuleMatcher,
+  MCPRuleMatcher,
   NewApproval,
+  NewApprovalRule,
   ToolApproval,
   ToolCall,
   ToolOutcome,

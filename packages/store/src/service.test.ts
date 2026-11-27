@@ -770,7 +770,7 @@ describe("Store", () => {
             { role: "assistant", output: response.output, continuation: response.continuation },
           ]);
           expect(yield* store.status).toMatchObject({
-            schemaVersion: 7,
+            schemaVersion: 8,
             sessions: 1,
             messages: 4,
             runs: 1,
@@ -1230,7 +1230,7 @@ describe("Store", () => {
       await expect(Effect.runPromise(borrowed.status)).rejects.toMatchObject({ reason: "storage" });
       expect(await readdir(join(fixtureStore.directory, "store"))).not.toContain("owner.lock");
       expect(await fixtureStore.run(Store.use((store) => store.status))).toMatchObject({
-        schemaVersion: 7,
+        schemaVersion: 8,
       });
     } finally {
       await Effect.runPromise(Fiber.interrupt(owner));
@@ -1479,6 +1479,120 @@ describe("approvals", () => {
             ["interrupted", "agent:command-approval-required"],
           ]);
           expect(yield* store.expireApprovals).toEqual([]);
+        }).pipe(Effect.provide(TestClock.layer())),
+      );
+    } finally {
+      await fixtureStore.close();
+    }
+  });
+});
+
+describe("approval rules", () => {
+  test("when an approval is decided with a rule, saves the rule atomically and survives session deletion", async () => {
+    const fixtureStore = await fixture();
+
+    try {
+      await fixtureStore.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const { session, run, approval } = yield* waitingRun();
+          const matcher = { kind: "bash", command: "systemctl restart app", cwd: "/" } as const;
+
+          const decided = yield* store.decideApproval(
+            approval.id,
+            { ...owner, decision: "approved" },
+            { rule: matcher },
+          );
+
+          const ruleId = decided?.decidedBy?.ruleId;
+          expect(ruleId).toBeDefined();
+
+          const rules = yield* store.approvalRules;
+          expect(rules).toHaveLength(1);
+          expect(rules[0]).toMatchObject({
+            id: ruleId,
+            kind: "bash",
+            matcher,
+            sourceApprovalId: approval.id,
+            useCount: 0,
+            lastUsedAt: null,
+            revokedAt: null,
+          });
+
+          const calls = yield* store.toolCalls(run.id);
+          expect(calls[0]?.review?.approval?.ruleId).toBe(ruleId);
+
+          yield* store.finishRun(run.id, { status: "interrupted", reason: "cancelled" });
+          expect(yield* store.deleteSessions([session.id])).toHaveLength(1);
+
+          const matched = yield* store.matchApprovalRule(matcher);
+          expect(matched).toMatchObject({ id: ruleId, useCount: 1 });
+          expect(matched?.lastUsedAt).not.toBeNull();
+        }).pipe(Effect.provide(TestClock.layer())),
+      );
+    } finally {
+      await fixtureStore.close();
+    }
+  });
+
+  test("when rules are duplicated, expired, or revoked, enforces active matching only", async () => {
+    const fixtureStore = await fixture();
+
+    try {
+      await fixtureStore.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          const bashMatcher = { kind: "bash", command: "git status", cwd: "/repo" } as const;
+
+          const mcpMatcher = {
+            kind: "mcp",
+            serverId: "github",
+            toolName: "create_issue",
+            origin: "https://api.github.com",
+          } as const;
+
+          const first = yield* store.createApprovalRule({
+            matcher: bashMatcher,
+            createdBy: owner,
+            expiresAt: 60_000,
+          });
+
+          const duplicate = yield* store.createApprovalRule({
+            matcher: bashMatcher,
+            createdBy: owner,
+          });
+
+          expect(duplicate.id).toBe(first.id);
+
+          yield* TestClock.adjust("1 second");
+
+          const mcpRule = yield* store.createApprovalRule({
+            matcher: mcpMatcher,
+            createdBy: owner,
+          });
+
+          expect((yield* store.approvalRules).map((r) => r.id)).toEqual([first.id, mcpRule.id]);
+
+          yield* TestClock.adjust("1 minute");
+          expect(yield* store.matchApprovalRule(bashMatcher)).toBeNull();
+          expect((yield* store.approvalRules).map((r) => r.id)).toEqual([mcpRule.id]);
+
+          const recreated = yield* store.createApprovalRule({
+            matcher: bashMatcher,
+            createdBy: owner,
+          });
+
+          expect(recreated.id).not.toBe(first.id);
+          expect((yield* store.approvalRule(first.id))?.revokedAt).not.toBeNull();
+
+          const revoked = yield* store.revokeApprovalRule(recreated.id);
+          expect(revoked?.revokedAt).not.toBeNull();
+          expect(yield* store.revokeApprovalRule(recreated.id)).toBeNull();
+          expect(yield* store.matchApprovalRule(bashMatcher)).toBeNull();
+
+          const revokedAll = yield* store.revokeAllApprovalRules;
+          expect(revokedAll.map((r) => r.id)).toEqual([mcpRule.id]);
+          expect(yield* store.approvalRules).toEqual([]);
         }).pipe(Effect.provide(TestClock.layer())),
       );
     } finally {

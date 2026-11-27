@@ -125,6 +125,15 @@ The stored run status stays `running` while it waits. Widening the `runs` check
 would need a table rebuild, which would drop the triggers other packages put on
 `runs`.
 
+Store migration 8 added `approval_rules`, storing owner-created "Always allow"
+rules globally per data directory. Each row holds its kind (`bash` or `mcp`),
+canonical `match_digest` and `matcher` JSON, creator identity, optional
+`source_approval_id` (without a foreign key, so session deletion never blocks or
+deletes standing rules), optional `expires_at`, soft-delete `revoked_at`,
+`last_used_at`, and `use_count`. A partial unique index enforces at most one
+non-revoked rule per `match_digest`. `decideApproval` can save a rule atomically
+with an approval and record `ruleId` on `ToolApproval`.
+
 ## Tool call journal
 
 `tool_calls` records every tool call. One transaction saves the assistant tool
