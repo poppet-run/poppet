@@ -36,25 +36,29 @@ const prompt = Effect.gen(function* () {
   const defaults = file.slack ?? saved;
 
   yield* Console.log(
-    "Copy IDs from your Slack workspace. Only the configured owner can invoke Poppet; channel members can read its replies.",
+    [
+      "Create an app at https://api.slack.com/apps with Socket Mode on, add its bot scopes, install it, and invite it to the home channel.",
+      "Guide, including the scopes Poppet needs: https://poppet.run/docs/gateways/slack/",
+      "Only the configured owner can invoke Poppet; channel members can read its replies.",
+    ].join("\n"),
   );
 
   const ownerId = yield* id(
-    "Your Slack user ID",
+    "Your Slack user ID (your profile > More > Copy member ID)",
     defaults?.ownerId,
     SlackConfiguration.fields.ownerId,
     "Enter a Slack user ID starting with U or W.",
   );
 
   const teamId = yield* id(
-    "Workspace ID",
+    "Workspace ID (the T... part of app.slack.com/client/T.../ in a browser)",
     defaults?.teamId,
     SlackConfiguration.fields.teamId,
     "Enter a Slack workspace ID starting with T.",
   );
 
   const homeChannelId = yield* id(
-    "Home channel ID (default destination for scheduled results and notifications)",
+    "Home channel ID for scheduled results and notifications (channel details > About, at the bottom)",
     defaults?.homeChannelId,
     SlackConfiguration.fields.homeChannelId,
     "Enter a Slack channel ID starting with C or G.",
@@ -66,14 +70,14 @@ const prompt = Effect.gen(function* () {
 
   const token = replaceToken
     ? yield* promptSecret(
-        "Slack bot token",
+        "Slack bot token, starting xoxb- (OAuth & Permissions)",
         "Enter a nonempty bot token without whitespace, up to 8192 characters.",
       )
     : saved.token;
 
   const appToken = replaceToken
     ? yield* promptSecret(
-        "Slack app token",
+        "Slack app token, starting xapp-, with connections:write (Basic Information > App-Level Tokens)",
         "Enter a nonempty app token without whitespace, up to 8192 characters.",
       )
     : saved.appToken;

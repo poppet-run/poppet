@@ -34,14 +34,26 @@ const prompt = Effect.gen(function* () {
   const defaults = file.discord ?? saved;
 
   yield* Console.log(
-    "Use Discord Developer Mode to copy IDs. Only the configured owner can invoke Poppet; channel members can read its replies.",
+    [
+      "Create a bot at https://discord.com/developers/applications, turn on its Message Content intent, and invite it to your server.",
+      "To copy IDs, turn on Developer Mode in Discord under Settings > Advanced, then right-click a user, server, or channel.",
+      "Guide: https://poppet.run/docs/gateways/discord/",
+      "Only the configured owner can invoke Poppet; channel members can read its replies.",
+    ].join("\n"),
   );
 
-  const ownerId = yield* id("Your Discord user ID", defaults?.ownerId);
-  const guildId = yield* id("Server ID", defaults?.guildId);
+  const ownerId = yield* id(
+    "Your Discord user ID (right-click your name > Copy User ID)",
+    defaults?.ownerId,
+  );
+
+  const guildId = yield* id(
+    "Server ID (right-click the server icon > Copy Server ID)",
+    defaults?.guildId,
+  );
 
   const homeChannelId = yield* id(
-    "Home channel ID (default destination for scheduled results and notifications)",
+    "Home channel ID for scheduled results and notifications (right-click the channel > Copy Channel ID)",
     defaults?.homeChannelId,
   );
 
@@ -51,7 +63,7 @@ const prompt = Effect.gen(function* () {
 
   const token = replaceToken
     ? yield* promptSecret(
-        "Discord bot token",
+        "Discord bot token (Developer Portal > your app > Bot > Reset Token)",
         "Enter a nonempty bot token without whitespace, up to 8192 characters.",
       )
     : saved.token;
