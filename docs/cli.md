@@ -77,7 +77,8 @@ gateways`, and `poppet setup worker` run one step, plus the worker step, without
 asking.
 
 The provider step reuses saved choices, offers to reconnect an existing provider,
-and lists that provider's models. The gateway step lists the gateways that have a
+and lists that provider's models. It then offers the provider's verification
+request for the chosen model, and keeps the model if the request fails. The gateway step lists the gateways that have a
 `promptSetup` in one multi-select, with configured gateways selected, and prompts
 for each selected one. Each gateway asks for its token first and checks it with a
 read-only platform call. Discord then suggests the application owner as the
@@ -96,6 +97,6 @@ redo the provider or gateway step, or cancel without saving. Redoing the gateway
 step starts again from the saved settings. Saves happen in order: authentication
 at once, then the provider and model, then each gateway. Cancelling or a later
 failure keeps completed saves and reports them. Setup preserves other `config.json` settings, never overwrites
-invalid configuration, and runs no inference check. On macOS and
+invalid configuration, and runs inference only for the offered test request. On macOS and
 Linux with systemd, it offers to install, start, or restart the worker. A restart
 can interrupt active runs.

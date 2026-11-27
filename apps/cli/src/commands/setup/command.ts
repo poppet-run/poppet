@@ -169,7 +169,6 @@ export const runSetup = (context: CLIContext, only: SetupSection | null = null) 
     }
 
     yield* step("worker");
-    yield* Console.log("Setup has not tested live inference or messaging connections.");
     yield* setupWorker(context, config.dataDirectory, worker);
   }).pipe(
     Effect.catchTag("QuitError", () =>
