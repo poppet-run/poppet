@@ -21,10 +21,10 @@
     "@poppet/memory": "workspace:*",
     "@poppet/provider": "workspace:*",
     "@poppet/store": "workspace:*",
-    "effect": "4.1.5",
+    "effect": "4.1.6",
     "entities": "9.0.0"
   },
   "devDependencies": {
-    "openai": "7.62.0"
+    "openai": "7.65.0"
   }
 }
