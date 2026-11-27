@@ -13,6 +13,7 @@ import type { Cause } from "effect";
 
 import { readChatLine } from "#src/commands/chat/prompt";
 import { createCLIContext } from "#src/commands/context";
+import { finding } from "#src/commands/doctor/report";
 import { gateways } from "#src/commands/gateway/registry";
 import { runSetup } from "#src/commands/setup/command";
 import type { SetupSection } from "#src/commands/setup/command";
@@ -204,7 +205,9 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
     });
 
     const result = await Effect.runPromise(
-      runSetup(context, only).pipe(
+      runSetup(context, only, () =>
+        Effect.succeed(finding("worker.service", "skipped", "local", "No installed service.")),
+      ).pipe(
         Effect.provideService(Terminal.Terminal, terminal),
         Effect.provideService(GatewayFetch, platform),
         Effect.provideService(CredentialInput, {
@@ -292,6 +295,11 @@ describe("setup", () => {
     expect(f.output.join("\n")).not.toContain("discord-secret");
     expect(f.output.join("\n")).not.toContain("provider-secret");
     expect(await readdir(f.directory)).not.toContain("store");
+    const finish = f.output.slice(f.output.findIndex((line) => line.includes("Setup check")));
+    expect(finish.join("\n")).toContain("- Worker connection: The worker is not responding.");
+    expect(finish.join("\n")).toContain(
+      "  Discord        Mention the bot in a channel to start a thread",
+    );
   });
 
   test("reruns default to the saved provider and model and preserve skipped Discord and unrelated settings", async () => {
@@ -342,6 +350,7 @@ describe("setup", () => {
       expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual(saved);
       expect(f.state.logins).toBe(0);
       expect(f.actions).toEqual([...actions]);
+      expect(f.output.join("\n")).toContain("Setup check");
     },
   );
 

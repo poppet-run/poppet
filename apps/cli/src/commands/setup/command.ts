@@ -8,6 +8,9 @@ import { Command, Prompt } from "effect/cli";
 
 import { terminalKeyInput } from "#src/api-key-input";
 import type { CLIContext } from "#src/commands/context";
+import { collectDoctor } from "#src/commands/doctor/collect";
+import { inspectService } from "#src/commands/doctor/local";
+import { checkLabels } from "#src/commands/doctor/report";
 import { UsageError } from "#src/commands/errors";
 import { describeGateways, gatewayStates, promptGateways } from "#src/commands/setup/gateways";
 import { promptProvider } from "#src/commands/setup/provider";
@@ -57,7 +60,57 @@ const chooseSections = (only: SetupSection | null, rerun: boolean, hasGateways: 
     });
   });
 
-export const runSetup = (context: CLIContext, only: SetupSection | null = null) =>
+const finish = (context: CLIContext, service: typeof inspectService, hasGateways: boolean) =>
+  Effect.gen(function* () {
+    yield* heading("Setup check");
+    const report = yield* collectDoctor(context, service);
+
+    const problems = report.checks.filter(
+      (check) => check.incomplete || check.status === "warning" || check.status === "error",
+    );
+
+    yield* Console.log(
+      problems.length === 0
+        ? "Ready. Doctor found no problems."
+        : [
+            "Needs attention:",
+            ...problems.map(
+              (check) =>
+                `  - ${checkLabels.get(check.id) ?? check.id}: ${check.message}${check.nextStep === null ? "" : ` ${check.nextStep}`}`,
+            ),
+            "Run poppet doctor for the full report.",
+          ].join("\n"),
+    );
+
+    const configured = (yield* gatewayStates(context).pipe(
+      Effect.provideService(GatewayEnvironment, {
+        dataDirectory: (yield* AppConfig).dataDirectory,
+      }),
+      Effect.orElseSucceed(() => []),
+    )).filter((gateway) => gateway.configured);
+
+    const rows = [
+      ["poppet chat", "Chat in the terminal"],
+      ...configured.map(({ name }) => [name, "Mention the bot in a channel to start a thread"]),
+      ...(hasGateways && configured.length === 0
+        ? [["poppet setup gateways", "Connect a messaging gateway later"]]
+        : []),
+      ["poppet doctor", "Check this setup again later"],
+    ];
+
+    const width = Math.max(...rows.map(([label = ""]) => label.length));
+
+    yield* heading("Next steps");
+    yield* Console.log(
+      rows.map(([label = "", text = ""]) => `  ${label.padEnd(width)}  ${text}`).join("\n"),
+    );
+  });
+
+export const runSetup = (
+  context: CLIContext,
+  only: SetupSection | null = null,
+  service = inspectService,
+) =>
   Effect.gen(function* () {
     const config = yield* AppConfig;
     const { path, file } = yield* readConfigFile(config.dataDirectory);
@@ -83,6 +136,7 @@ export const runSetup = (context: CLIContext, only: SetupSection | null = null) 
 
     if (sections.length === 0) {
       yield* Console.log("Setup left everything unchanged.");
+      yield* finish(context, service, gateways.length > 0);
 
       return;
     }
@@ -170,6 +224,7 @@ export const runSetup = (context: CLIContext, only: SetupSection | null = null) 
 
     yield* step("worker");
     yield* setupWorker(context, config.dataDirectory, worker);
+    yield* finish(context, service, gateways.length > 0);
   }).pipe(
     Effect.catchTag("QuitError", () =>
       Effect.fail(new UsageError({ message: "Setup cancelled." })),
