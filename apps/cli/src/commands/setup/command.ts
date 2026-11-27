@@ -1,164 +1,64 @@
+import { styleText } from "node:util";
+
 import { AppConfig, readConfigFile, updateConfigFile } from "@poppet/config";
 import { GatewayEnvironment } from "@poppet/gateway";
-import { CredentialInput, Provider, ProviderConnection, invalidRequest } from "@poppet/provider";
-import { remoteTaskCommand } from "@poppet/tasks";
-import { workerSocketPath } from "@poppet/worker";
-import { Console, Effect, Schema } from "effect";
-import { Command, Prompt } from "effect/cli";
+import { CredentialInput } from "@poppet/provider";
+import { Console, Effect } from "effect";
+import { Command } from "effect/cli";
 
 import { terminalKeyInput } from "#src/api-key-input";
 import type { CLIContext } from "#src/commands/context";
 import { UsageError } from "#src/commands/errors";
-import { findProvider } from "#src/runtime";
+import { describeGateways, gatewayStates, promptGateways } from "#src/commands/setup/gateways";
+import { promptProvider } from "#src/commands/setup/provider";
+import { describeWorker, setupWorker, workerState } from "#src/commands/setup/worker";
 
-const setupWorker = (context: CLIContext, directory: string) =>
-  Effect.gen(function* () {
-    const managed = yield* context.worker("status", directory);
-
-    if (managed === null) {
-      yield* Console.log("Start scheduling and messaging with: poppet worker run");
-
-      return;
-    }
-
-    const status = yield* Schema.decodeUnknownEffect(
-      Schema.Struct({ installed: Schema.Boolean, active: Schema.Boolean }),
-    )(managed).pipe(
-      Effect.mapError(() => new UsageError({ message: "Unexpected worker status." })),
-    );
-
-    const running = yield* remoteTaskCommand(workerSocketPath(directory), { action: "status" });
-
-    if (running !== null && !status.active) {
-      yield* Console.log(
-        "A foreground worker is running. Stop it and run poppet worker run again to apply these settings.",
-      );
-
-      return;
-    }
-
-    const action = status.installed ? (status.active ? "restart" : "start") : "install";
-
-    const message = status.active
-      ? "Restart the worker to apply these settings? This can interrupt active runs."
-      : status.installed
-        ? "Start the installed worker for scheduling and messaging?"
-        : "Install and start the login worker for scheduling and messaging?";
-
-    if (yield* Prompt.Confirm({ message, initial: false })) {
-      yield* Console.log(yield* context.worker(action, directory));
-      yield* Console.log("Run poppet worker status to check readiness.");
-    } else {
-      yield* Console.log(
-        status.active
-          ? "Restart the worker when ready to apply these settings: poppet worker restart"
-          : "Start scheduling and messaging when ready: poppet worker run",
-      );
-    }
-  });
-
-const promptGateways = (context: CLIContext) =>
-  Effect.gen(function* () {
-    const available = yield* Effect.forEach(
-      context.gateways.flatMap(({ id, name, promptSetup }) =>
-        promptSetup === undefined ? [] : [{ id, name, setup: promptSetup }],
-      ),
-      (gateway) =>
-        gateway.setup.configured.pipe(Effect.map((configured) => ({ ...gateway, configured }))),
-    );
-
-    if (available.length === 0) {
-      return [];
-    }
-
-    const chosen = yield* Prompt.MultiSelect({
-      message: "Messaging gateways to set up (space toggles, enter confirms)",
-      choices: available.map((gateway) => ({
-        title: gateway.configured ? `${gateway.name} (configured)` : gateway.name,
-        value: gateway.id,
-        selected: gateway.configured,
-      })),
-    });
-
-    const environment = yield* GatewayEnvironment;
-    const saves = [];
-
-    for (const gateway of available) {
-      const save = chosen.includes(gateway.id)
-        ? yield* gateway.setup.prompt
-        : gateway.configured &&
-            (yield* Prompt.Confirm({
-              message: `Remove the saved ${gateway.name} settings and tokens? No keeps them.`,
-              initial: false,
-            }))
-          ? gateway.setup.remove.pipe(Effect.provideService(GatewayEnvironment, environment))
-          : null;
-
-      saves.push({ name: gateway.name, save });
-    }
-
-    return saves;
-  });
+const heading = (text: string) => Console.log(`\n${styleText("bold", text)}`);
 
 export const runSetup = (context: CLIContext) =>
   Effect.gen(function* () {
     const config = yield* AppConfig;
-    const { path } = yield* readConfigFile(config.dataDirectory);
+    const { path, file } = yield* readConfigFile(config.dataDirectory);
+    const environment = { dataDirectory: config.dataDirectory };
+
+    const gateways = yield* gatewayStates(context).pipe(
+      Effect.provideService(GatewayEnvironment, environment),
+    );
+
+    const worker = yield* workerState(context, config.dataDirectory);
+
     yield* Console.log(
-      `Setting up ${path}. Sign-ins are saved immediately; configuration is saved after the prompts.`,
+      [
+        `Setting up ${path}`,
+        `  Provider  ${file.provider === undefined ? "not chosen" : `${file.provider}, model ${file.model ?? "not chosen"}`}`,
+        `  Gateways  ${describeGateways(gateways)}`,
+        `  Worker    ${describeWorker(worker)}`,
+        "Sign-ins are saved immediately; configuration is saved after the prompts.",
+      ].join("\n"),
     );
 
-    const selected = yield* Prompt.Select({
-      message: "Provider",
-      choices: context.registered.map((entry) => ({
-        title: entry.name,
-        value: entry.id,
-        selected: entry.id === config.provider,
-      })),
-    });
+    const steps = ["Provider and model", ...(gateways.length > 0 ? ["Messaging gateways"] : [])];
 
-    const entry = yield* findProvider(selected, context.registered);
+    const step = (index: number) =>
+      heading(`Step ${index + 1} of ${steps.length + 1}: ${steps[index]}`);
 
-    const model = yield* Effect.gen(function* () {
-      const connection = yield* ProviderConnection;
-      const status = yield* connection.status;
+    yield* step(0);
+    const { provider, model } = yield* promptProvider(context, config);
 
-      if (
-        status.connected !== true ||
-        status.source === "environment" ||
-        status.planUsage === false ||
-        (yield* Prompt.Confirm({ message: `Reconnect ${entry.name}?`, initial: false }))
-      ) {
-        yield* Console.log(yield* connection.login({ openBrowser: true, callbackPort: null }));
-        yield* Console.log(`${entry.name} authentication saved.`);
-      }
-
-      const models = yield* (yield* Provider).models;
-
-      if (models.length === 0) {
-        return yield* Effect.fail(invalidRequest(selected, "The provider returned no models."));
-      }
-
-      return yield* Prompt.AutoComplete({
-        message: "Model (type to filter)",
-        choices: models.map((candidate) => ({
-          title: `${candidate.name} (${candidate.id})`,
-          value: candidate.id,
-          selected: selected === config.provider && candidate.id === config.model,
-        })),
-      });
-    }).pipe(Effect.provide(context.runtime.selectedProvider(selected)));
-
-    const saves = yield* promptGateways(context).pipe(
-      Effect.provideService(GatewayEnvironment, { dataDirectory: config.dataDirectory }),
-    );
+    const saves =
+      gateways.length === 0
+        ? []
+        : yield* step(1).pipe(
+            Effect.andThen(promptGateways(gateways)),
+            Effect.provideService(GatewayEnvironment, environment),
+          );
 
     yield* updateConfigFile(config.dataDirectory, (current) => ({
       ...current,
-      provider: selected,
+      provider,
       model,
     }));
-    yield* Console.log(`Saved provider ${selected} and model ${model} to ${path}.`);
+    yield* Console.log(`Saved provider ${provider} and model ${model} to ${path}.`);
 
     for (const { name, save } of saves) {
       if (save !== null) {
@@ -169,7 +69,8 @@ export const runSetup = (context: CLIContext) =>
     }
 
     yield* Console.log("Setup has not tested live inference or messaging connections.");
-    yield* setupWorker(context, config.dataDirectory);
+    yield* heading(`Step ${steps.length + 1} of ${steps.length + 1}: Background worker`);
+    yield* setupWorker(context, config.dataDirectory, worker);
   }).pipe(
     Effect.catchTag("QuitError", () =>
       Effect.fail(new UsageError({ message: "Setup cancelled." })),
@@ -190,4 +91,8 @@ export const setupCommand = (context: CLIContext) =>
             }),
           ),
     ),
-  ).pipe(Command.withDescription("Set up a provider, model, Discord, and the background worker"));
+  ).pipe(
+    Command.withDescription(
+      "Set up a provider, model, messaging gateways, and the background worker",
+    ),
+  );

@@ -67,12 +67,16 @@ always prompts with hidden input, even when the environment holds a key.
 ## Setup
 
 `poppet setup` needs an interactive terminal and has no noninteractive mode. It
-reuses saved choices, offers to reconnect an existing provider, and lists that
-provider's models. It then lists the gateways that have a `promptSetup` in one
-multi-select, with configured gateways selected, and prompts for each selected
-one. Leaving a configured gateway unselected asks whether to remove its
-settings and tokens, and keeps them unless confirmed. Token input shows asterisks. If the provider's key comes from the
-environment, setup still asks for one and saves it for the background worker.
+first prints the saved provider and model, each gateway's state, and the worker
+state, then numbers its steps.
+
+The provider step reuses saved choices, offers to reconnect an existing provider,
+and lists that provider's models. The gateway step lists the gateways that have a
+`promptSetup` in one multi-select, with configured gateways selected, and prompts
+for each selected one. Leaving a configured gateway unselected asks whether to
+remove its settings and tokens, and keeps them unless confirmed. Token input
+shows asterisks. If the provider's key comes from the environment, setup still
+asks for one and saves it for the background worker.
 
 Saves happen in order: authentication at once, the provider and model after the
 prompts, then each gateway. Cancelling or a later failure keeps completed saves
