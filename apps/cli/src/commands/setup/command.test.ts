@@ -257,7 +257,7 @@ describe("setup", () => {
     };
 
     await writeFile(f.path, JSON.stringify(saved));
-    expect(await f.run([answer(), answer(), answer(), answer(), answer()])).toBeNull();
+    expect(await f.run([answer(), answer(), answer(), answer(), answer(), answer()])).toBeNull();
     expect(f.output.join("\n")).toContain(
       [
         "  Provider  saved-provider, model saved-model",
@@ -271,6 +271,27 @@ describe("setup", () => {
     expect(f.actions).toEqual(["status"]);
     expect(f.output.join("\n")).toContain("Restart the worker when ready");
   });
+
+  test.each([
+    ["only the gateways", 2, [answer(), answer()], ["status"]],
+    ["only the worker", 3, [answer("y")], ["status", "restart"]],
+    ["nothing", 4, [], ["status"]],
+  ] as const)(
+    "a rerun can change %s without touching the provider",
+    async (_label, downs, rest, actions) => {
+      const f = await fixture();
+      f.state.installed = true;
+      f.state.active = true;
+      const saved = { provider: "saved-provider", model: "saved-model" };
+      await writeFile(f.path, JSON.stringify(saved));
+      expect(
+        await f.run([[...Array.from({ length: downs }, () => key("down")), enter], ...rest]),
+      ).toBeNull();
+      expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual(saved);
+      expect(f.state.logins).toBe(0);
+      expect(f.actions).toEqual([...actions]);
+    },
+  );
 
   test("editing Discord keeps the saved token and validates IDs before saving", async () => {
     const f = await fixture();
@@ -334,10 +355,10 @@ describe("setup", () => {
       f.state.failModels = failure === "catalog";
 
       const steps = {
-        cancel: [answer(), []],
-        "discord-cancel": [answer(), answer(), selectAll, []],
-        login: [answer()],
-        catalog: [answer()],
+        cancel: [answer(), answer(), []],
+        "discord-cancel": [answer(), answer(), answer(), selectAll, []],
+        login: [answer(), answer()],
+        catalog: [answer(), answer()],
       };
 
       const result = await f.run(steps[failure]);

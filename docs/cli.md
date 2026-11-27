@@ -68,7 +68,10 @@ always prompts with hidden input, even when the environment holds a key.
 
 `poppet setup` needs an interactive terminal and has no noninteractive mode. It
 first prints the saved provider and model, each gateway's state, and the worker
-state, then numbers its steps.
+state, then numbers its steps. A fresh setup runs every step. When `config.json`
+already names a provider, setup asks whether to change everything, only the
+provider and model, only the gateways, only the worker, or nothing. Every choice
+except nothing ends with the worker step.
 
 The provider step reuses saved choices, offers to reconnect an existing provider,
 and lists that provider's models. The gateway step lists the gateways that have a
