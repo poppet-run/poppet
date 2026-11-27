@@ -17,6 +17,7 @@ import type { Cause } from "effect";
 import { Effect, Exit, Layer, Option, Queue, Schema, Stream, Scope } from "effect";
 import type { SqlClient } from "effect/sql";
 
+import { ApprovalCommand, manageApprovals } from "#src/commands/approvals/approvals";
 import { ChatInspection, ChatSubmission, inspectChat, sendChat } from "#src/commands/chat/chat";
 import type { ChatWriter, ChatReasoning, ChatReasoningWriter } from "#src/commands/chat/chat";
 import { MemoryCommand, manageMemory } from "#src/commands/memory/memory";
@@ -28,6 +29,7 @@ const WorkerChat = Schema.Struct({
 });
 
 const WorkerQuery = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("approvals"), command: ApprovalCommand }),
   Schema.Struct({ kind: Schema.Literal("chat"), command: ChatInspection }),
   Schema.Struct({ kind: Schema.Literal("memory"), command: MemoryCommand }),
   Schema.Struct({ kind: Schema.Literal("store") }),
@@ -52,6 +54,10 @@ type Frame = typeof Frame.Type;
 
 const answer = (request: WorkerQuery) =>
   Effect.gen(function* () {
+    if (request.kind === "approvals") {
+      return yield* manageApprovals(request.command);
+    }
+
     if (request.kind === "mcp") {
       return yield* inspectMCP(request.command);
     }

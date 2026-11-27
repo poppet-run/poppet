@@ -151,8 +151,15 @@ export const approvalOperations = (sql: SqlClient.SqlClient, records: StoreRecor
         ),
         reportAs(storeFailure),
       ),
+    pendingApprovals: sql`SELECT * FROM approvals WHERE state = 'pending'
+      ORDER BY created_at, id`.pipe(decodeRows(ApprovalRow), reportAs(storeFailure)),
   } satisfies Pick<
     StoreOperations,
-    "parkRun" | "decideApproval" | "expireApprovals" | "approval" | "latestApproval"
+    | "parkRun"
+    | "decideApproval"
+    | "expireApprovals"
+    | "approval"
+    | "latestApproval"
+    | "pendingApprovals"
   >;
 };

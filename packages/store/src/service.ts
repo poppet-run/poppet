@@ -114,6 +114,7 @@ export interface StoreOperations {
   ) => Effect.Effect<Approval, StoreError>;
   readonly approval: (id: string) => Effect.Effect<Approval | null, StoreError>;
   readonly latestApproval: (runId: string) => Effect.Effect<Approval | null, StoreError>;
+  readonly pendingApprovals: Effect.Effect<ReadonlyArray<Approval>, StoreError>;
   // Settles a pending, unexpired approval once. Returns null when it is no longer open.
   readonly decideApproval: (
     id: string,
