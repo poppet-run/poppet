@@ -464,6 +464,37 @@ describe("setup", () => {
     expect(f.output.join("\n")).toContain("Step 2 of 2: Background worker");
   });
 
+  test("when saved gateway settings are unreadable, other steps still run and the gateway step replaces them", async () => {
+    const f = await fixture();
+    await writeFile(f.path, JSON.stringify({ provider: "saved-provider", model: "saved-model" }));
+    await mkdir(join(f.directory, "channels"), { mode: 0o700 });
+    const credentials = join(f.directory, "channels/discord.json");
+    await writeFile(credentials, "not json", { mode: 0o600 });
+    expect(
+      await f.run([answer(), answer("first"), answer(), answer(), answer()], "provider"),
+    ).toBeNull();
+    expect(f.output.join("\n")).toContain("Gateways  Discord unreadable");
+
+    expect(
+      await f.run(
+        [
+          [key("down"), key("down"), key("space"), enter],
+          answer("discord-secret"),
+          answer(),
+          answer(),
+          answer(),
+          answer(),
+          answer(),
+        ],
+        "gateways",
+      ),
+    ).toBeNull();
+    expect(f.output.join("\n")).toContain(
+      "Setup cannot read the saved Discord settings and will replace them.",
+    );
+    expect(JSON.parse(await readFile(credentials, "utf8"))).toEqual({ token: "discord-secret" });
+  });
+
   test("setup gateways fails clearly when no gateway supports interactive setup", async () => {
     const f = await fixture([]);
     expect(await f.run([], "gateways")).toContain(
