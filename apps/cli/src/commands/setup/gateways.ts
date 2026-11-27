@@ -73,7 +73,11 @@ export const promptGateways = (states: ReadonlyArray<GatewayState>) =>
           }
         : prompted;
 
-      saves.push({ name: gateway.name, draft: save });
+      saves.push({
+        name: gateway.name,
+        draft: save,
+        saved: gateway.configured || gateway.unreadable !== null,
+      });
     }
 
     return saves;
