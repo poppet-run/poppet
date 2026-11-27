@@ -232,6 +232,7 @@ export const conversation = Effect.gen(function* () {
           ...runContext,
           pageURLs: allowedURLs,
           hasUntrustedContent: () => untrusted,
+          matchApprovalRule: (matcher) => store.matchApprovalRule(matcher),
         };
 
         const activeTools = () =>
