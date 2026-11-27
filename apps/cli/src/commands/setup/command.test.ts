@@ -79,15 +79,53 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
         { id: "400", name: "general", type: 0 },
         { id: "401", name: "voice", type: 2 },
       ],
+      "/telegram/getMe": { ok: true, result: { id: 900, username: "poppet_bot" } },
+      "/telegram/getUpdates": {
+        ok: true,
+        result: [
+          {
+            update_id: 1,
+            message: {
+              chat: { id: 100, type: "private", first_name: "Owner" },
+              from: { id: 100, is_bot: false, username: "owner" },
+            },
+          },
+          {
+            update_id: 2,
+            message: {
+              chat: { id: -500, type: "supergroup", title: "Family" },
+              from: { id: 100, is_bot: false, username: "owner" },
+            },
+          },
+          {
+            update_id: 3,
+            message: {
+              chat: { id: 999, type: "private", username: "stranger" },
+              from: { id: 999, is_bot: false, username: "stranger" },
+            },
+          },
+        ],
+      },
     }),
   );
 
   const platform = async (input: string, init: RequestInit) => {
     const url = new URL(input);
-    const rejected = new Headers(init.headers).get("Authorization")?.endsWith("bad-token") === true;
+    const path = url.pathname.replace(/^\/bot[^/]+/, "/telegram");
+
+    const rejected =
+      new Headers(init.headers).get("Authorization")?.endsWith("bad-token") === true ||
+      url.pathname.includes("bad-token");
 
     if (state.api && !rejected) {
-      return Response.json(replies.get(url.pathname));
+      return Response.json(replies.get(path));
+    }
+
+    if (url.hostname === "api.telegram.org") {
+      return Response.json(
+        { ok: false, error_code: 401, description: "Unauthorized" },
+        { status: 401 },
+      );
     }
 
     return url.hostname === "slack.com"
@@ -681,6 +719,65 @@ test("Slack setup checks both tokens, takes the workspace from the token, and of
   expect(output).not.toContain("#random");
   expect(output).not.toContain("xoxb-secret");
 });
+
+test("Telegram setup checks the token and offers the owner and chats from recent messages", async () => {
+  const f = await fixture(["telegram"]);
+  expect(
+    await f.run([
+      answer(),
+      answer(),
+      answer(),
+      selectAll,
+      answer("123:secret"),
+      answer(),
+      down(1),
+      answer(),
+      answer(),
+      answer(),
+    ]),
+  ).toBeNull();
+  expect(JSON.parse(await readFile(join(f.directory, "channels/telegram.json"), "utf8"))).toEqual({
+    ownerId: "100",
+    chatId: "-500",
+    homeConversationId: "-500",
+    token: "123:secret",
+  });
+  const output = f.output.join("\n");
+  expect(output).toContain("Telegram accepted the token for @poppet_bot.");
+  expect(output).toContain("Private chat with Owner (100)");
+  expect(output).not.toContain("Private chat with @stranger");
+  expect(output).not.toContain("123:secret");
+});
+
+test.each(["skip", "continue"] as const)(
+  "a rejected Telegram token can be skipped or kept unchecked with typed IDs (%s)",
+  async (choice) => {
+    const f = await fixture(["telegram"]);
+    const typed = [answer("100"), answer(), answer(), answer()];
+    expect(
+      await f.run([
+        answer(),
+        answer(),
+        answer(),
+        selectAll,
+        answer("1:bad-token"),
+        choice === "skip" ? down(2) : down(1),
+        ...(choice === "skip" ? [answer(), answer()] : typed),
+      ]),
+    ).toBeNull();
+
+    const saved = await readFile(join(f.directory, "channels/telegram.json"), "utf8").catch(
+      () => null,
+    );
+
+    expect(saved === null ? null : JSON.parse(saved)).toEqual(
+      choice === "skip"
+        ? null
+        : { ownerId: "100", chatId: "100", homeConversationId: "100", token: "1:bad-token" },
+    );
+    expect(f.output.join("\n")).toContain("Telegram rejected the bot token.");
+  },
+);
 
 test("setup offers both bundled channels in one list and preserves skipped configuration", async () => {
   const f = await fixture(["discord", "slack"]);

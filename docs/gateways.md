@@ -46,8 +46,8 @@ the owner skips the gateway. It may make
 read-only platform calls through `GatewayFetch`, which tests replace, and offer
 what they find with `pickSetupId`. `remove`
 deletes a configured gateway the owner deselects. The host runs the save or
-removal after the review. `poppet setup` uses the bundled Discord and Slack
-registrations only.
+removal after the review. `poppet setup` uses the bundled Discord, Slack, and
+Telegram registrations only.
 
 The host supplies `GatewayEnvironment` with the data directory and `GatewayInput`
 with bounded, redacted secret input. The adapter owns argument validation,

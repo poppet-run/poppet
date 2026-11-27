@@ -85,7 +85,11 @@ for each selected one. Each gateway asks for its token first and checks it with 
 read-only platform call. Discord then suggests the application owner as the
 owner, and lists the bot's servers and their text channels. Slack takes the
 workspace from the bot token, checks the app token, and lists the channels the
-bot belongs to. Every list has an option to type an ID. When a check rejects a
+bot belongs to. Telegram reads the bot's queued updates without confirming them,
+so the worker still answers them later, and offers the people who messaged the
+bot privately as the owner and the owner's private chat or a group as the chat.
+A group asks for a home conversation, defaulting to the whole chat. Every list
+has an option to type an ID. When a check rejects a
 token, setup offers to enter it again, continue with typed IDs, or skip that
 gateway and keep its saved settings. The review marks a gateway whose check failed as
 not checked. Leaving a configured gateway unselected asks whether to
