@@ -96,7 +96,9 @@ not checked. Leaving a configured gateway unselected asks whether to
 remove its settings and tokens, and keeps them unless confirmed. When two or more
 gateways stay configured, setup asks for the
 [home gateway](configuration.md#home-gateway), and it clears a saved home
-gateway that the step removes. Token input
+gateway that the step removes. Saved gateway settings that cannot be read show as
+unreadable and do not stop the other steps; selecting that gateway replaces
+them, and leaving it unselected offers to remove them. Token input
 shows asterisks. If the provider's key comes from the environment, setup still
 asks for one and saves it for the background worker.
 

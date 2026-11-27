@@ -1,7 +1,7 @@
 import { updateConfigFile } from "@poppet/config";
 import { GatewayEnvironment } from "@poppet/gateway";
 import type { GatewayPromptSetup } from "@poppet/gateway";
-import { Effect } from "effect";
+import { Effect, Result } from "effect";
 import { Prompt } from "effect/cli";
 
 import type { CLIContext } from "#src/commands/context";
@@ -11,6 +11,8 @@ export interface GatewayState {
   readonly name: string;
   readonly setup: GatewayPromptSetup;
   readonly configured: boolean;
+  /** Why the saved settings cannot be read, or null when they can. */
+  readonly unreadable: string | null;
 }
 
 export const gatewayStates = (context: CLIContext) =>
@@ -19,14 +21,24 @@ export const gatewayStates = (context: CLIContext) =>
       promptSetup === undefined ? [] : [{ id, name, setup: promptSetup }],
     ),
     (gateway) =>
-      gateway.setup.configured.pipe(Effect.map((configured) => ({ ...gateway, configured }))),
+      gateway.setup.configured.pipe(
+        Effect.result,
+        Effect.map((loaded) => ({
+          ...gateway,
+          configured: Result.isSuccess(loaded) && loaded.success,
+          unreadable: Result.isFailure(loaded) ? loaded.failure.message : null,
+        })),
+      ),
   );
 
 export const describeGateways = (states: ReadonlyArray<GatewayState>) =>
   states.length === 0
     ? "none available"
     : states
-        .map((gateway) => `${gateway.name} ${gateway.configured ? "configured" : "not configured"}`)
+        .map(
+          (gateway) =>
+            `${gateway.name} ${gateway.unreadable === null ? (gateway.configured ? "configured" : "not configured") : "unreadable"}`,
+        )
         .join(", ");
 
 /**
@@ -67,7 +79,7 @@ export const promptGateways = (states: ReadonlyArray<GatewayState>, home: string
     const chosen = yield* Prompt.MultiSelect({
       message: "Messaging gateways to set up (space toggles, enter confirms)",
       choices: states.map((gateway) => ({
-        title: gateway.configured ? `${gateway.name} (configured)` : gateway.name,
+        title: `${gateway.name}${gateway.configured ? " (configured)" : ""}${gateway.unreadable === null ? "" : " (unreadable, setup replaces it)"}`,
         value: gateway.id,
         selected: gateway.configured,
       })),
@@ -83,7 +95,7 @@ export const promptGateways = (states: ReadonlyArray<GatewayState>, home: string
 
       const removed =
         !picked &&
-        gateway.configured &&
+        (gateway.configured || gateway.unreadable !== null) &&
         (yield* Prompt.Confirm({
           message: `Remove the saved ${gateway.name} settings and tokens? No keeps them.`,
           initial: false,

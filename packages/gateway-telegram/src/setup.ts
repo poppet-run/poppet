@@ -35,7 +35,16 @@ const noneFound = {
 
 const prompt = Effect.gen(function* () {
   const { dataDirectory } = yield* GatewayEnvironment;
-  const saved = yield* telegramSettings.load(dataDirectory);
+
+  const saved = yield* telegramSettings
+    .load(dataDirectory)
+    .pipe(
+      Effect.catch(() =>
+        Console.log("Setup cannot read the saved Telegram settings and will replace them.").pipe(
+          Effect.as(null),
+        ),
+      ),
+    );
 
   yield* Console.log(
     [

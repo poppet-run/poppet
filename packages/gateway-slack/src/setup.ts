@@ -29,7 +29,14 @@ const check = (bot: Redacted.Redacted<string>, app: Redacted.Redacted<string>) =
 
 const prompt = Effect.gen(function* () {
   const { dataDirectory } = yield* GatewayEnvironment;
-  const saved = yield* loadSlackSettings(dataDirectory);
+
+  const saved = yield* loadSlackSettings(dataDirectory).pipe(
+    Effect.catch(() =>
+      Console.log("Setup cannot read the saved Slack settings and will replace them.").pipe(
+        Effect.as(null),
+      ),
+    ),
+  );
 
   const { file } = yield* readConfigFile(dataDirectory).pipe(
     Effect.mapError(
