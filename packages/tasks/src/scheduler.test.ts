@@ -1861,7 +1861,7 @@ describe.concurrent("executeOccurrence", () => {
     );
 
     const withGlobalWait = ConfigProvider.layer(
-      ConfigProvider.fromUnknown({ taskApprovals: "wait", timeouts: { approvalSeconds: 10 } }),
+      ConfigProvider.fromUnknown({ taskApprovals: "wait", timeouts: { approvalSeconds: 60 } }),
     );
 
     try {
@@ -1905,8 +1905,8 @@ describe.concurrent("executeOccurrence", () => {
 
           const loop = yield* worker.run.pipe(Effect.forkChild);
 
-          for (let attempt = 0; attempt < 20; attempt++) {
-            yield* TestClock.adjust("1 second");
+          for (let attempt = 0; attempt < 50; attempt++) {
+            yield* TestClock.adjust("100 millis");
             const [a] = yield* repo.occurrences(inherited.id);
             const [b] = yield* repo.occurrences(overridden.id);
             const [c] = yield* repo.occurrences(cancelled.id);
@@ -1941,8 +1941,8 @@ describe.concurrent("executeOccurrence", () => {
           expect((yield* repo.occurrence(occ3!.id)).status).toBe("cancelled");
           expect((yield* store.latestApproval(occ3!.runId!))?.state).toBe("cancelled");
 
-          // Advance past the 10-second approval expiry so the first task fails cleanly.
-          yield* TestClock.adjust("12 seconds");
+          // Advance past the 60-second approval expiry so the first task fails cleanly.
+          yield* TestClock.adjust("62 seconds");
           expect((yield* repo.occurrence(occ1!.id)).status).toBe("failed");
           expect((yield* store.latestApproval(occ1!.runId!))?.state).toBe("expired");
 
