@@ -131,11 +131,12 @@ const prompt = Effect.gen(function* () {
           "Enter a Slack workspace ID starting with T.",
         );
 
-  const channels = Result.isSuccess(bot)
-    ? yield* probe.memberChannels.pipe(Effect.orElseSucceed(() => []))
-    : [];
+  const lookup = Result.isSuccess(bot) ? yield* probe.memberChannels.pipe(Effect.result) : null;
+  const channels = lookup !== null && Result.isSuccess(lookup) ? lookup.success : [];
 
-  if (Result.isSuccess(bot) && channels.length === 0) {
+  if (lookup !== null && Result.isFailure(lookup)) {
+    yield* Console.log(`${lookup.failure.message} Enter the home channel ID instead.`);
+  } else if (lookup !== null && channels.length === 0) {
     yield* Console.log(
       "Setup found no channel with the bot in it. Invite it with /invite in the home channel, or enter the ID.",
     );
