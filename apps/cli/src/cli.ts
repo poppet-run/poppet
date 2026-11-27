@@ -6,6 +6,7 @@ import { Effect } from "effect";
 import { CliConfig, CliOutput, Command, GlobalFlag } from "effect/cli";
 
 import { commandArgs, helpRequested } from "#src/command-args";
+import { approvalsCommand } from "#src/commands/approvals/command";
 import { writeChatText, writeChatThinking } from "#src/commands/chat/chat";
 import type { ChatWriter } from "#src/commands/chat/chat";
 import { chatCommand } from "#src/commands/chat/command";
@@ -47,6 +48,7 @@ export const makeCLI = (
   const app = Command.make("poppet").pipe(
     Command.withDescription("A personal AI agent for local use"),
     Command.withSubcommands([
+      approvalsCommand(context),
       chatCommand(context),
       configCommand(context),
       doctorCommand(context),

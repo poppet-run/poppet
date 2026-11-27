@@ -32,7 +32,8 @@ On a terminal, the last table column is cut to the window width. Redirected
 output keeps full values. `NO_COLOR` turns off styling.
 
 Commands that report data take `--json` and print the full result with
-Unix-millisecond timestamps: `config`, `doctor`, `provider status` and
+Unix-millisecond timestamps: `approvals` (`list`, `approve`, and `deny`),
+`config`, `doctor`, `provider status` and
 `models`, `chat rename`, `delete`, `prune`, `search`, `sessions`, and `show`,
 `skills list` and `show`, every `memory` and `tasks` command, `mcp servers` and
 `tools`, `store status`, and `worker status`. Commands that stream answers,
@@ -51,7 +52,7 @@ connection. See [socket transport](worker.md#socket-transport).
 | `--help`, `config`, `skills`, `provider`, `gateway <id> setup` | No            | No              | No              |
 | `chat new`, `chat send`, `chat`                                | Yes           | Yes             | Yes             |
 | `chat sessions`, `show`, `search`, `rename`, `delete`, `prune` | No            | Yes             | Yes             |
-| `memory`, `store status`                                       | No            | Yes             | Yes             |
+| `memory`, `store status`, `approvals`                          | No            | Yes             | Yes             |
 | `tasks`                                                        | No            | Yes             | Yes             |
 | `mcp servers`, `mcp tools`                                     | No            | No              | Yes             |
 | `mcp add`, `allow`, `deny`, `remove`, `login`, `logout`        | No            | No              | No              |

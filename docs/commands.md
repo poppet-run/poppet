@@ -92,7 +92,9 @@ A late answer to a known request gets a reply that says how it ended instead of
 `approval-format.ts` builds a structured view model and Markdown fallback for
 each request. It escapes control characters, bidi characters, and code fences so
 untrusted text stays data. Every gateway accepts `/approve <id>` and `/deny <id>`
-as control messages. An adapter that implements the optional `approvals`
+as control messages, and the terminal can list and answer pending approvals
+from any surface with `poppet approvals list`, `poppet approvals approve <id>`,
+and `poppet approvals deny <id>`. An adapter that implements the optional `approvals`
 capability renders native controls and updates the prompt once settled:
 
 - Discord renders an amber embed with a live countdown (`<t:unix:R>`), **Approve
