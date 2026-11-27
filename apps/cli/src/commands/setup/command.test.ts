@@ -55,6 +55,7 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
     failModels: false,
     failVerify: false,
     verifies: new Array<string>(),
+    signedIn: new Array<string>(),
     installed: false,
     active: false,
     managed: true,
@@ -150,6 +151,12 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
     id,
     name: id,
     authentication: { apiKey: true, help: "Test credentials" },
+    inspectSaved: () =>
+      Effect.sync(() => ({
+        connected: state.signedIn.includes(id),
+        expiresAt: null,
+        source: "saved" as const,
+      })),
     layer: Layer.merge(
       Layer.succeed(Provider, {
         id,
@@ -186,6 +193,7 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
             yield* (yield* CredentialInput).readKey(id);
             state.connected = true;
             state.logins++;
+            state.signedIn.push(id);
 
             return "Signed in.";
           }),
@@ -951,6 +959,14 @@ describe("setup", () => {
     ).toBeNull();
     expect(JSON.parse(await readFile(f.path, "utf8")).provider).toBe("saved-provider");
     expect(f.state.logins).toBe(1);
+  });
+
+  test("when setup saves a provider other than the default, the final check uses the saved provider", async () => {
+    const f = await fixture([]);
+    expect(await f.run([down(1), answer(), answer(), answer(), answer()])).toBeNull();
+    expect(JSON.parse(await readFile(f.path, "utf8")).provider).toBe("saved-provider");
+    const finish = f.output.slice(f.output.findIndex((line) => line.includes("Setup check")));
+    expect(finish.join("\n")).not.toContain("Provider sign-in");
   });
 
   test("when the owner changes the gateways from the review, the new answers replace the old ones", async () => {
