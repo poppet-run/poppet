@@ -154,4 +154,5 @@ export const promptDiscordSetup = {
       Effect.as("Removed Discord settings and tokens. Restart the worker to disconnect Discord."),
     ),
   ),
+  firstMessage: "Mention the bot in a channel to start a thread",
 } satisfies GatewayPromptSetup;

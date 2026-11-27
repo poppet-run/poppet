@@ -40,12 +40,13 @@ load their SDKs lazily. Telegram calls the Bot API with `fetch`.
 `apps/cli/src/commands/gateway/registry.ts` is the only CLI module that imports a
 concrete gateway package, and lint enforces it. The CLI generates setup help and
 dispatches `gateway <id> setup` through the registration. `promptSetup` has
-three parts. `configured` lets `poppet setup` preselect the gateway. `prompt`
+four parts. `configured` lets `poppet setup` preselect the gateway. `prompt`
 collects choices and returns a review summary with a save effect, or `null` when
 the owner skips the gateway. It may make
 read-only platform calls through `GatewayFetch`, which tests replace, and offer
 what they find with `pickSetupId`. `remove`
-deletes a configured gateway the owner deselects. The host runs the save or
+deletes a configured gateway the owner deselects. `firstMessage` tells the
+owner how to start a conversation in setup's next steps. The host runs the save or
 removal after the review. `poppet setup` uses the bundled Discord, Slack, and
 Telegram registrations only.
 

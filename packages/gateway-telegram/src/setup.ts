@@ -194,4 +194,5 @@ export const promptTelegramSetup = {
         ),
       ),
   ),
+  firstMessage: "Message the bot, or mention it in the group",
 } satisfies GatewayPromptSetup;
