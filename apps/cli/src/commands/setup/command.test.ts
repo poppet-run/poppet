@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { BunServices } from "@effect/platform-bun";
-import { GatewayEnvironment, GatewayInput } from "@poppet/gateway";
+import { GatewayEnvironment, GatewayFetch, GatewayInput } from "@poppet/gateway";
 import { CredentialInput, Provider, ProviderConnection, invalidRequest } from "@poppet/provider";
 import type { ProviderRegistration } from "@poppet/provider";
 import { serveWorker, workerSocketPath } from "@poppet/worker";
@@ -55,6 +55,40 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
     installed: false,
     active: false,
     managed: true,
+    api: true,
+  };
+
+  const replies = new Map(
+    Object.entries({
+      "/api/auth.test": { ok: true, team_id: "T123", team: "Home", user: "poppet" },
+      "/api/apps.connections.open": { ok: true, url: "wss://example.invalid" },
+      "/api/conversations.list": {
+        ok: true,
+        channels: [
+          { id: "C100", name: "general", is_member: true },
+          { id: "C200", name: "random", is_member: false },
+        ],
+      },
+      "/api/v10/users/@me": { id: "900", username: "poppet" },
+      "/api/v10/oauth2/applications/@me": { owner: { id: "200" } },
+      "/api/v10/users/@me/guilds": [{ id: "300", name: "Home" }],
+      "/api/v10/guilds/300/channels": [
+        { id: "400", name: "general", type: 0 },
+        { id: "401", name: "voice", type: 2 },
+      ],
+    }),
+  );
+
+  const platform = async (input: string) => {
+    const url = new URL(input);
+
+    if (state.api) {
+      return Response.json(replies.get(url.pathname));
+    }
+
+    return url.hostname === "slack.com"
+      ? Response.json({ ok: false, error: "invalid_auth" })
+      : new Response("{}", { status: 401 });
   };
 
   const registration = (id: string): ProviderRegistration => ({
@@ -163,6 +197,7 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
     const result = await Effect.runPromise(
       runSetup(context, only).pipe(
         Effect.provideService(Terminal.Terminal, terminal),
+        Effect.provideService(GatewayFetch, platform),
         Effect.provideService(CredentialInput, {
           readKey: () => Effect.succeed(Redacted.make("provider-secret")),
           readLine: () => Effect.never,
@@ -223,10 +258,10 @@ describe("setup", () => {
         answer(),
         answer("saved"),
         selectAll,
-        answer("200"),
-        answer("300"),
-        answer("400"),
         answer("discord-secret"),
+        answer(),
+        answer(),
+        answer(),
         answer(),
         answer("y"),
       ]),
@@ -307,10 +342,10 @@ describe("setup", () => {
         answer(),
         answer(),
         selectAll,
-        answer("200"),
-        answer("300"),
-        answer("400"),
         answer("discord-secret"),
+        answer(),
+        answer(),
+        answer(),
         down(1),
         answer(),
         answer(),
@@ -322,7 +357,7 @@ describe("setup", () => {
     expect(output).toContain("Provider  first-provider, model first-model");
     expect(output).toContain("Provider  first-provider, model saved-model");
     expect(output).toContain(
-      "Discord   owner 200, server 300, home channel 400, bot token replaced",
+      "Discord   owner 200, server 300, home channel 400, bot token replaced, checked as poppet",
     );
     expect(await readdir(f.directory)).not.toContain("config.json");
     expect(await readdir(f.directory)).not.toContain("channels");
@@ -347,12 +382,14 @@ describe("setup", () => {
     );
   });
 
-  test("editing Discord keeps the saved token and validates IDs before saving", async () => {
+  test("editing Discord without a live check keeps the saved token and validates typed IDs", async () => {
     const f = await fixture();
     f.state.connected = true;
+    f.state.api = false;
     await saveDiscord(f.directory);
     expect(
       await f.run([
+        answer(),
         answer(),
         answer(),
         answer(),
@@ -367,9 +404,10 @@ describe("setup", () => {
         ],
         answer(),
         answer(),
-        answer(),
       ]),
     ).toBeNull();
+    expect(f.output.join("\n")).toContain("Discord rejected the bot token.");
+    expect(f.output.join("\n")).toContain("not checked");
     expect(JSON.parse(await readFile(f.path, "utf8")).discord.homeChannelId).toBe("500");
     expect(
       JSON.parse(await readFile(join(f.directory, "channels/discord.json"), "utf8")).token,
@@ -526,6 +564,33 @@ describe("setup", () => {
       }
     },
   );
+});
+
+test("Slack setup checks both tokens, takes the workspace from the token, and offers member channels", async () => {
+  const f = await fixture(["slack"]);
+  expect(
+    await f.run([
+      answer(),
+      answer(),
+      selectAll,
+      answer("xoxb-secret"),
+      answer("xapp-secret"),
+      answer("U100"),
+      answer(),
+      answer(),
+      answer(),
+    ]),
+  ).toBeNull();
+  expect(JSON.parse(await readFile(f.path, "utf8")).slack).toEqual({
+    ownerId: "U100",
+    teamId: "T123",
+    homeChannelId: "C100",
+  });
+  const output = f.output.join("\n");
+  expect(output).toContain("Slack accepted the bot token for poppet in Home (T123).");
+  expect(output).toContain("#general (C100)");
+  expect(output).not.toContain("#random");
+  expect(output).not.toContain("xoxb-secret");
 });
 
 test("setup offers both bundled channels in one list and preserves skipped configuration", async () => {
