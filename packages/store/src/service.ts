@@ -13,7 +13,10 @@ import { storeRecords } from "#src/records";
 import { runOperations } from "#src/runs";
 import type {
   Approval,
+  ApprovalRule,
+  ApprovalRuleMatcher,
   NewApproval,
+  NewApprovalRule,
   Run,
   RunOutcome,
   Session,
@@ -119,9 +122,21 @@ export interface StoreOperations {
   readonly decideApproval: (
     id: string,
     answer: ToolApproval,
+    options?: {
+      readonly rule?: ApprovalRuleMatcher;
+      readonly expiresAt?: number | null;
+    },
   ) => Effect.Effect<Approval | null, StoreError>;
   // Expires overdue approvals and fails their runs.
   readonly expireApprovals: Effect.Effect<ReadonlyArray<Approval>, StoreError>;
+  readonly createApprovalRule: (rule: NewApprovalRule) => Effect.Effect<ApprovalRule, StoreError>;
+  readonly matchApprovalRule: (
+    matcher: ApprovalRuleMatcher,
+  ) => Effect.Effect<ApprovalRule | null, StoreError>;
+  readonly approvalRule: (id: string) => Effect.Effect<ApprovalRule | null, StoreError>;
+  readonly approvalRules: Effect.Effect<ReadonlyArray<ApprovalRule>, StoreError>;
+  readonly revokeApprovalRule: (id: string) => Effect.Effect<ApprovalRule | null, StoreError>;
+  readonly revokeAllApprovalRules: Effect.Effect<ReadonlyArray<ApprovalRule>, StoreError>;
   readonly finishToolCall: (
     runId: string,
     callId: string,

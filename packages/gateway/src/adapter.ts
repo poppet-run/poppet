@@ -53,7 +53,7 @@ export interface ApprovalSettlement {
 
 export interface ApprovalAction {
   readonly requestId: string;
-  readonly decision: "approve" | "deny";
+  readonly decision: "approve" | "approve-always" | "deny";
   readonly source: IncomingMessage;
   readonly reply: (text: string) => Effect.Effect<void, GatewayError>;
 }

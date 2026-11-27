@@ -45,6 +45,7 @@ describe("approval-format", () => {
       cwd: "/tmp",
       timeoutSeconds: 10,
     });
+    expect(prompt.alwaysAllow).toBe('Exact command "ls -la" in /tmp');
     expect(prompt.fallbackText).toBe(
       [
         "Bash approval required",
@@ -55,8 +56,29 @@ describe("approval-format", () => {
         "```",
         "Working directory: `/tmp`",
         "Timeout: 10 seconds",
-        `Reply \`/approve ${requestId}\` or \`/deny ${requestId}\`. Expires in 2 minutes; permits one execution only.`,
+        'Always allow saves: Exact command "ls -la" in /tmp',
+        `Reply \`/approve ${requestId}\`, \`/approve-always ${requestId}\`, or \`/deny ${requestId}\`. Expires in 2 minutes.`,
       ].join("\n"),
+    );
+  });
+
+  test("when a Bash approval is unsafe for a saved rule, omits alwaysAllow", () => {
+    const prompt = formatApprovalPrompt({
+      requestId,
+      approval: {
+        kind: "bash",
+        command: "rm -rf /tmp/test",
+        cwd: "/tmp",
+        timeoutSeconds: 10,
+        reason: "Deletes files",
+      },
+      expiresAt,
+      expiresAfterSeconds: 120,
+    });
+
+    expect(prompt.alwaysAllow).toBeUndefined();
+    expect(prompt.fallbackText).toContain(
+      `Reply \`/approve ${requestId}\` or \`/deny ${requestId}\`. Expires in 2 minutes; permits one execution only.`,
     );
   });
 

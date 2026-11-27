@@ -155,6 +155,49 @@ export const ToolApproval = Schema.Struct({
   adapter: Schema.NonEmptyString,
   senderId: Schema.NonEmptyString,
   at: Schema.Natural,
+  ruleId: Schema.optionalKey(Id),
+});
+
+export const BashRuleMatcher = Schema.Struct({
+  kind: Schema.Literal("bash"),
+  command: Schema.NonEmptyString,
+  cwd: Schema.NonEmptyString,
+});
+
+export const MCPRuleMatcher = Schema.Struct({
+  kind: Schema.Literal("mcp"),
+  serverId: Schema.NonEmptyString,
+  toolName: Schema.NonEmptyString,
+  origin: Schema.NullOr(Schema.NonEmptyString),
+});
+
+export const ApprovalRuleMatcher = Schema.Union([BashRuleMatcher, MCPRuleMatcher]);
+
+export const ApprovalRuleCreator = Schema.Struct({
+  adapter: Schema.NonEmptyString,
+  senderId: Schema.NonEmptyString,
+  at: Schema.Natural,
+});
+
+export const NewApprovalRule = Schema.Struct({
+  matcher: ApprovalRuleMatcher,
+  createdBy: ApprovalRuleCreator,
+  sourceApprovalId: Schema.optionalKey(Schema.NullOr(Id)),
+  expiresAt: Schema.optionalKey(Schema.NullOr(Schema.Natural)),
+});
+
+export const ApprovalRule = Schema.Struct({
+  id: Id,
+  kind: Schema.Literals(["bash", "mcp"]),
+  matchDigest: Schema.NonEmptyString,
+  matcher: ApprovalRuleMatcher,
+  createdAt: Schema.Natural,
+  createdBy: ApprovalRuleCreator,
+  sourceApprovalId: Schema.NullOr(Id),
+  expiresAt: Schema.NullOr(Schema.Natural),
+  revokedAt: Schema.NullOr(Schema.Natural),
+  lastUsedAt: Schema.NullOr(Schema.Natural),
+  useCount: Schema.Natural,
 });
 
 export const ToolReview = Schema.Struct({
@@ -240,6 +283,18 @@ export type ToolCall = typeof ToolCall.Type;
 export type ToolOutcome = typeof ToolOutcome.Type;
 
 export type ToolApproval = typeof ToolApproval.Type;
+
+export type BashRuleMatcher = typeof BashRuleMatcher.Type;
+
+export type MCPRuleMatcher = typeof MCPRuleMatcher.Type;
+
+export type ApprovalRuleMatcher = typeof ApprovalRuleMatcher.Type;
+
+export type ApprovalRuleCreator = typeof ApprovalRuleCreator.Type;
+
+export type NewApprovalRule = typeof NewApprovalRule.Type;
+
+export type ApprovalRule = typeof ApprovalRule.Type;
 
 export type ToolReview = typeof ToolReview.Type;
 

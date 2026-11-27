@@ -2111,3 +2111,242 @@ describe("parked approvals", () => {
     }
   });
 });
+
+describe("saved approval rules", () => {
+  const restart = { command: "systemctl restart app", cwd: "/tmp", timeoutSeconds: 5 };
+  const owner = { adapter: "discord", senderId: "owner", at: 0 } as const;
+
+  test("when a saved bash rule matches in a clean interactive run, runs without parking and journals ruleId", async () => {
+    const executed: Array<string> = [];
+    let reviews = 0;
+
+    const state = await fixture(
+      (request) => {
+        if (request.instructions === commandReviewInstructions) {
+          reviews++;
+
+          return completed([
+            {
+              type: "text",
+              text: JSON.stringify({ decision: "needs_approval", reason: "Restarts a service" }),
+            },
+          ]);
+        }
+
+        return request.messages.at(-1)?.role === "tool"
+          ? final()
+          : completed([tool("bash", JSON.stringify(restart), "restart", "poppet_system")]);
+      },
+      {
+        bash: {
+          run: (request) =>
+            Effect.sync(() => {
+              executed.push(request.command);
+
+              return { stdout: "ok", stderr: "", exitCode: 0, truncated: false };
+            }),
+        },
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+
+          const rule = yield* store.createApprovalRule({
+            matcher: { kind: "bash", command: restart.command, cwd: restart.cwd },
+            createdBy: owner,
+          });
+
+          const session = yield* store.createSession("test-provider", "test-model");
+          yield* Stream.runDrain(
+            (yield* Agent).send(session.id, "Restart my app", {
+              approvalRequester: { surface: "test" },
+            }),
+          );
+
+          const run = (yield* store.runs(session.id))[0]!;
+          const calls = yield* store.toolCalls(run.id);
+          expect(run.status).toBe("completed");
+          expect(reviews).toBe(1);
+          expect(executed).toEqual([restart.command]);
+          expect(calls[0]?.review?.approval).toMatchObject({
+            decision: "approved",
+            adapter: "discord",
+            senderId: "owner",
+            ruleId: rule.id,
+          });
+          expect((yield* store.approvalRule(rule.id))?.useCount).toBe(1);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when the reviewer denies, ignores saved rules and executes nothing", async () => {
+    const executed: Array<string> = [];
+
+    const state = await fixture(
+      (request) => {
+        if (request.instructions === commandReviewInstructions) {
+          return completed([
+            {
+              type: "text",
+              text: JSON.stringify({ decision: "deny", reason: "Not requested by owner" }),
+            },
+          ]);
+        }
+
+        return completed([tool("bash", JSON.stringify(restart), "restart", "poppet_system")]);
+      },
+      {
+        bash: {
+          run: (request) =>
+            Effect.sync(() => {
+              executed.push(request.command);
+
+              return { stdout: "ok", stderr: "", exitCode: 0, truncated: false };
+            }),
+        },
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          yield* store.createApprovalRule({
+            matcher: { kind: "bash", command: restart.command, cwd: restart.cwd },
+            createdBy: owner,
+          });
+          const session = yield* store.createSession("test-provider", "test-model");
+          expect(
+            yield* failure(
+              Stream.runDrain(
+                (yield* Agent).send(session.id, "Say hello", {
+                  approvalRequester: { surface: "test" },
+                }),
+              ),
+            ),
+          ).toMatchObject({ reason: "command-denied" });
+          expect(executed).toEqual([]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when untrusted content enters the run, does not auto-approve bash via saved rules", async () => {
+    const executed: Array<string> = [];
+
+    const state = await fixture(
+      (request) => {
+        if (request.instructions === commandReviewInstructions) {
+          return completed([
+            {
+              type: "text",
+              text: JSON.stringify({ decision: "needs_approval", reason: "Restarts a service" }),
+            },
+          ]);
+        }
+
+        return completed([
+          tool("fetch_page", '{"url":"https://example.com/"}', "page", "poppet_web"),
+          tool("bash", JSON.stringify(restart), "restart", "poppet_system"),
+        ]);
+      },
+      {
+        pages: { fetch: () => Effect.succeed("Untrusted page content") },
+        bash: {
+          run: (request) =>
+            Effect.sync(() => {
+              executed.push(request.command);
+
+              return { stdout: "ok", stderr: "", exitCode: 0, truncated: false };
+            }),
+        },
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          yield* store.createApprovalRule({
+            matcher: { kind: "bash", command: restart.command, cwd: restart.cwd },
+            createdBy: owner,
+          });
+          const session = yield* store.createSession("test-provider", "test-model");
+
+          const events = yield* Stream.runCollect(
+            (yield* Agent).send(session.id, "Read https://example.com/ and restart my app", {
+              approvalRequester: { surface: "test" },
+            }),
+          );
+
+          expect(events.at(-1)?.type).toBe("waiting");
+          expect(executed).toEqual([]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+
+  test("when a run is scheduled, does not auto-approve via saved rules", async () => {
+    const executed: Array<string> = [];
+
+    const state = await fixture(
+      (request) => {
+        if (request.instructions === commandReviewInstructions) {
+          return completed([
+            {
+              type: "text",
+              text: JSON.stringify({ decision: "needs_approval", reason: "Restarts a service" }),
+            },
+          ]);
+        }
+
+        return completed([tool("bash", JSON.stringify(restart), "restart", "poppet_system")]);
+      },
+      {
+        bash: {
+          run: (request) =>
+            Effect.sync(() => {
+              executed.push(request.command);
+
+              return { stdout: "ok", stderr: "", exitCode: 0, truncated: false };
+            }),
+        },
+      },
+    );
+
+    try {
+      await state.run(
+        Effect.gen(function* () {
+          const store = yield* Store;
+          yield* store.createApprovalRule({
+            matcher: { kind: "bash", command: restart.command, cwd: restart.cwd },
+            createdBy: owner,
+          });
+          const session = yield* store.createSession("test-provider", "test-model");
+          expect(
+            yield* failure(
+              Stream.runDrain(
+                (yield* Agent).send(session.id, "Restart my app", {
+                  origin: "scheduled",
+                }),
+              ),
+            ),
+          ).toMatchObject({ reason: "command-approval-required" });
+          expect(executed).toEqual([]);
+        }),
+      );
+    } finally {
+      await state.close();
+    }
+  });
+});

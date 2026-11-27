@@ -42,3 +42,10 @@ export { TaskNoteArguments, taskNoteBytes, taskNoteDefinition } from "#src/task-
 export { Bash, type BashArguments, type BashResult } from "#src/bash";
 
 export { escapedApprovalJSON, type ActionApproval } from "#src/action-approval";
+
+export {
+  deriveApprovalRule,
+  deriveBashRule,
+  deriveMCPRule,
+  describeApprovalRule,
+} from "#src/approval-rules";

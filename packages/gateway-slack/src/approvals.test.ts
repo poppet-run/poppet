@@ -65,7 +65,16 @@ describe("approvalBlocks", () => {
       elements: [
         {
           type: "mrkdwn",
-          text: "Expires <!date^1700000120^{ago}|in 2 minutes> · Permits one execution only",
+          text: '*Always allow saves:* Exact command "ls -la" in /tmp',
+        },
+      ],
+    });
+    expect(blocks[5]).toEqual({
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: "Expires <!date^1700000120^{ago}|in 2 minutes> · Approve once or save a reusable rule",
         },
       ],
     });
@@ -73,6 +82,7 @@ describe("approvalBlocks", () => {
       type: "actions",
       elements: [
         { action_id: `poppet:approval:approve:${id}`, style: "primary" },
+        { action_id: `poppet:approval:always:${id}` },
         { action_id: `poppet:approval:deny:${id}`, style: "danger" },
       ],
     });

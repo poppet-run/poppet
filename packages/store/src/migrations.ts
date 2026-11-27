@@ -10,6 +10,7 @@ import { removeWorkload } from "#src/migrations/0004_remove_workload";
 import { toolCallReview } from "#src/migrations/0005_tool_call_review";
 import { sessionOrigin } from "#src/migrations/0006_session_origin";
 import { approvals } from "#src/migrations/0007_approvals";
+import { approvalRules } from "#src/migrations/0008_approval_rules";
 import { decodeRow } from "#src/sql";
 
 export interface PackageSchema {
@@ -48,6 +49,7 @@ export const storeSchema = packageSchema("effect_sql_migrations", {
   "5_tool_call_review": toolCallReview,
   "6_session_origin": sessionOrigin,
   "7_approvals": approvals,
+  "8_approval_rules": approvalRules,
 });
 
 const migrationFailure = (message: string) => new StoreError({ reason: "migration", message });

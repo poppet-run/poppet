@@ -9,9 +9,14 @@ import { MCP } from "@poppet/mcp";
 import { LocalMemoryLive } from "@poppet/memory";
 import { Store, StoreLive } from "@poppet/store";
 import { WorkerRequests } from "@poppet/worker";
-import { Clock, Effect, Layer, Stream } from "effect";
+import { Clock, Effect, Layer, Schema, Stream } from "effect";
 
-import { manageApprovals } from "#src/commands/approvals/approvals";
+import {
+  DecidedApproval,
+  RevokedApprovalRules,
+  SavedApprovalRule,
+  manageApprovals,
+} from "#src/commands/approvals/approvals";
 import { WorkerRequestsLive } from "#src/commands/worker/requests";
 
 describe("manageApprovals", () => {
@@ -225,6 +230,92 @@ describe("manageApprovals", () => {
             );
 
             expect(missing.message).toBe("No matching pending approval.");
+
+            // Approve with --always saves a rule, lists it, and revokes it.
+            const s3 = yield* store.createSession("test-provider", "test-model");
+            const r3 = yield* store.queueRun(s3.id, [{ role: "user", text: "Status" }]);
+            yield* store.startRun(r3.id);
+            yield* store.recordToolCalls(
+              r3.id,
+              {
+                output: [
+                  {
+                    type: "tool-call",
+                    callId: "bash-2",
+                    namespace: "poppet_system",
+                    name: "bash",
+                    arguments: JSON.stringify({
+                      command: "git status",
+                      cwd: "/tmp",
+                      timeoutSeconds: 10,
+                    }),
+                  },
+                ],
+                continuation: {
+                  version: 1,
+                  provider: "test-provider",
+                  model: "test-model",
+                  data: {},
+                },
+                finishReason: "tool-calls",
+                usage: null,
+              },
+              [{ callId: "bash-2", reviewed: true }],
+            );
+            yield* store.recordToolReview(r3.id, "bash-2", {
+              decision: "needs_approval",
+              reason: "Check status",
+            });
+
+            const statusApproval = yield* store.parkRun(r3.id, "bash-2", {
+              kind: "bash",
+              request: {
+                kind: "bash",
+                command: "git status",
+                cwd: "/tmp",
+                timeoutSeconds: 10,
+                reason: "Check status",
+              },
+              requester: { surface: "gateway", adapter: "discord", conversationId: "thread-2" },
+              expiresAt: now + 60_000,
+            });
+
+            const savedDecision = Schema.decodeUnknownSync(DecidedApproval)(
+              yield* manageApprovals({
+                action: "approve",
+                id: statusApproval.id,
+                always: true,
+              }),
+            );
+
+            expect(savedDecision).toMatchObject({
+              id: statusApproval.id,
+              state: "approved",
+              ruleSummary: 'Exact command "git status" in /tmp',
+            });
+            expect(savedDecision.ruleId).toBeDefined();
+
+            const rules = Schema.decodeUnknownSync(Schema.Array(SavedApprovalRule))(
+              yield* manageApprovals({ action: "rules-list" }),
+            );
+
+            expect(rules).toHaveLength(1);
+            expect(rules[0]).toMatchObject({
+              id: savedDecision.ruleId,
+              kind: "bash",
+              summary: 'Exact command "git status" in /tmp',
+              useCount: 0,
+            });
+
+            const revoked = Schema.decodeUnknownSync(RevokedApprovalRules)(
+              yield* manageApprovals({
+                action: "rules-revoke",
+                id: savedDecision.ruleId!,
+              }),
+            );
+
+            expect(revoked.revoked).toHaveLength(1);
+            expect(yield* manageApprovals({ action: "rules-list" })).toEqual([]);
           }),
         ).pipe(Effect.provide(layer)),
       );

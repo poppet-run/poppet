@@ -3,7 +3,7 @@ import { isAbsolute } from "node:path";
 import { toolParameters } from "@poppet/provider";
 import type { ModelOperations } from "@poppet/provider";
 import type { Run } from "@poppet/store";
-import { Context, Effect, Option, Schema } from "effect";
+import { Clock, Context, Effect, Option, Schema } from "effect";
 
 import { ParkRequest } from "#src/action-approval";
 import { BashReview, reviewAction } from "#src/action-review";
@@ -14,6 +14,7 @@ import type {
   ToolCall,
   ToolContext,
 } from "#src/agent-tool";
+import { deriveBashRule } from "#src/approval-rules";
 import { AgentError } from "#src/errors";
 import { ChatSettings } from "#src/settings";
 import { BoundedText, toolArguments } from "#src/tool-schema";
@@ -123,7 +124,15 @@ export const reviewCommand = (
 const prepareBash = (
   call: ToolCall,
   runner: Bash["Service"],
-  { model, run, text: ownerRequest, origin, approvalRequester: requester }: ToolContext,
+  {
+    model,
+    run,
+    text: ownerRequest,
+    origin,
+    approvalRequester: requester,
+    hasUntrustedContent,
+    matchApprovalRule,
+  }: ToolContext,
   maxBytes: number,
 ) =>
   Effect.gen(function* () {
@@ -154,6 +163,26 @@ const prepareBash = (
           }
 
           if (review.decision === "needs_approval") {
+            if (origin === "interactive" && !hasUntrustedContent()) {
+              const matcher = deriveBashRule(request.command, request.cwd);
+              const rule = matcher === null ? null : yield* matchApprovalRule(matcher);
+
+              if (rule !== null) {
+                yield* record({
+                  ...review,
+                  approval: {
+                    decision: "approved",
+                    adapter: rule.createdBy.adapter,
+                    senderId: rule.createdBy.senderId,
+                    at: yield* Clock.currentTimeMillis,
+                    ruleId: rule.id,
+                  },
+                });
+
+                return { execute: execute("owner") };
+              }
+            }
+
             const approval = { kind: "bash" as const, ...request, reason: review.reason };
 
             if (requester !== null) {
