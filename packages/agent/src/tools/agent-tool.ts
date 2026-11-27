@@ -1,5 +1,8 @@
 import type { AttachmentReference, ModelOperations, Output, Tool } from "@poppet/provider";
 import type {
+  Approval,
+  ApprovalRule,
+  ApprovalRuleMatcher,
   DeliveryDestination,
   Run,
   SkillSnapshot,
@@ -7,7 +10,6 @@ import type {
   StoreError,
   ToolReview,
 } from "@poppet/store";
-import type { Approval } from "@poppet/store";
 import type { Effect, Schema } from "effect";
 
 import type { ParkRequest } from "#src/approvals/action-approval";
@@ -43,6 +45,9 @@ export interface RunContext {
 export interface ToolContext extends RunContext {
   readonly pageURLs: ReadonlySet<string>;
   readonly hasUntrustedContent: () => boolean;
+  readonly matchApprovalRule: (
+    matcher: ApprovalRuleMatcher,
+  ) => Effect.Effect<ApprovalRule | null, StoreError>;
 }
 
 export interface PreparedCall {

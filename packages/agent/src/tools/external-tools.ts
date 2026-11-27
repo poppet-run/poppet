@@ -1,9 +1,10 @@
 import type { Tool } from "@poppet/provider";
-import { Context, Effect, Schema } from "effect";
+import { Clock, Context, Effect, Schema } from "effect";
 import type { Scope } from "effect";
 
 import { ParkRequest, escapedApprovalJSON } from "#src/approvals/action-approval";
 import { MCPReview, reviewAction } from "#src/approvals/action-review";
+import { deriveMCPRule } from "#src/approvals/approval-rules";
 import { AgentError } from "#src/errors";
 import type {
   AgentTool,
@@ -168,6 +169,26 @@ const prepareExternal = (entry: ExternalTool, call: ToolCall, context: ToolConte
           }
 
           if (result.decision === "needs_approval") {
+            if (context.origin === "interactive" && !context.hasUntrustedContent()) {
+              const matcher = deriveMCPRule(entry.serverId, entry.toolName, review.origin);
+              const rule = matcher === null ? null : yield* context.matchApprovalRule(matcher);
+
+              if (rule !== null) {
+                yield* record({
+                  ...result,
+                  approval: {
+                    decision: "approved",
+                    adapter: rule.createdBy.adapter,
+                    senderId: rule.createdBy.senderId,
+                    at: yield* Clock.currentTimeMillis,
+                    ruleId: rule.id,
+                  },
+                });
+
+                return { execute: execute("owner") };
+              }
+            }
+
             const approval = {
               kind: "mcp" as const,
               invocation: exactInvocation,

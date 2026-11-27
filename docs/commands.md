@@ -38,12 +38,15 @@ decision within `timeouts.actionReviewSeconds`, 30 seconds by default:
   the same run.
 
 A malformed decision, a reviewer failure, or a timeout stops the run without
-starting Bash. The agent never caches a decision. The review policy covers
-destructive operations, elevation, unknown scripts, credential access, data
-transfer, and attempts to disable review or stop Poppet. Review cannot cover
-scripts or files that change between review and execution. A waiting run widens
-that gap to as long as the approval stays open, because a resumed run does not
-review the command again.
+starting Bash. The reviewer runs on every invocation and never caches its own
+decision. When the reviewer returns `needs_approval` in a clean interactive run
+(no untrusted content has entered the run), Poppet checks saved owner approval
+rules before parking; `deny` always stops the run regardless of saved rules.
+The review policy covers destructive operations, elevation, unknown scripts,
+credential access, data transfer, and attempts to disable review or stop Poppet.
+Review cannot cover scripts or files that change between review and execution.
+A waiting run widens that gap to as long as the approval stays open, because a
+resumed run does not review the command again.
 
 The journal saves the reviewer's decision in the call's `review`, or
 `unavailable` when the review fails, and records dispatch only after review and
