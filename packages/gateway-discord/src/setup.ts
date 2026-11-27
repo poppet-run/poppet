@@ -1,7 +1,8 @@
 import { DiscordConfiguration, readConfigFile } from "@poppet/config";
 import { promptSecret } from "@poppet/credentials/input";
-import { GatewayEnvironment, GatewayError, pickSetupId } from "@poppet/gateway";
+import { GatewayEnvironment, GatewayError, pickSetupId, recoverSetupCheck } from "@poppet/gateway";
 import type { GatewayPromptSetup } from "@poppet/gateway";
+import type { Redacted } from "effect";
 import { Console, Effect, Result, Schema } from "effect";
 import { Prompt } from "effect/cli";
 
@@ -43,29 +44,52 @@ const prompt = Effect.gen(function* () {
     ].join("\n"),
   );
 
-  const replaceToken =
+  let replaceToken =
     saved === null ||
     (yield* Prompt.Confirm({ message: "Replace the saved bot token?", initial: false }));
 
-  const token = replaceToken
-    ? yield* promptSecret(
-        "Discord bot token (Developer Portal > your app > Bot > Reset Token)",
-        "Enter a nonempty bot token without whitespace, up to 8192 characters.",
-      )
-    : saved.token;
+  const promptToken = promptSecret(
+    "Discord bot token (Developer Portal > your app > Bot > Reset Token)",
+    "Enter a nonempty bot token without whitespace, up to 8192 characters.",
+  );
+
+  let token: Redacted.Redacted<string> =
+    replaceToken || saved === null ? yield* promptToken : saved.token;
+
+  let bot: Result.Result<{ readonly id: string; readonly username: string }, GatewayError> =
+    yield* discordProbe(token).bot.pipe(Effect.result);
+
+  while (Result.isFailure(bot)) {
+    yield* Console.log(bot.failure.message);
+    const next = yield* recoverSetupCheck("Discord");
+
+    if (next === "skip") {
+      return null;
+    }
+
+    if (next === "continue") {
+      yield* Console.log(
+        "Setup will save the token unchecked; run poppet doctor once the worker is running.",
+      );
+
+      break;
+    }
+
+    replaceToken = true;
+    token = yield* promptToken;
+    bot = yield* discordProbe(token).bot.pipe(Effect.result);
+  }
 
   const probe = discordProbe(token);
-  const bot = yield* probe.bot.pipe(Effect.result);
-  const checked = Result.isSuccess(bot);
+  const account = Result.isSuccess(bot) ? bot.success : null;
+  const checked = account !== null;
 
   const found = <A>(lookup: Effect.Effect<A, GatewayError>, empty: A) =>
     checked ? lookup.pipe(Effect.orElseSucceed(() => empty)) : Effect.succeed(empty);
 
-  yield* Console.log(
-    checked
-      ? `Discord accepted the token for bot ${bot.success.username} (${bot.success.id}).`
-      : `${bot.failure.message} Setup can still save it; run poppet doctor once the worker is running.`,
-  );
+  if (account !== null) {
+    yield* Console.log(`Discord accepted the token for bot ${account.username} (${account.id}).`);
+  }
 
   const ownerId = yield* id(
     "Your Discord user ID (right-click your name > Copy User ID)",
@@ -74,9 +98,9 @@ const prompt = Effect.gen(function* () {
 
   const guilds = yield* found(probe.guilds, []);
 
-  if (checked && guilds.length === 0) {
+  if (account !== null && guilds.length === 0) {
     yield* Console.log(
-      `The bot is not in a server yet. Invite it from https://discord.com/oauth2/authorize?client_id=${bot.success.id}&scope=bot with the permissions in the guide.`,
+      `The bot is not in a server yet. Invite it from https://discord.com/oauth2/authorize?client_id=${account.id}&scope=bot with the permissions in the guide.`,
     );
   }
 
@@ -103,7 +127,7 @@ const prompt = Effect.gen(function* () {
     summary: [
       `owner ${ownerId}, server ${guildId}, home channel ${homeChannelId}`,
       `bot token ${replaceToken ? "replaced" : "kept"}`,
-      checked ? `checked as ${bot.success.username}` : "not checked",
+      account !== null ? `checked as ${account.username}` : "not checked",
     ].join(", "),
     save: saveDiscordSettings(dataDirectory, { ownerId, guildId, homeChannelId, token }).pipe(
       Effect.as(
