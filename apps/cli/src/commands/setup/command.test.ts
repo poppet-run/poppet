@@ -110,6 +110,8 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
     }),
   );
 
+  const statuses = new Map<string, number>();
+
   const platform = async (input: string, init: RequestInit) => {
     const url = new URL(input);
     const path = url.pathname.replace(/^\/bot[^/]+/, "/telegram");
@@ -117,6 +119,12 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
     const rejected =
       new Headers(init.headers).get("Authorization")?.endsWith("bad-token") === true ||
       url.pathname.includes("bad-token");
+
+    const status = statuses.get(path);
+
+    if (status !== undefined) {
+      return new Response("{}", { status });
+    }
 
     if (state.channelError !== "" && path === "/api/conversations.list") {
       return Response.json({ ok: false, error: state.channelError });
@@ -283,7 +291,7 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
     return result;
   };
 
-  return { directory, path, state, actions, output, replies, run };
+  return { directory, path, state, actions, output, replies, statuses, run };
 };
 
 const saveDiscord = (directory: string) =>
@@ -499,6 +507,48 @@ describe("setup", () => {
     );
     expect(JSON.parse(await readFile(credentials, "utf8"))).toEqual({ token: "discord-secret" });
   });
+
+  test.each([
+    [
+      "/api/v10/users/@me/guilds",
+      429,
+      "Discord answered with HTTP 429. Enter the server ID instead.",
+    ],
+    [
+      "/api/v10/guilds/300/channels",
+      403,
+      "The bot is not allowed to read this from Discord. Enter the home channel ID instead.",
+    ],
+  ] as const)(
+    "when Discord fails %s with HTTP %d, setup reports it and asks for the ID",
+    async (failing, status, message) => {
+      const f = await fixture();
+      f.statuses.set(failing, status);
+      const serverFails = failing.endsWith("/guilds");
+      expect(
+        await f.run([
+          answer(),
+          answer(),
+          answer(),
+          selectAll,
+          answer("discord-secret"),
+          answer(),
+          serverFails ? answer("300") : answer(),
+          serverFails ? answer() : answer("400"),
+          answer(),
+          answer(),
+        ]),
+      ).toBeNull();
+      expect(JSON.parse(await readFile(f.path, "utf8")).discord).toEqual({
+        ownerId: "200",
+        guildId: "300",
+        homeChannelId: "400",
+      });
+      const output = f.output.join("\n");
+      expect(output).toContain(message);
+      expect(output).not.toContain("The bot is not in a server yet.");
+    },
+  );
 
   test("when a team owns the Discord application, setup suggests the team owner", async () => {
     const f = await fixture();
