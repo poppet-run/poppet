@@ -2,10 +2,10 @@ import { isNoReply } from "@poppet/agent";
 import { quietHoursEnd } from "@poppet/config";
 import { Effect } from "effect";
 
-import { authorized, wake } from "#src/context";
-import type { GatewayContext } from "#src/context";
-import { gatewayRetryDelay } from "#src/failure";
-import { answer, chunks } from "#src/replies";
+import { authorized, wake } from "#src/pipeline/context";
+import type { GatewayContext } from "#src/pipeline/context";
+import { gatewayRetryDelay } from "#src/pipeline/failure";
+import { answer, chunks } from "#src/pipeline/replies";
 
 const scheduleResults = (context: GatewayContext) =>
   Effect.gen(function* () {

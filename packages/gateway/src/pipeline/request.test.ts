@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { Effect } from "effect";
 
-import { messagingRequest } from "#src/request";
+import { messagingRequest } from "#src/pipeline/request";
 
 describe("messagingRequest", () => {
   test("when a fresh session selects a skill and only attaches a file, accepts the empty prompt", async () => {

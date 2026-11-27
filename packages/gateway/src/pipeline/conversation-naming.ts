@@ -3,8 +3,8 @@ import { timeoutAfter } from "@poppet/io";
 import { Effect, Result } from "effect";
 
 import { GatewayError } from "#src/adapter";
-import { authorized } from "#src/context";
-import type { GatewayContext } from "#src/context";
+import { authorized } from "#src/pipeline/context";
+import type { GatewayContext } from "#src/pipeline/context";
 import type { Inbox } from "#src/repository";
 
 const definitiveNamingFailure = (cause: unknown) =>

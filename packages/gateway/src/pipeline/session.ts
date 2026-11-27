@@ -6,11 +6,11 @@ import type { AppConfig } from "@poppet/config";
 import { Effect, Result } from "effect";
 
 import { GatewayError } from "#src/adapter";
-import { finish, mark } from "#src/context";
-import type { GatewayContext } from "#src/context";
-import { failureDecision } from "#src/failure";
+import { finish, mark } from "#src/pipeline/context";
+import type { GatewayContext } from "#src/pipeline/context";
+import { failureDecision } from "#src/pipeline/failure";
+import { messagingRequest } from "#src/pipeline/request";
 import type { Inbox } from "#src/repository";
-import { messagingRequest } from "#src/request";
 
 export interface SessionSetup {
   readonly config: AppConfig["Service"];

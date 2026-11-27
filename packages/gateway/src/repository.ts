@@ -16,7 +16,7 @@ import { SqlClient } from "effect/sql";
 import { GatewayError, IncomingMessage } from "#src/adapter";
 import type { ApprovalState } from "#src/adapter";
 import { gatewaySchema } from "#src/migrations";
-import { isControl } from "#src/request";
+import { isControl } from "#src/pipeline/request";
 
 const InboxState = Schema.Literals([
   "queued",

@@ -2,11 +2,11 @@ import type { StoreError } from "@poppet/store";
 import { Effect, Fiber, Result, Schema } from "effect";
 
 import { GatewayError, IncomingMessage } from "#src/adapter";
-import type { ActionApprovals } from "#src/approvals";
-import { authorized, finish, mark, wake } from "#src/context";
-import type { GatewayContext, RunningRequest } from "#src/context";
+import type { ActionApprovals } from "#src/approvals/approvals";
+import { authorized, finish, mark, wake } from "#src/pipeline/context";
+import type { GatewayContext, RunningRequest } from "#src/pipeline/context";
+import { isApprovalReply, isControl } from "#src/pipeline/request";
 import type { Inbox } from "#src/repository";
-import { isApprovalReply, isControl } from "#src/request";
 
 export interface Controls {
   readonly approvals: ActionApprovals;

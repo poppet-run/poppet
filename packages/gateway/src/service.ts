@@ -5,17 +5,17 @@ import { Store } from "@poppet/store";
 import type { StoreError } from "@poppet/store";
 import { Clock, Context, Effect, FiberSet, Layer, Queue, Stream } from "effect";
 
-import { accept } from "#src/accept";
 import { GatewayAdapter } from "#src/adapter";
 import type { GatewayError, IncomingMessage } from "#src/adapter";
-import { actionApprovals } from "#src/approvals";
-import { loop, runningRequests } from "#src/context";
-import type { GatewayContext } from "#src/context";
-import { conversationNaming } from "#src/conversation-naming";
-import { deliverNext } from "#src/delivery";
+import { actionApprovals } from "#src/approvals/approvals";
 import { resolveDestination } from "#src/destination";
-import { dispatchNext, processNext, recover } from "#src/execution";
-import type { Execution } from "#src/execution";
+import { accept } from "#src/pipeline/accept";
+import { loop, runningRequests } from "#src/pipeline/context";
+import type { GatewayContext } from "#src/pipeline/context";
+import { conversationNaming } from "#src/pipeline/conversation-naming";
+import { deliverNext } from "#src/pipeline/delivery";
+import { dispatchNext, processNext, recover } from "#src/pipeline/execution";
+import type { Execution } from "#src/pipeline/execution";
 import { GatewayRepository } from "#src/repository";
 
 const gateway = Effect.gen(function* () {

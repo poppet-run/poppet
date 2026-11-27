@@ -1,7 +1,7 @@
 import type { Effect, Stream } from "effect";
 import { Context, Data, Schema } from "effect";
 
-import type { ApprovalPrompt } from "#src/approval-format";
+import type { ApprovalPrompt } from "#src/approvals/approval-format";
 
 export class GatewayError extends Data.TaggedError("GatewayError")<{
   readonly reason: "unavailable" | "permission" | "uncertain" | "configuration" | "overloaded";
