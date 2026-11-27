@@ -32,7 +32,8 @@ On a terminal, the last table column is cut to the window width. Redirected
 output keeps full values. `NO_COLOR` turns off styling.
 
 Commands that report data take `--json` and print the full result with
-Unix-millisecond timestamps: `approvals` (`list`, `approve`, and `deny`),
+Unix-millisecond timestamps: `approvals` (`list`, `approve`, `deny`, and
+`rules list|revoke`),
 `config`, `doctor`, `provider status` and
 `models`, `chat rename`, `delete`, `prune`, `search`, `sessions`, and `show`,
 `skills list` and `show`, every `memory` and `tasks` command, `mcp servers` and
