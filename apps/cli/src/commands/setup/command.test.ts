@@ -26,6 +26,8 @@ const enter = key("enter");
 
 const answer = (text = "") => (text === "" ? [enter] : [key(text, text), enter]);
 
+const selectAll = [key("space"), enter];
+
 const directories: Array<string> = [];
 
 afterEach(async () => {
@@ -192,7 +194,7 @@ describe("setup", () => {
       await f.run([
         answer(),
         answer("saved"),
-        answer("y"),
+        selectAll,
         answer("200"),
         answer("300"),
         answer("400"),
@@ -268,7 +270,7 @@ describe("setup", () => {
         answer(),
         answer(),
         answer(),
-        answer("y"),
+        answer(),
         answer(),
         answer(),
         [
@@ -303,7 +305,7 @@ describe("setup", () => {
 
       const steps = {
         cancel: [answer(), []],
-        "discord-cancel": [answer(), answer(), answer("y"), []],
+        "discord-cancel": [answer(), answer(), selectAll, []],
         login: [answer()],
         catalog: [answer()],
       };
@@ -407,9 +409,10 @@ describe("setup", () => {
   );
 });
 
-test("setup prompts for both bundled channels and preserves skipped configuration", async () => {
+test("setup offers both bundled channels in one list and preserves skipped configuration", async () => {
   const f = await fixture(true);
-  expect(await f.run([answer(), answer(), answer(), answer(), answer()])).toBeNull();
+  expect(await f.run([answer(), answer(), answer(), answer()])).toBeNull();
+  expect(f.output.join("\n")).toContain("Slack");
   expect(f.output.join("\n")).toContain("Discord configuration left unchanged.");
   expect(f.output.join("\n")).toContain("Slack configuration left unchanged.");
 });

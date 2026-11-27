@@ -14,6 +14,15 @@ export class GatewayInput extends Context.Service<
   { readonly readSecret: Effect.Effect<Redacted.Redacted<string>, GatewayError> }
 >()("poppet/GatewayInput") {}
 
+export interface GatewayPromptSetup {
+  readonly configured: Effect.Effect<boolean, GatewayError, GatewayEnvironment>;
+  readonly prompt: Effect.Effect<
+    Effect.Effect<string, GatewayError>,
+    GatewayError | Terminal.QuitError,
+    GatewayEnvironment | Prompt.Environment
+  >;
+}
+
 export interface GatewayRegistration {
   readonly id: string;
   readonly name: string;
@@ -21,11 +30,7 @@ export interface GatewayRegistration {
   readonly setup: (
     args: ReadonlyArray<string>,
   ) => Effect.Effect<string, GatewayError, GatewayEnvironment | GatewayInput>;
-  readonly promptSetup?: Effect.Effect<
-    Effect.Effect<string, GatewayError> | null,
-    GatewayError | Terminal.QuitError,
-    GatewayEnvironment | Prompt.Environment
-  >;
+  readonly promptSetup?: GatewayPromptSetup;
   readonly load: Effect.Effect<
     Layer.Layer<GatewayAdapter, GatewayError> | null,
     GatewayError,
