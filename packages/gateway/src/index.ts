@@ -24,6 +24,7 @@ export {
   GatewayInput,
   type GatewayPromptSetup,
   type GatewayRegistration,
+  type GatewaySetupDraft,
 } from "#src/registration";
 
 export { GatewayRepository, GatewayRepositoryLive, TaskDeliveriesLive } from "#src/repository";

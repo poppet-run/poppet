@@ -78,15 +78,20 @@ const prompt = Effect.gen(function* () {
       )
     : saved.appToken;
 
-  return saveSlackSettings(dataDirectory, {
-    ownerId,
-    teamId,
-    homeChannelId,
-    token,
-    appToken,
-  }).pipe(
-    Effect.as(`Saved Slack owner ${ownerId}, workspace ${teamId}, home channel ${homeChannelId}.`),
-  );
+  return {
+    summary: `owner ${ownerId}, workspace ${teamId}, home channel ${homeChannelId}, tokens ${replaceToken ? "replaced" : "kept"}`,
+    save: saveSlackSettings(dataDirectory, {
+      ownerId,
+      teamId,
+      homeChannelId,
+      token,
+      appToken,
+    }).pipe(
+      Effect.as(
+        `Saved Slack owner ${ownerId}, workspace ${teamId}, home channel ${homeChannelId}.`,
+      ),
+    ),
+  };
 });
 
 export const promptSlackSetup = {
