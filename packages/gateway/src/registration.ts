@@ -27,7 +27,7 @@ export interface GatewaySetupDraft {
 export interface GatewayPromptSetup {
   readonly configured: Effect.Effect<boolean, GatewayError, GatewayEnvironment>;
   readonly prompt: Effect.Effect<
-    GatewaySetupDraft,
+    GatewaySetupDraft | null,
     GatewayError | Terminal.QuitError,
     GatewayEnvironment | Prompt.Environment
   >;

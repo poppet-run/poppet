@@ -74,3 +74,14 @@ export const pickSetupId = <E, R>(
 
     return choice ?? (yield* typed);
   });
+
+/** Asks what to do after a live setup check fails. */
+export const recoverSetupCheck = (name: string) =>
+  Prompt.Select({
+    message: "What next?",
+    choices: [
+      { title: "Enter the token again", value: "retry" as const },
+      { title: "Continue without checking", value: "continue" as const },
+      { title: `Skip ${name} for now`, value: "skip" as const },
+    ],
+  });

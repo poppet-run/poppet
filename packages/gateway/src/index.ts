@@ -43,4 +43,4 @@ export {
 
 export { boundedAttachment } from "#src/attachments";
 
-export { parseSetupFlags, pickSetupId } from "#src/setup";
+export { parseSetupFlags, pickSetupId, recoverSetupCheck } from "#src/setup";

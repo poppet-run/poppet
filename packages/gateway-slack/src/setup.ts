@@ -1,7 +1,8 @@
 import { SlackConfiguration, readConfigFile } from "@poppet/config";
 import { promptSecret } from "@poppet/credentials/input";
-import { GatewayEnvironment, GatewayError, pickSetupId } from "@poppet/gateway";
+import { GatewayEnvironment, GatewayError, pickSetupId, recoverSetupCheck } from "@poppet/gateway";
 import type { GatewayPromptSetup } from "@poppet/gateway";
+import type { Redacted } from "effect";
 import { Console, Effect, Result, Schema } from "effect";
 import { Prompt } from "effect/cli";
 
@@ -18,6 +19,12 @@ const id = (
     message,
     default: value ?? "",
     validate: (input) => (Schema.is(schema)(input) ? Effect.succeed(input) : Effect.fail(hint)),
+  });
+
+const check = (bot: Redacted.Redacted<string>, app: Redacted.Redacted<string>) =>
+  Effect.all({
+    bot: slackProbe(bot, app).bot.pipe(Effect.result),
+    app: slackProbe(bot, app).appToken.pipe(Effect.result),
   });
 
 const prompt = Effect.gen(function* () {
@@ -44,40 +51,61 @@ const prompt = Effect.gen(function* () {
     ].join("\n"),
   );
 
-  const replaceToken =
+  let replaceToken =
     saved === null ||
     (yield* Prompt.Confirm({ message: "Replace the saved Slack tokens?", initial: false }));
 
-  const token = replaceToken
-    ? yield* promptSecret(
-        "Slack bot token, starting xoxb- (OAuth & Permissions)",
-        "Enter a nonempty bot token without whitespace, up to 8192 characters.",
-      )
-    : saved.token;
+  const promptTokens = Effect.all([
+    promptSecret(
+      "Slack bot token, starting xoxb- (OAuth & Permissions)",
+      "Enter a nonempty bot token without whitespace, up to 8192 characters.",
+    ),
+    promptSecret(
+      "Slack app token, starting xapp-, with connections:write (Basic Information > App-Level Tokens)",
+      "Enter a nonempty app token without whitespace, up to 8192 characters.",
+    ),
+  ]);
 
-  const appToken = replaceToken
-    ? yield* promptSecret(
-        "Slack app token, starting xapp-, with connections:write (Basic Information > App-Level Tokens)",
-        "Enter a nonempty app token without whitespace, up to 8192 characters.",
-      )
-    : saved.appToken;
+  let [token, appToken]: readonly [Redacted.Redacted<string>, Redacted.Redacted<string>] =
+    replaceToken || saved === null ? yield* promptTokens : [saved.token, saved.appToken];
+
+  let checks: Effect.Success<ReturnType<typeof check>> = yield* check(token, appToken);
+
+  while (Result.isFailure(checks.bot) || Result.isFailure(checks.app)) {
+    yield* Console.log(
+      [checks.bot, checks.app]
+        .flatMap((result) => (Result.isFailure(result) ? [result.failure.message] : []))
+        .join("\n"),
+    );
+
+    const next = yield* recoverSetupCheck("Slack");
+
+    if (next === "skip") {
+      return null;
+    }
+
+    if (next === "continue") {
+      yield* Console.log(
+        "Setup will save the tokens unchecked; run poppet doctor once the worker is running.",
+      );
+
+      break;
+    }
+
+    replaceToken = true;
+    [token, appToken] = yield* promptTokens;
+    checks = yield* check(token, appToken);
+  }
 
   const probe = slackProbe(token, appToken);
-  const bot = yield* probe.bot.pipe(Effect.result);
-  const app = yield* probe.appToken.pipe(Effect.result);
-  const checked = Result.isSuccess(bot) && Result.isSuccess(app);
+  const { bot } = checks;
+  const checked = Result.isSuccess(bot) && Result.isSuccess(checks.app);
 
-  yield* Console.log(
-    [
-      Result.isSuccess(bot)
-        ? `Slack accepted the bot token for ${bot.success.user} in ${bot.success.team} (${bot.success.team_id}).`
-        : bot.failure.message,
-      ...(Result.isFailure(app) ? [app.failure.message] : []),
-      ...(checked
-        ? []
-        : ["Setup can still save the tokens; run poppet doctor once the worker is running."]),
-    ].join("\n"),
-  );
+  if (Result.isSuccess(bot)) {
+    yield* Console.log(
+      `Slack accepted the bot token for ${bot.success.user} in ${bot.success.team} (${bot.success.team_id}).`,
+    );
+  }
 
   const ownerId = yield* id(
     "Your Slack user ID (your profile > More > Copy member ID)",

@@ -78,14 +78,17 @@ asking.
 
 The provider step reuses saved choices, offers to reconnect an existing provider,
 and lists that provider's models. It then offers the provider's verification
-request for the chosen model, and keeps the model if the request fails. The gateway step lists the gateways that have a
+request for the chosen model. If the request fails, the owner can keep the model
+or choose another. A failed sign-in or model list offers a retry, another
+provider, or quitting. The gateway step lists the gateways that have a
 `promptSetup` in one multi-select, with configured gateways selected, and prompts
 for each selected one. Each gateway asks for its token first and checks it with a
 read-only platform call. Discord then suggests the application owner as the
 owner, and lists the bot's servers and their text channels. Slack takes the
 workspace from the bot token, checks the app token, and lists the channels the
-bot belongs to. Every list has an option to type an ID, and setup falls back to
-typed IDs when the check fails. The review marks a gateway whose check failed as
+bot belongs to. Every list has an option to type an ID. When a check rejects a
+token, setup offers to enter it again, continue with typed IDs, or skip that
+gateway and keep its saved settings. The review marks a gateway whose check failed as
 not checked. Leaving a configured gateway unselected asks whether to
 remove its settings and tokens, and keeps them unless confirmed. Token input
 shows asterisks. If the provider's key comes from the environment, setup still
