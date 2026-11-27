@@ -21,7 +21,14 @@ const id = (message: string, value: string | undefined) =>
 
 const prompt = Effect.gen(function* () {
   const { dataDirectory } = yield* GatewayEnvironment;
-  const saved = yield* loadDiscordSettings(dataDirectory);
+
+  const saved = yield* loadDiscordSettings(dataDirectory).pipe(
+    Effect.catch(() =>
+      Console.log("Setup cannot read the saved Discord settings and will replace them.").pipe(
+        Effect.as(null),
+      ),
+    ),
+  );
 
   const { file } = yield* readConfigFile(dataDirectory).pipe(
     Effect.mapError(
