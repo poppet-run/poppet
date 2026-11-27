@@ -33,6 +33,7 @@
         "@poppet/memory": "workspace:*",
         "@poppet/platform": "workspace:*",
         "@poppet/provider": "workspace:*",
+        "@poppet/provider-gemini": "workspace:*",
         "@poppet/provider-openai": "workspace:*",
         "@poppet/provider-opencode": "workspace:*",
         "@poppet/provider-openrouter": "workspace:*",

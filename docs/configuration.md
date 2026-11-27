@@ -199,6 +199,7 @@ the first 01:30.
 | `POPPET_OPENROUTER_API_KEY`  | Overrides `auth/openrouter.json`  |
 | `POPPET_OPENCODE_API_KEY`    | Overrides `auth/opencode.json`    |
 | `POPPET_OPENCODE_GO_API_KEY` | Overrides `auth/opencode-go.json` |
+| `POPPET_GEMINI_API_KEY`      | Overrides `auth/gemini.json`      |
 | `NO_COLOR`                   | Turns off terminal styling        |
 
 An empty or invalid override fails instead of falling back to the saved key. MCP
