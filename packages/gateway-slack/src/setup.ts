@@ -5,7 +5,7 @@ import type { GatewayPromptSetup } from "@poppet/gateway";
 import { Console, Effect, Schema } from "effect";
 import { Prompt } from "effect/cli";
 
-import { loadSlackSettings, saveSlackSettings } from "#src/settings";
+import { loadSlackSettings, removeSlackSettings, saveSlackSettings } from "#src/settings";
 
 const id = (
   message: string,
@@ -94,4 +94,9 @@ export const promptSlackSetup = {
     loadSlackSettings(dataDirectory).pipe(Effect.map((saved) => saved !== null)),
   ),
   prompt,
+  remove: GatewayEnvironment.use(({ dataDirectory }) =>
+    removeSlackSettings(dataDirectory).pipe(
+      Effect.as("Removed Slack settings and tokens. Restart the worker to disconnect Slack."),
+    ),
+  ),
 } satisfies GatewayPromptSetup;

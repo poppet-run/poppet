@@ -21,6 +21,7 @@ export interface GatewayPromptSetup {
     GatewayError | Terminal.QuitError,
     GatewayEnvironment | Prompt.Environment
   >;
+  readonly remove: Effect.Effect<string, GatewayError, GatewayEnvironment>;
 }
 
 export interface GatewayRegistration {

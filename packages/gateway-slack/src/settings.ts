@@ -17,3 +17,4 @@ const Credentials = Schema.Struct({ token: Token, appToken: Token });
 const settings = configuredGatewaySettings("slack", "Slack", SlackConfiguration, Credentials);
 export const saveSlackSettings = settings.save;
 export const loadSlackSettings = settings.load;
+export const removeSlackSettings = settings.remove;

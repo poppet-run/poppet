@@ -28,10 +28,14 @@ const filesFor = (dataDirectory: string, adapter: string) =>
 export const loadGatewaySettings = (dataDirectory: string, adapter: string) =>
   filesFor(dataDirectory, adapter).pipe(Effect.flatMap((files) => files.read(adapter)));
 
-export const saveGatewaySettings = (dataDirectory: string, adapter: string, contents: string) =>
+export const saveGatewaySettings = (
+  dataDirectory: string,
+  adapter: string,
+  contents: string | null,
+) =>
   Effect.scoped(
     Effect.gen(function* () {
-      if (Buffer.byteLength(contents) > 16_384) {
+      if (contents !== null && Buffer.byteLength(contents) > 16_384) {
         return yield* Effect.fail(settingsError());
       }
 
@@ -100,6 +104,8 @@ export const gatewaySettings = <S extends Schema.Top>(
         Effect.flatMap((contents) => saveGatewaySettings(dataDirectory, adapter, contents)),
         Effect.mapError(failure),
       ),
+    remove: (dataDirectory: string) =>
+      saveGatewaySettings(dataDirectory, adapter, null).pipe(Effect.mapError(failure)),
   };
 };
 
@@ -134,6 +140,14 @@ export const configuredGatewaySettings = <
           yield* readConfigFile(directory);
           yield* credentials.save(directory, settings);
           yield* updateConfigFile(directory, (file) => ({ ...file, [adapter]: policy }));
+        }),
+      ).pipe(Effect.mapError(failure), Effect.uninterruptible),
+    remove: (directory: string) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* acquireOwnerLock(join(directory, `${adapter}-config.lock`));
+          yield* updateConfigFile(directory, ({ [adapter]: _removed, ...file }) => file);
+          yield* credentials.remove(directory);
         }),
       ).pipe(Effect.mapError(failure), Effect.uninterruptible),
     load: (directory: string) =>

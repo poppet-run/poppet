@@ -80,13 +80,21 @@ const promptGateways = (context: CLIContext) =>
       })),
     });
 
+    const environment = yield* GatewayEnvironment;
     const saves = [];
 
     for (const gateway of available) {
-      saves.push({
-        name: gateway.name,
-        save: chosen.includes(gateway.id) ? yield* gateway.setup.prompt : null,
-      });
+      const save = chosen.includes(gateway.id)
+        ? yield* gateway.setup.prompt
+        : gateway.configured &&
+            (yield* Prompt.Confirm({
+              message: `Remove the saved ${gateway.name} settings and tokens? No keeps them.`,
+              initial: false,
+            }))
+          ? gateway.setup.remove.pipe(Effect.provideService(GatewayEnvironment, environment))
+          : null;
+
+      saves.push({ name: gateway.name, save });
     }
 
     return saves;
