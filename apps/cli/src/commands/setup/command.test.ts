@@ -803,6 +803,7 @@ test("Telegram setup checks the token and offers the owner and chats from recent
   });
   const output = f.output.join("\n");
   expect(output).toContain("Telegram accepted the token for @poppet_bot.");
+  expect(output).toContain("  Telegram       Message the bot, or mention it in the group");
   expect(output).toContain("Private chat with Owner (100)");
   expect(output).not.toContain("Private chat with @stranger");
   expect(output).not.toContain("123:secret");

@@ -184,4 +184,5 @@ export const promptSlackSetup = {
       Effect.as("Removed Slack settings and tokens. Restart the worker to disconnect Slack."),
     ),
   ),
+  firstMessage: "Mention the bot in a channel to start a thread",
 } satisfies GatewayPromptSetup;
