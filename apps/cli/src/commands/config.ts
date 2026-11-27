@@ -7,6 +7,7 @@ import {
   taskCatchUpMinutes,
   timeZone,
   gatewayPackages,
+  homeGateway,
 } from "@poppet/config";
 import { resolvedLimits, resolvedTimeouts } from "@poppet/io";
 import { mcpServers } from "@poppet/mcp";
@@ -29,6 +30,7 @@ const showConfig = (json: boolean) =>
         timeZone: yield* timeZone,
         mcpServers: yield* mcpServers,
         gatewayPackages: yield* gatewayPackages,
+        homeGateway: yield* homeGateway,
         chat: {
           logReasoning,
           logTimings,
