@@ -3,6 +3,7 @@ import type { GatewayRegistration } from "@poppet/gateway";
 import { Effect, Schema } from "effect";
 
 import { TelegramSettings, telegramSettings } from "#src/settings";
+import { promptTelegramSetup } from "#src/setup";
 
 const setupHelp =
   "setup --owner-id <id> --chat-id <id> [--home-conversation-id <id>] --bot-token <token>";
@@ -27,6 +28,7 @@ const normalizeIds = (args: ReadonlyArray<string>) =>
 export const telegram = {
   id: "telegram",
   name: "Telegram",
+  promptSetup: promptTelegramSetup,
   setupHelp,
   setup: (args) =>
     Effect.gen(function* () {
