@@ -60,13 +60,22 @@ const promptHomeGateway = (
       return stale ? { id: null, name: "", summary: "cleared" } : null;
     }
 
+    // A gateway from gatewayPackages has no interactive setup, so offer to keep it.
+    const external =
+      saved === undefined || states.some(({ id }) => id === saved)
+        ? []
+        : [{ title: `Keep ${saved} (set up outside this step)`, value: saved, selected: true }];
+
     const id = yield* Prompt.Select({
       message: "Home gateway for approval prompts from scheduled tasks without a destination",
-      choices: choices.map((gateway) => ({
-        title: gateway.name,
-        value: gateway.id,
-        selected: gateway.id === saved,
-      })),
+      choices: [
+        ...choices.map((gateway) => ({
+          title: gateway.name,
+          value: gateway.id,
+          selected: gateway.id === saved,
+        })),
+        ...external,
+      ],
     });
 
     const name = choices.find((gateway) => gateway.id === id)?.name ?? id;
