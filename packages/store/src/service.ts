@@ -3,14 +3,17 @@ import type { Message as ModelMessage } from "@poppet/provider";
 import { Clock, Context, Effect, Layer, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 
-import { approvalOperations } from "#src/approvals";
 import { StoreDatabase, StoreDatabaseLive } from "#src/database";
 import type { StoreError } from "#src/errors";
 import { reportAs, storeFailure } from "#src/errors";
 import { storeSchema } from "#src/migrations";
-import { readSession } from "#src/recall";
+import { approvalOperations } from "#src/queries/approvals";
+import { readSession } from "#src/queries/recall";
+import { runOperations } from "#src/queries/runs";
+import { searchSessions } from "#src/queries/search";
+import { sessionOperations } from "#src/queries/sessions";
+import { toolCallOperations } from "#src/queries/tool-calls";
 import { storeRecords } from "#src/records";
-import { runOperations } from "#src/runs";
 import type {
   Approval,
   NewApproval,
@@ -32,10 +35,7 @@ import type {
   ToolReview,
   StoreStatus,
 } from "#src/schema";
-import { searchSessions } from "#src/search";
-import { sessionOperations } from "#src/sessions";
 import { decodeRow } from "#src/sql";
-import { toolCallOperations } from "#src/tool-calls";
 
 export interface StoreOperations {
   readonly status: Effect.Effect<StoreStatus, StoreError>;
