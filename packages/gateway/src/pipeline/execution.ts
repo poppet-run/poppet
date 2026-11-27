@@ -4,15 +4,15 @@ import { StoreError } from "@poppet/store";
 import { Cause, Deferred, Effect, Exit, Fiber, FiberSet, Option, Stream } from "effect";
 
 import { GatewayError } from "#src/adapter";
-import type { ActionApprovals } from "#src/approvals";
-import { authorized, finish, mark, wake } from "#src/context";
-import type { GatewayContext, RunningRequest } from "#src/context";
+import type { ActionApprovals } from "#src/approvals/approvals";
 import { resolveDestination } from "#src/destination";
-import { failureDecision } from "#src/failure";
-import { answer } from "#src/replies";
+import { authorized, finish, mark, wake } from "#src/pipeline/context";
+import type { GatewayContext, RunningRequest } from "#src/pipeline/context";
+import { failureDecision } from "#src/pipeline/failure";
+import { answer } from "#src/pipeline/replies";
+import { prepareSession } from "#src/pipeline/session";
+import type { SessionSetup } from "#src/pipeline/session";
 import type { Inbox } from "#src/repository";
-import { prepareSession } from "#src/session";
-import type { SessionSetup } from "#src/session";
 
 export interface Execution {
   readonly agent: Agent["Service"];

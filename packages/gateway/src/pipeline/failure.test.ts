@@ -4,7 +4,7 @@ import { AgentError } from "@poppet/agent";
 import { StoreError } from "@poppet/store";
 
 import { GatewayError } from "#src/adapter";
-import { failureDecision } from "#src/failure";
+import { failureDecision } from "#src/pipeline/failure";
 
 const generic =
   "The request failed. Use /status in this conversation to inspect its session before sending a new request.";

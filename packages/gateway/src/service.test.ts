@@ -36,8 +36,8 @@ import { TestClock } from "effect/testing";
 
 import { GatewayError, GatewayAdapter } from "#src/adapter";
 import type { ApprovalAction, ApprovalState, IncomingMessage } from "#src/adapter";
-import { deliverNext } from "#src/delivery";
-import { chunks } from "#src/replies";
+import { deliverNext } from "#src/pipeline/delivery";
+import { chunks } from "#src/pipeline/replies";
 import { GatewayRepository, GatewayRepositoryLive, TaskDeliveriesLive } from "#src/repository";
 import { Gateway, GatewayLive } from "#src/service";
 

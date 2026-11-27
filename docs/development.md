@@ -179,12 +179,10 @@ packages/
   gateway/                  @poppet/gateway
     src/registration.ts     GatewayRegistration contract for bundled and external gateways
     src/adapter.ts          GatewayAdapter contract and incoming message types
-    src/accept.ts           Sender authorization and durable acceptance
-    src/execution.ts        Inbox processing and crash recovery
-    src/delivery.ts         Durable reply and scheduled result delivery
-    src/approvals.ts        Approval requests for Bash and reviewed MCP actions
-    src/conversation-naming.ts Managed thread title synchronization
     src/settings.ts         Shared protected settings files
+    src/repository.ts       Gateway inbox, binding, and approval persistence
+    src/approvals/          Approval requests and formatting for Bash and reviewed MCP actions
+    src/pipeline/           Sender authorization, sessions, inbox execution, delivery, and thread naming
   gateway-discord/          @poppet/gateway-discord, Discord adapter, approvals, attachments, and setup
   gateway-slack/            @poppet/gateway-slack, Slack Socket Mode adapter, approvals, and setup
   gateway-telegram/         @poppet/gateway-telegram, Telegram Bot API adapter and settings

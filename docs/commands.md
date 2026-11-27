@@ -8,14 +8,14 @@ project-directory restriction, no OS sandbox, and no sudo password. A model
 reviews every invocation before it runs. The
 [user guide](https://poppet.run/docs/commands/) explains this to owners.
 
-| Module                                            | Owns                                                 |
-| ------------------------------------------------- | ---------------------------------------------------- |
-| `packages/agent/src/tools/bash.ts`                | Tool definition, argument schema, and command policy |
-| `packages/agent/src/approvals/action-review.ts`   | Reviewer requests for Bash and MCP actions           |
-| `packages/agent/src/approvals/action-approval.ts` | Owner approval requests                              |
-| `apps/cli/src/bash.ts`                            | The process runner                                   |
-| `packages/gateway/src/approvals.ts`               | Pending approvals in the gateway                     |
-| `packages/gateway/src/approval-format.ts`         | Shared approval view model and Markdown formatting   |
+| Module                                              | Owns                                                 |
+| --------------------------------------------------- | ---------------------------------------------------- |
+| `packages/agent/src/tools/bash.ts`                  | Tool definition, argument schema, and command policy |
+| `packages/agent/src/approvals/action-review.ts`     | Reviewer requests for Bash and MCP actions           |
+| `packages/agent/src/approvals/action-approval.ts`   | Owner approval requests                              |
+| `apps/cli/src/bash.ts`                              | The process runner                                   |
+| `packages/gateway/src/approvals/approvals.ts`       | Pending approvals in the gateway                     |
+| `packages/gateway/src/approvals/approval-format.ts` | Shared approval view model and Markdown formatting   |
 
 ## Arguments
 

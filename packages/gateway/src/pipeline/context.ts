@@ -5,7 +5,7 @@ import { Effect, Queue, Semaphore } from "effect";
 import type { Clock, Duration, Fiber } from "effect";
 
 import type { GatewayAdapter, GatewayError, GatewayPolicy, IncomingMessage } from "#src/adapter";
-import { chunks } from "#src/replies";
+import { chunks } from "#src/pipeline/replies";
 import type { GatewayRepository, Inbox } from "#src/repository";
 
 export interface GatewayWakes {

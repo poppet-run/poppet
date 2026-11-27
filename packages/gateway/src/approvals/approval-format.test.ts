@@ -7,7 +7,7 @@ import {
   formatApprovalMessages,
   formatApprovalPrompt,
   formatApprovalStatus,
-} from "#src/approval-format";
+} from "#src/approvals/approval-format";
 
 const requestId = "a1234567-1234-1234-1234-123456789012";
 const expiresAt = 1_700_000_120_000;

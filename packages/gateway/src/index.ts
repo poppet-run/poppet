@@ -17,7 +17,7 @@ export {
   type ApprovalCodeBlock,
   type ApprovalField,
   type ApprovalPrompt,
-} from "#src/approval-format";
+} from "#src/approvals/approval-format";
 
 export { GatewayEnvironment, GatewayInput, type GatewayRegistration } from "#src/registration";
 

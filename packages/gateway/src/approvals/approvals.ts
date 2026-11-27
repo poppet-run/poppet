@@ -9,10 +9,10 @@ import {
   formatApprovalMessages,
   formatApprovalPrompt,
   formatApprovalStatus,
-} from "#src/approval-format";
-import { authorized, finish, mark, wake } from "#src/context";
-import type { GatewayContext } from "#src/context";
-import { answer as runAnswer } from "#src/replies";
+} from "#src/approvals/approval-format";
+import { authorized, finish, mark, wake } from "#src/pipeline/context";
+import type { GatewayContext } from "#src/pipeline/context";
+import { answer as runAnswer } from "#src/pipeline/replies";
 import type { Inbox, SavedApproval } from "#src/repository";
 
 const missing =

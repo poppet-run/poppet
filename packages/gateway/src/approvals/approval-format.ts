@@ -2,7 +2,7 @@ import type { ActionApproval } from "@poppet/agent";
 import { Schema } from "effect";
 
 import type { ApprovalState } from "#src/adapter";
-import { chunks } from "#src/replies";
+import { chunks } from "#src/pipeline/replies";
 
 const MAX_CODE_BLOCK_CHARS = 1200;
 const MAX_FIELD_CHARS = 500;
