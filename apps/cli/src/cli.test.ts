@@ -1563,7 +1563,7 @@ describe("makeCLI", () => {
     }
   });
 
-  test.each(["openai-chatgpt", "opencode", "opencode-go", "openrouter"])(
+  test.each(["openai-chatgpt", "opencode", "opencode-go", "openrouter", "gemini"])(
     "when %s has no selected model, hides configuration secrets and fails before opening credentials",
     async (provider) => {
       const directory = await mkdtemp(join(tmpdir(), "poppet-provider-cli-"));
@@ -1576,6 +1576,7 @@ describe("makeCLI", () => {
           POPPET_OPENCODE_API_KEY: "test-secret",
           POPPET_OPENCODE_GO_API_KEY: "test-secret",
           POPPET_OPENROUTER_API_KEY: "test-secret",
+          POPPET_GEMINI_API_KEY: "test-secret",
         };
 
         const settings = await invoke(["config", "--json"], environment);
