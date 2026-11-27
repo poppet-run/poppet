@@ -72,7 +72,9 @@ first prints the saved provider and model, each gateway's state, and the worker
 state, then numbers its steps. A fresh setup runs every step. When `config.json`
 already names a provider, setup asks whether to change everything, only the
 provider and model, only the gateways, only the worker, or nothing. Every choice
-except nothing ends with the worker step.
+except nothing ends with the worker step. `poppet setup provider`, `poppet setup
+gateways`, and `poppet setup worker` run one step, plus the worker step, without
+asking.
 
 The provider step reuses saved choices, offers to reconnect an existing provider,
 and lists that provider's models. The gateway step lists the gateways that have a
