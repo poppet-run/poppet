@@ -53,5 +53,6 @@ when behaviour changes, and the website page when users would notice.
 - [OpenCode](providers/opencode.md): the `opencode` and `opencode-go` catalogs and
   protocol routing.
 - [OpenRouter](providers/openrouter.md): catalog capabilities and routing rules.
+- [Gemini](providers/gemini.md): catalog filtering, native streaming, and thought signatures.
 
 Planned work is tracked in [GitHub issues](https://github.com/poppet-run/poppet/issues).

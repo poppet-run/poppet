@@ -234,6 +234,9 @@ packages/
   provider-openrouter/      @poppet/provider-openrouter
     src/service.ts          OpenRouter catalog, capabilities, and key configuration
     src/protocol.ts         Routing, reasoning continuation, and stream error rules
+  provider-gemini/          @poppet/provider-gemini
+    src/service.ts          Gemini catalog, capabilities, and key configuration
+    src/protocol.ts         Native streaming, thought-signature continuation, and error rules
   sign-in/                  @poppet/sign-in
     src/callback.ts         Scoped loopback callback with state and paste checks
     src/authorize.ts        Browser launch or printed link, pasted callbacks, and deadline
