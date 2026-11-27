@@ -14,6 +14,11 @@ export class GatewayInput extends Context.Service<
   { readonly readSecret: Effect.Effect<Redacted.Redacted<string>, GatewayError> }
 >()("poppet/GatewayInput") {}
 
+/** The `fetch` that interactive setup uses for live checks, replaceable in tests. */
+export const GatewayFetch = Context.Reference<
+  (url: string, init: RequestInit) => Promise<Response>
+>("poppet/GatewayFetch", { defaultValue: () => (url, init) => globalThis.fetch(url, init) });
+
 export interface GatewaySetupDraft {
   readonly summary: string;
   readonly save: Effect.Effect<string, GatewayError>;

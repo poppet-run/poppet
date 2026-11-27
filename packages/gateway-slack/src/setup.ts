@@ -1,10 +1,11 @@
 import { SlackConfiguration, readConfigFile } from "@poppet/config";
 import { promptSecret } from "@poppet/credentials/input";
-import { GatewayEnvironment, GatewayError } from "@poppet/gateway";
+import { GatewayEnvironment, GatewayError, pickSetupId } from "@poppet/gateway";
 import type { GatewayPromptSetup } from "@poppet/gateway";
-import { Console, Effect, Schema } from "effect";
+import { Console, Effect, Result, Schema } from "effect";
 import { Prompt } from "effect/cli";
 
+import { slackProbe } from "#src/probe";
 import { loadSlackSettings, removeSlackSettings, saveSlackSettings } from "#src/settings";
 
 const id = (
@@ -43,27 +44,6 @@ const prompt = Effect.gen(function* () {
     ].join("\n"),
   );
 
-  const ownerId = yield* id(
-    "Your Slack user ID (your profile > More > Copy member ID)",
-    defaults?.ownerId,
-    SlackConfiguration.fields.ownerId,
-    "Enter a Slack user ID starting with U or W.",
-  );
-
-  const teamId = yield* id(
-    "Workspace ID (the T... part of app.slack.com/client/T.../ in a browser)",
-    defaults?.teamId,
-    SlackConfiguration.fields.teamId,
-    "Enter a Slack workspace ID starting with T.",
-  );
-
-  const homeChannelId = yield* id(
-    "Home channel ID for scheduled results and notifications (channel details > About, at the bottom)",
-    defaults?.homeChannelId,
-    SlackConfiguration.fields.homeChannelId,
-    "Enter a Slack channel ID starting with C or G.",
-  );
-
   const replaceToken =
     saved === null ||
     (yield* Prompt.Confirm({ message: "Replace the saved Slack tokens?", initial: false }));
@@ -82,8 +62,68 @@ const prompt = Effect.gen(function* () {
       )
     : saved.appToken;
 
+  const probe = slackProbe(token, appToken);
+  const bot = yield* probe.bot.pipe(Effect.result);
+  const app = yield* probe.appToken.pipe(Effect.result);
+  const checked = Result.isSuccess(bot) && Result.isSuccess(app);
+
+  yield* Console.log(
+    [
+      Result.isSuccess(bot)
+        ? `Slack accepted the bot token for ${bot.success.user} in ${bot.success.team} (${bot.success.team_id}).`
+        : bot.failure.message,
+      ...(Result.isFailure(app) ? [app.failure.message] : []),
+      ...(checked
+        ? []
+        : ["Setup can still save the tokens; run poppet doctor once the worker is running."]),
+    ].join("\n"),
+  );
+
+  const ownerId = yield* id(
+    "Your Slack user ID (your profile > More > Copy member ID)",
+    defaults?.ownerId,
+    SlackConfiguration.fields.ownerId,
+    "Enter a Slack user ID starting with U or W.",
+  );
+
+  const teamId =
+    Result.isSuccess(bot) && Schema.is(SlackConfiguration.fields.teamId)(bot.success.team_id)
+      ? bot.success.team_id
+      : yield* id(
+          "Workspace ID (the T... part of app.slack.com/client/T.../ in a browser)",
+          defaults?.teamId,
+          SlackConfiguration.fields.teamId,
+          "Enter a Slack workspace ID starting with T.",
+        );
+
+  const channels = Result.isSuccess(bot)
+    ? yield* probe.memberChannels.pipe(Effect.orElseSucceed(() => []))
+    : [];
+
+  if (Result.isSuccess(bot) && channels.length === 0) {
+    yield* Console.log(
+      "Setup found no channel with the bot in it. Invite it with /invite in the home channel, or enter the ID.",
+    );
+  }
+
+  const homeChannelId = yield* pickSetupId(
+    "Home channel for scheduled results and notifications",
+    channels,
+    defaults?.homeChannelId,
+    id(
+      "Home channel ID for scheduled results and notifications (channel details > About, at the bottom)",
+      defaults?.homeChannelId,
+      SlackConfiguration.fields.homeChannelId,
+      "Enter a Slack channel ID starting with C or G.",
+    ),
+  );
+
   return {
-    summary: `owner ${ownerId}, workspace ${teamId}, home channel ${homeChannelId}, tokens ${replaceToken ? "replaced" : "kept"}`,
+    summary: [
+      `owner ${ownerId}, workspace ${teamId}, home channel ${homeChannelId}`,
+      `tokens ${replaceToken ? "replaced" : "kept"}`,
+      checked && Result.isSuccess(bot) ? `checked as ${bot.success.user}` : "not checked",
+    ].join(", "),
     save: saveSlackSettings(dataDirectory, {
       ownerId,
       teamId,

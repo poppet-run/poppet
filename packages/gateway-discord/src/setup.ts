@@ -1,10 +1,11 @@
 import { DiscordConfiguration, readConfigFile } from "@poppet/config";
 import { promptSecret } from "@poppet/credentials/input";
-import { GatewayEnvironment, GatewayError } from "@poppet/gateway";
+import { GatewayEnvironment, GatewayError, pickSetupId } from "@poppet/gateway";
 import type { GatewayPromptSetup } from "@poppet/gateway";
-import { Console, Effect, Schema } from "effect";
+import { Console, Effect, Result, Schema } from "effect";
 import { Prompt } from "effect/cli";
 
+import { discordProbe } from "#src/probe";
 import { loadDiscordSettings, removeDiscordSettings, saveDiscordSettings } from "#src/settings";
 
 const id = (message: string, value: string | undefined) =>
@@ -42,21 +43,6 @@ const prompt = Effect.gen(function* () {
     ].join("\n"),
   );
 
-  const ownerId = yield* id(
-    "Your Discord user ID (right-click your name > Copy User ID)",
-    defaults?.ownerId,
-  );
-
-  const guildId = yield* id(
-    "Server ID (right-click the server icon > Copy Server ID)",
-    defaults?.guildId,
-  );
-
-  const homeChannelId = yield* id(
-    "Home channel ID for scheduled results and notifications (right-click the channel > Copy Channel ID)",
-    defaults?.homeChannelId,
-  );
-
   const replaceToken =
     saved === null ||
     (yield* Prompt.Confirm({ message: "Replace the saved bot token?", initial: false }));
@@ -68,8 +54,57 @@ const prompt = Effect.gen(function* () {
       )
     : saved.token;
 
+  const probe = discordProbe(token);
+  const bot = yield* probe.bot.pipe(Effect.result);
+  const checked = Result.isSuccess(bot);
+
+  const found = <A>(lookup: Effect.Effect<A, GatewayError>, empty: A) =>
+    checked ? lookup.pipe(Effect.orElseSucceed(() => empty)) : Effect.succeed(empty);
+
+  yield* Console.log(
+    checked
+      ? `Discord accepted the token for bot ${bot.success.username} (${bot.success.id}).`
+      : `${bot.failure.message} Setup can still save it; run poppet doctor once the worker is running.`,
+  );
+
+  const ownerId = yield* id(
+    "Your Discord user ID (right-click your name > Copy User ID)",
+    defaults?.ownerId ?? (yield* found(probe.owner, null)) ?? undefined,
+  );
+
+  const guilds = yield* found(probe.guilds, []);
+
+  if (checked && guilds.length === 0) {
+    yield* Console.log(
+      `The bot is not in a server yet. Invite it from https://discord.com/oauth2/authorize?client_id=${bot.success.id}&scope=bot with the permissions in the guide.`,
+    );
+  }
+
+  const guildId = yield* pickSetupId(
+    "Server",
+    guilds,
+    defaults?.guildId,
+    id("Server ID (right-click the server icon > Copy Server ID)", defaults?.guildId),
+  );
+
+  const channels = yield* found(probe.textChannels(guildId), []);
+
+  const homeChannelId = yield* pickSetupId(
+    "Home channel for scheduled results and notifications",
+    channels.map((channel) => ({ id: channel.id, name: `#${channel.name}` })),
+    defaults?.homeChannelId,
+    id(
+      "Home channel ID for scheduled results and notifications (right-click the channel > Copy Channel ID)",
+      defaults?.homeChannelId,
+    ),
+  );
+
   return {
-    summary: `owner ${ownerId}, server ${guildId}, home channel ${homeChannelId}, bot token ${replaceToken ? "replaced" : "kept"}`,
+    summary: [
+      `owner ${ownerId}, server ${guildId}, home channel ${homeChannelId}`,
+      `bot token ${replaceToken ? "replaced" : "kept"}`,
+      checked ? `checked as ${bot.success.username}` : "not checked",
+    ].join(", "),
     save: saveDiscordSettings(dataDirectory, { ownerId, guildId, homeChannelId, token }).pipe(
       Effect.as(
         `Saved Discord owner ${ownerId}, server ${guildId}, home channel ${homeChannelId}.`,
