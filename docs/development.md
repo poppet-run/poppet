@@ -197,7 +197,7 @@ packages/
     src/settings.ts         Shared protected settings files
   gateway-discord/          @poppet/gateway-discord, Discord adapter, approvals, attachments, and setup
   gateway-slack/            @poppet/gateway-slack, Slack Socket Mode adapter, approvals, and setup
-  gateway-telegram/         @poppet/gateway-telegram, Telegram Bot API adapter and settings
+  gateway-telegram/         @poppet/gateway-telegram, Telegram Bot API adapter, settings, and setup
   io/                       @poppet/io
     src/io.ts               Bounded stream reads and subprocess cleanup
     src/budget.ts           Byte-budget text fitting
