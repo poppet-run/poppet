@@ -268,9 +268,10 @@ export const collectDoctor = (context: CLIContext, service = inspectService) =>
         identity: yield* ConfigIdentity,
       };
     }).pipe(
+      // Fresh layers re-read config.json, so a check after setup sees what it saved.
       Effect.provide([
-        context.runtime.config,
-        ChatSettingsLive.pipe(Layer.provide(ConfigSourceLive)),
+        Layer.fresh(context.runtime.config),
+        Layer.fresh(ChatSettingsLive.pipe(Layer.provide(ConfigSourceLive))),
       ]),
       Effect.timeout("2 seconds"),
       Effect.result,
