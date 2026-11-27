@@ -923,12 +923,15 @@ describe("setup", () => {
     expect(output).not.toContain("/invite");
   });
 
-  test("setup offers both bundled channels in one list and preserves skipped configuration", async () => {
+  test("when no gateway is set up or selected, the review and save say each is not set up", async () => {
     const f = await fixture(["discord", "slack"]);
     expect(await f.run([answer(), answer(), answer(), answer(), answer(), answer()])).toBeNull();
-    expect(f.output.join("\n")).toContain("Slack");
-    expect(f.output.join("\n")).toContain("Discord configuration left unchanged.");
-    expect(f.output.join("\n")).toContain("Slack configuration left unchanged.");
+    const output = f.output.join("\n");
+    expect(output).toContain("  Discord   not set up");
+    expect(output).toContain("  Slack     not set up");
+    expect(output).toContain("Discord not set up.");
+    expect(output).toContain("Slack not set up.");
+    expect(output).not.toContain("left unchanged");
   });
 
   test("when the model test fails, the owner can choose another model and test it", async () => {
