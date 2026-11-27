@@ -19,7 +19,12 @@ export {
   type ApprovalPrompt,
 } from "#src/approval-format";
 
-export { GatewayEnvironment, GatewayInput, type GatewayRegistration } from "#src/registration";
+export {
+  GatewayEnvironment,
+  GatewayInput,
+  type GatewayPromptSetup,
+  type GatewayRegistration,
+} from "#src/registration";
 
 export { GatewayRepository, GatewayRepositoryLive, TaskDeliveriesLive } from "#src/repository";
 
