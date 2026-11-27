@@ -749,204 +749,298 @@ describe("setup", () => {
       }
     },
   );
-});
 
-test("Slack setup checks both tokens, takes the workspace from the token, and offers member channels", async () => {
-  const f = await fixture(["slack"]);
-  expect(
-    await f.run([
-      answer(),
-      answer(),
-      answer(),
-      selectAll,
-      answer("xoxb-secret"),
-      answer("xapp-secret"),
-      answer("U100"),
-      answer(),
-      answer(),
-      answer(),
-    ]),
-  ).toBeNull();
-  expect(JSON.parse(await readFile(f.path, "utf8")).slack).toEqual({
-    ownerId: "U100",
-    teamId: "T123",
-    homeChannelId: "C100",
-  });
-  const output = f.output.join("\n");
-  expect(output).toContain("Slack accepted the bot token for poppet in Home (T123).");
-  expect(output).toContain("#general (C100)");
-  expect(output).not.toContain("#random");
-  expect(output).not.toContain("xoxb-secret");
-});
-
-test("Telegram setup checks the token and offers the owner and chats from recent messages", async () => {
-  const f = await fixture(["telegram"]);
-  expect(
-    await f.run([
-      answer(),
-      answer(),
-      answer(),
-      selectAll,
-      answer("123:secret"),
-      answer(),
-      down(1),
-      answer(),
-      answer(),
-      answer(),
-    ]),
-  ).toBeNull();
-  expect(JSON.parse(await readFile(join(f.directory, "channels/telegram.json"), "utf8"))).toEqual({
-    ownerId: "100",
-    chatId: "-500",
-    homeConversationId: "-500",
-    token: "123:secret",
-  });
-  const output = f.output.join("\n");
-  expect(output).toContain("Telegram accepted the token for @poppet_bot.");
-  expect(output).toContain("  Telegram       Message the bot, or mention it in the group");
-  expect(output).toContain("Private chat with Owner (100)");
-  expect(output).not.toContain("Private chat with @stranger");
-  expect(output).not.toContain("123:secret");
-});
-
-test.each(["skip", "continue"] as const)(
-  "a rejected Telegram token can be skipped or kept unchecked with typed IDs (%s)",
-  async (choice) => {
-    const f = await fixture(["telegram"]);
-    const typed = [answer("100"), answer(), answer(), answer()];
+  test("Slack setup checks both tokens, takes the workspace from the token, and offers member channels", async () => {
+    const f = await fixture(["slack"]);
     expect(
       await f.run([
         answer(),
         answer(),
         answer(),
         selectAll,
-        answer("1:bad-token"),
-        choice === "skip" ? down(2) : down(1),
-        ...(choice === "skip" ? [answer(), answer()] : typed),
+        answer("xoxb-secret"),
+        answer("xapp-secret"),
+        answer("U100"),
+        answer(),
+        answer(),
+        answer(),
       ]),
     ).toBeNull();
+    expect(JSON.parse(await readFile(f.path, "utf8")).slack).toEqual({
+      ownerId: "U100",
+      teamId: "T123",
+      homeChannelId: "C100",
+    });
+    const output = f.output.join("\n");
+    expect(output).toContain("Slack accepted the bot token for poppet in Home (T123).");
+    expect(output).toContain("#general (C100)");
+    expect(output).not.toContain("#random");
+    expect(output).not.toContain("xoxb-secret");
+  });
 
-    const saved = await readFile(join(f.directory, "channels/telegram.json"), "utf8").catch(
-      () => null,
+  test("Telegram setup checks the token and offers the owner and chats from recent messages", async () => {
+    const f = await fixture(["telegram"]);
+    expect(
+      await f.run([
+        answer(),
+        answer(),
+        answer(),
+        selectAll,
+        answer("123:secret"),
+        answer(),
+        down(1),
+        answer(),
+        answer(),
+        answer(),
+      ]),
+    ).toBeNull();
+    expect(JSON.parse(await readFile(join(f.directory, "channels/telegram.json"), "utf8"))).toEqual(
+      {
+        ownerId: "100",
+        chatId: "-500",
+        homeConversationId: "-500",
+        token: "123:secret",
+      },
     );
+    const output = f.output.join("\n");
+    expect(output).toContain("Telegram accepted the token for @poppet_bot.");
+    expect(output).toContain("  Telegram       Message the bot, or mention it in the group");
+    expect(output).toContain("Private chat with Owner (100)");
+    expect(output).not.toContain("Private chat with @stranger");
+    expect(output).not.toContain("123:secret");
+  });
 
-    expect(saved === null ? null : JSON.parse(saved)).toEqual(
-      choice === "skip"
-        ? null
-        : { ownerId: "100", chatId: "100", homeConversationId: "100", token: "1:bad-token" },
-    );
-    expect(f.output.join("\n")).toContain("Telegram rejected the bot token.");
-  },
-);
+  test.each(["skip", "continue"] as const)(
+    "a rejected Telegram token can be skipped or kept unchecked with typed IDs (%s)",
+    async (choice) => {
+      const f = await fixture(["telegram"]);
+      const typed = [answer("100"), answer(), answer(), answer()];
+      expect(
+        await f.run([
+          answer(),
+          answer(),
+          answer(),
+          selectAll,
+          answer("1:bad-token"),
+          choice === "skip" ? down(2) : down(1),
+          ...(choice === "skip" ? [answer(), answer()] : typed),
+        ]),
+      ).toBeNull();
 
-test("when the home gateway comes from an external package, setup offers to keep it", async () => {
-  const f = await fixture(["discord", "slack"]);
-  f.state.connected = true;
-  await saveDiscord(f.directory);
-  const saved = JSON.parse(await readFile(f.path, "utf8"));
-  await writeFile(f.path, JSON.stringify({ ...saved, homeGateway: "matrix" }));
-  expect(
-    await f.run([
-      answer(),
-      answer(),
-      answer(),
-      answer(),
-      [key("down"), key("down"), key("down"), key("space"), enter],
-      answer(),
-      answer(),
-      answer(),
-      answer(),
-      answer("xoxb-secret"),
-      answer("xapp-secret"),
-      answer("U100"),
-      answer(),
-      answer(),
-      answer(),
-      answer(),
-    ]),
-  ).toBeNull();
-  expect(JSON.parse(await readFile(f.path, "utf8")).homeGateway).toBe("matrix");
-  expect(f.output.join("\n")).toContain("Keep matrix (set up outside this step)");
-  expect(f.output.join("\n")).toContain("Home gateway  matrix (unchanged)");
-});
+      const saved = await readFile(join(f.directory, "channels/telegram.json"), "utf8").catch(
+        () => null,
+      );
 
-test("with two gateways configured, setup asks for the home gateway and clears it when that gateway is removed", async () => {
-  const f = await fixture(["discord", "slack"]);
-  f.state.connected = true;
-  await saveDiscord(f.directory);
-  expect(
-    await f.run([
-      answer(),
-      answer(),
-      answer(),
-      answer(),
-      [key("down"), key("down"), key("down"), key("space"), enter],
-      answer(),
-      answer(),
-      answer(),
-      answer(),
-      answer("xoxb-secret"),
-      answer("xapp-secret"),
-      answer("U100"),
-      answer(),
-      down(1),
-      answer(),
-      answer(),
-    ]),
-  ).toBeNull();
-  expect(JSON.parse(await readFile(f.path, "utf8")).homeGateway).toBe("slack");
-  expect(f.output.join("\n")).toContain("Home gateway  Slack");
-
-  expect(
-    await f.run([
-      answer(),
-      answer(),
-      answer(),
-      answer(),
-      answer(),
-      [key("down"), key("down"), key("down"), key("space"), enter],
-      answer(),
-      answer(),
-      answer(),
-      answer(),
-      answer("y"),
-      answer(),
-      answer(),
-    ]),
-  ).toBeNull();
-  expect(JSON.parse(await readFile(f.path, "utf8")).homeGateway).toBeUndefined();
-  expect(f.output.join("\n")).toContain("Cleared the home gateway.");
-});
-
-test("when Slack refuses the channel list, setup reports the refusal and asks for the channel ID", async () => {
-  const f = await fixture(["slack"]);
-  f.state.channelError = "missing_scope";
-  expect(
-    await f.run([
-      answer(),
-      answer(),
-      answer(),
-      selectAll,
-      answer("xoxb-secret"),
-      answer("xapp-secret"),
-      answer("U100"),
-      answer("C300"),
-      answer(),
-      answer(),
-    ]),
-  ).toBeNull();
-  expect(JSON.parse(await readFile(f.path, "utf8")).slack.homeChannelId).toBe("C300");
-  const output = f.output.join("\n");
-  expect(output).toContain(
-    "Slack refused conversations.list with missing_scope. Check the token and the app's scopes. Enter the home channel ID instead.",
+      expect(saved === null ? null : JSON.parse(saved)).toEqual(
+        choice === "skip"
+          ? null
+          : { ownerId: "100", chatId: "100", homeConversationId: "100", token: "1:bad-token" },
+      );
+      expect(f.output.join("\n")).toContain("Telegram rejected the bot token.");
+    },
   );
-  expect(output).not.toContain("/invite");
-});
 
-test("setup offers both bundled channels in one list and preserves skipped configuration", async () => {
-  const f = await fixture(["discord", "slack"]);
-  expect(await f.run([answer(), answer(), answer(), answer(), answer(), answer()])).toBeNull();
-  expect(f.output.join("\n")).toContain("Slack");
-  expect(f.output.join("\n")).toContain("Discord configuration left unchanged.");
-  expect(f.output.join("\n")).toContain("Slack configuration left unchanged.");
+  test("when the home gateway comes from an external package, setup offers to keep it", async () => {
+    const f = await fixture(["discord", "slack"]);
+    f.state.connected = true;
+    await saveDiscord(f.directory);
+    const saved = JSON.parse(await readFile(f.path, "utf8"));
+    await writeFile(f.path, JSON.stringify({ ...saved, homeGateway: "matrix" }));
+    expect(
+      await f.run([
+        answer(),
+        answer(),
+        answer(),
+        answer(),
+        [key("down"), key("down"), key("down"), key("space"), enter],
+        answer(),
+        answer(),
+        answer(),
+        answer(),
+        answer("xoxb-secret"),
+        answer("xapp-secret"),
+        answer("U100"),
+        answer(),
+        answer(),
+        answer(),
+        answer(),
+      ]),
+    ).toBeNull();
+    expect(JSON.parse(await readFile(f.path, "utf8")).homeGateway).toBe("matrix");
+    expect(f.output.join("\n")).toContain("Keep matrix (set up outside this step)");
+    expect(f.output.join("\n")).toContain("Home gateway  matrix (unchanged)");
+  });
+
+  test("with two gateways configured, setup asks for the home gateway and clears it when that gateway is removed", async () => {
+    const f = await fixture(["discord", "slack"]);
+    f.state.connected = true;
+    await saveDiscord(f.directory);
+    expect(
+      await f.run([
+        answer(),
+        answer(),
+        answer(),
+        answer(),
+        [key("down"), key("down"), key("down"), key("space"), enter],
+        answer(),
+        answer(),
+        answer(),
+        answer(),
+        answer("xoxb-secret"),
+        answer("xapp-secret"),
+        answer("U100"),
+        answer(),
+        down(1),
+        answer(),
+        answer(),
+      ]),
+    ).toBeNull();
+    expect(JSON.parse(await readFile(f.path, "utf8")).homeGateway).toBe("slack");
+    expect(f.output.join("\n")).toContain("Home gateway  Slack");
+
+    expect(
+      await f.run([
+        answer(),
+        answer(),
+        answer(),
+        answer(),
+        answer(),
+        [key("down"), key("down"), key("down"), key("space"), enter],
+        answer(),
+        answer(),
+        answer(),
+        answer(),
+        answer("y"),
+        answer(),
+        answer(),
+      ]),
+    ).toBeNull();
+    expect(JSON.parse(await readFile(f.path, "utf8")).homeGateway).toBeUndefined();
+    expect(f.output.join("\n")).toContain("Cleared the home gateway.");
+  });
+
+  test("when Slack refuses the channel list, setup reports the refusal and asks for the channel ID", async () => {
+    const f = await fixture(["slack"]);
+    f.state.channelError = "missing_scope";
+    expect(
+      await f.run([
+        answer(),
+        answer(),
+        answer(),
+        selectAll,
+        answer("xoxb-secret"),
+        answer("xapp-secret"),
+        answer("U100"),
+        answer("C300"),
+        answer(),
+        answer(),
+      ]),
+    ).toBeNull();
+    expect(JSON.parse(await readFile(f.path, "utf8")).slack.homeChannelId).toBe("C300");
+    const output = f.output.join("\n");
+    expect(output).toContain(
+      "Slack refused conversations.list with missing_scope. Check the token and the app's scopes. Enter the home channel ID instead.",
+    );
+    expect(output).not.toContain("/invite");
+  });
+
+  test("setup offers both bundled channels in one list and preserves skipped configuration", async () => {
+    const f = await fixture(["discord", "slack"]);
+    expect(await f.run([answer(), answer(), answer(), answer(), answer(), answer()])).toBeNull();
+    expect(f.output.join("\n")).toContain("Slack");
+    expect(f.output.join("\n")).toContain("Discord configuration left unchanged.");
+    expect(f.output.join("\n")).toContain("Slack configuration left unchanged.");
+  });
+
+  test("when the model test fails, the owner can choose another model and test it", async () => {
+    const f = await fixture([]);
+    f.state.failVerify = true;
+    expect(
+      await f.run([
+        answer(),
+        answer(),
+        answer(),
+        down(1),
+        [key("down"), enter],
+        answer(),
+        answer(),
+        answer(),
+        answer(),
+      ]),
+    ).toBeNull();
+    expect(JSON.parse(await readFile(f.path, "utf8")).model).toBe("saved-model");
+    expect(f.state.verifies).toEqual(["first-model", "saved-model"]);
+  });
+
+  test("when sign-in fails, the owner can choose another provider", async () => {
+    const f = await fixture([]);
+    f.state.loginFailures = 1;
+    expect(
+      await f.run([answer(), down(1), down(1), answer(), answer(), answer(), answer()]),
+    ).toBeNull();
+    expect(JSON.parse(await readFile(f.path, "utf8")).provider).toBe("saved-provider");
+    expect(f.state.logins).toBe(1);
+  });
+
+  test("when the owner changes the gateways from the review, the new answers replace the old ones", async () => {
+    const f = await fixture();
+    expect(
+      await f.run([
+        answer(),
+        answer(),
+        answer(),
+        selectAll,
+        answer("discord-secret"),
+        answer(),
+        answer(),
+        answer(),
+        down(2),
+        selectAll,
+        answer("second-secret"),
+        answer(),
+        answer(),
+        answer(),
+        answer(),
+        answer(),
+      ]),
+    ).toBeNull();
+    const credentials = join(f.directory, "channels/discord.json");
+    expect(JSON.parse(await readFile(credentials, "utf8"))).toEqual({ token: "second-secret" });
+    expect(f.output.filter((line) => line.includes("Review")).length).toBe(2);
+  });
+
+  test.each(["conflict", "empty"] as const)(
+    "when Telegram recent messages are %s, setup asks for the IDs",
+    async (recent) => {
+      const f = await fixture(["telegram"]);
+      f.replies.set(
+        "/telegram/getUpdates",
+        recent === "conflict"
+          ? { ok: false, error_code: 409, description: "Conflict" }
+          : { ok: true, result: [] },
+      );
+      expect(
+        await f.run([
+          answer(),
+          answer(),
+          answer(),
+          selectAll,
+          answer("123:secret"),
+          ...(recent === "empty" ? [answer(), down(1)] : []),
+          answer("100"),
+          answer(),
+          answer(),
+          answer(),
+        ]),
+      ).toBeNull();
+      expect(
+        JSON.parse(await readFile(join(f.directory, "channels/telegram.json"), "utf8")),
+      ).toEqual({ ownerId: "100", chatId: "100", homeConversationId: "100", token: "123:secret" });
+      expect(f.output.join("\n")).toContain(
+        recent === "conflict"
+          ? "Another client is reading this bot's updates"
+          : "No messages to @poppet_bot yet.",
+      );
+    },
+  );
 });
