@@ -9,13 +9,13 @@ message, or read by the model from the skill index. A skill adds instructions
 and never adds permissions. The [user guide](https://poppet.run/docs/skills/)
 covers writing skills.
 
-| Module                                 | Owns                                                    |
-| -------------------------------------- | ------------------------------------------------------- |
-| `packages/agent/src/skills.ts`         | `Skills`, `SkillsLive`, file validation, `isManualOnly` |
-| `packages/agent/src/skill-index.ts`    | The bounded skill index                                 |
-| `packages/agent/src/skill-tools.ts`    | `poppet_skills.view_skill`                              |
-| `packages/agent/src/skill-mentions.ts` | `$name` detection and loading                           |
-| `packages/agent/src/context-files.ts`  | Bounded file reads shared with project files            |
+| Module                                        | Owns                                                    |
+| --------------------------------------------- | ------------------------------------------------------- |
+| `packages/agent/src/skills/skills.ts`         | `Skills`, `SkillsLive`, file validation, `isManualOnly` |
+| `packages/agent/src/skills/skill-index.ts`    | The bounded skill index                                 |
+| `packages/agent/src/skills/skill-tools.ts`    | `poppet_skills.view_skill`                              |
+| `packages/agent/src/skills/skill-mentions.ts` | `$name` detection and loading                           |
+| `packages/agent/src/context-files.ts`         | Bounded file reads shared with project files            |
 
 ## Files
 

@@ -4,9 +4,9 @@ import { Effect, Exit, Fiber, Layer } from "effect";
 import { TestClock } from "effect/testing";
 
 import { AgentError } from "#src/errors";
-import { PageTransport } from "#src/page-network";
-import type { PageResponse } from "#src/page-network";
-import { Pages, PagesLive, decodeFetchPageCall, suppliedPageURLs } from "#src/pages";
+import { PageTransport } from "#src/pages/page-network";
+import type { PageResponse } from "#src/pages/page-network";
+import { Pages, PagesLive, decodeFetchPageCall, suppliedPageURLs } from "#src/pages/pages";
 import { ChatSettings, defaultPolicy } from "#src/settings";
 
 const encode = (text: string) => new TextEncoder().encode(text);
@@ -246,7 +246,7 @@ describe.concurrent("pages.ts", () => {
 
   test("when HTML contains structure and hidden content, extracts readable text and title without scripts or hidden text", async () => {
     const html = await Bun.file(
-      new URL("./test/fixtures/pages/article.html", import.meta.url),
+      new URL("../test/fixtures/pages/article.html", import.meta.url),
     ).text();
 
     const result = JSON.parse(
@@ -289,7 +289,7 @@ log(&quot;done&quot;)
 
   test("when plain text contains UTF-8 and escaping, bounds the serialized result", async () => {
     const plain = await Bun.file(
-      new URL("./test/fixtures/pages/plain.txt", import.meta.url),
+      new URL("../test/fixtures/pages/plain.txt", import.meta.url),
     ).text();
 
     const short = JSON.parse(

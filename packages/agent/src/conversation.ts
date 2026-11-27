@@ -11,17 +11,8 @@ import type { Approval, StoreError } from "@poppet/store";
 import { Store, callDigest } from "@poppet/store";
 import { Cause, Clock, Effect, Exit, Option, Result, Stream } from "effect";
 
-import { ownerDenied } from "#src/action-approval";
-import type { ParkRequest } from "#src/action-approval";
-import type {
-  AgentTool,
-  PreparedCall,
-  ReviewableCall,
-  RunContext,
-  ToolCall,
-  ToolContext,
-} from "#src/agent-tool";
-import { bashTool } from "#src/bash";
+import { ownerDenied } from "#src/approvals/action-approval";
+import type { ParkRequest } from "#src/approvals/action-approval";
 import {
   assembleContext,
   byteSize,
@@ -30,21 +21,35 @@ import {
   outputBudget,
 } from "#src/context";
 import { AgentError } from "#src/errors";
-import { ExternalTools, externalAgentTool } from "#src/external-tools";
-import { memoryTool } from "#src/memory-tools";
 import { noReply } from "#src/no-reply";
-import { fetchPageTool, suppliedPageURLs } from "#src/pages";
+import { fetchPageTool, suppliedPageURLs } from "#src/pages/pages";
 import { streamReply } from "#src/reply";
-import { sessionReadTool, sessionSearchTool } from "#src/search";
 import { ChatSettings } from "#src/settings";
-import { skillIndex, skillIndexGuidance } from "#src/skill-index";
-import type { SkillIndex } from "#src/skill-index";
-import { withMentionedSkills } from "#src/skill-mentions";
-import { skillViewTool } from "#src/skill-tools";
-import { Skills } from "#src/skills";
-import { taskNoteGuidance, taskNoteTool } from "#src/task-note";
-import { taskTool } from "#src/task-tools";
-import { toolExecution, preflightReported, failureReason, failureReply } from "#src/tool-execution";
+import { skillIndex, skillIndexGuidance } from "#src/skills/skill-index";
+import type { SkillIndex } from "#src/skills/skill-index";
+import { withMentionedSkills } from "#src/skills/skill-mentions";
+import { skillViewTool } from "#src/skills/skill-tools";
+import { Skills } from "#src/skills/skills";
+import type {
+  AgentTool,
+  PreparedCall,
+  ReviewableCall,
+  RunContext,
+  ToolCall,
+  ToolContext,
+} from "#src/tools/agent-tool";
+import { bashTool } from "#src/tools/bash";
+import { ExternalTools, externalAgentTool } from "#src/tools/external-tools";
+import { memoryTool } from "#src/tools/memory-tools";
+import { sessionReadTool, sessionSearchTool } from "#src/tools/search";
+import { taskNoteGuidance, taskNoteTool } from "#src/tools/task-note";
+import { taskTool } from "#src/tools/task-tools";
+import {
+  toolExecution,
+  preflightReported,
+  failureReason,
+  failureReply,
+} from "#src/tools/tool-execution";
 
 type ConversationEvent =
   | ModelEvent

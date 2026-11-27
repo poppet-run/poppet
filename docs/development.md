@@ -164,26 +164,16 @@ packages/
   agent/                    @poppet/agent
     src/service.ts          Persisted chat runner, request slots, deadlines, and run finalization
     src/conversation.ts     Sequential model and tool loop, batch validation, and run budgets
-    src/tool-execution.ts   Tool dispatch, outcome classification, and journal writes
     src/context.ts          Complete-exchange context assembly and limits
     src/reply.ts            Validated model stream completion
     src/settings.ts         Validated chat budgets
     src/attachments.ts      Attachment type detection and limits
-    src/pages.ts            Supplied page reading tool, URL grants, and transport
-    src/search.ts           Conversation search and read tools
-    src/memory-tools.ts     Validated memory changes with budget checks and source runs
-    src/task-tools.ts       Chat task management tool
-    src/task-note.ts        Scheduled task note tool
-    src/bash.ts             Bash tool definition and command policy
-    src/action-review.ts    Isolated reviewer requests for Bash and MCP actions
-    src/action-approval.ts  Owner approval requests
-    src/external-tools.ts   Adapter for host-supplied tools such as MCP
-    src/skills.ts           Owner skill-file access
-    src/skill-index.ts      Bounded skill descriptions and indexing
-    src/skill-tools.ts      Skill view tool
-    src/skill-mentions.ts   Skills named with $name in a message
     src/title.ts            Fallback and generated session titles
     src/no-reply.ts         NO_REPLY detection for conditional scheduled prompts
+    src/approvals/          Reviewer requests and owner approval requests for Bash and MCP actions
+    src/pages/              Supplied page reading tool, URL grants, and transport
+    src/skills/             Owner skill-file access, bounded index, `$name` mentions, and view tool
+    src/tools/              Tool dispatch, schemas, Bash, search, memory, task, and external tools
   config/                   @poppet/config, validated settings, quiet hours, and the AppConfig service
   credentials/              @poppet/credentials, protected API keys and records, and the ownership lock
   gateway/                  @poppet/gateway

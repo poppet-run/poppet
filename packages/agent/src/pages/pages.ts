@@ -3,8 +3,6 @@ import { toolParameters } from "@poppet/provider";
 import type { Tool } from "@poppet/provider";
 import { Context, Duration, Effect, Layer, Schema } from "effect";
 
-import { contextTool } from "#src/agent-tool";
-import type { ToolCall } from "#src/agent-tool";
 import { AgentError } from "#src/errors";
 import {
   PageTransport,
@@ -13,10 +11,12 @@ import {
   pageHostname,
   pageURL,
   publicAddress,
-} from "#src/page-network";
-import { pageResult } from "#src/page-text";
+} from "#src/pages/page-network";
+import { pageResult } from "#src/pages/page-text";
 import { ChatSettings } from "#src/settings";
-import { toolArguments } from "#src/tool-schema";
+import { contextTool } from "#src/tools/agent-tool";
+import type { ToolCall } from "#src/tools/agent-tool";
+import { toolArguments } from "#src/tools/tool-schema";
 
 const FetchArguments = Schema.Struct({
   url: Schema.NonEmptyString.check(Schema.isMaxLength(8192)).annotate({

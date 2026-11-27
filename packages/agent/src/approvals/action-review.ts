@@ -6,7 +6,7 @@ import { Effect, Option, Schema, Stream } from "effect";
 
 import { AgentError } from "#src/errors";
 import { streamReply } from "#src/reply";
-import { BoundedText } from "#src/tool-schema";
+import { BoundedText } from "#src/tools/tool-schema";
 
 export const BashReview = Schema.Struct({
   decision: Schema.Literals(["allow", "needs_approval", "deny"]),

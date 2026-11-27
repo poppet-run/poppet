@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { AppConfig } from "@poppet/config";
 import { Effect, Layer } from "effect";
 
-import { Skills, SkillsLive } from "#src/skills";
+import { Skills, SkillsLive } from "#src/skills/skills";
 
 const fixture = async () => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-skills-"));

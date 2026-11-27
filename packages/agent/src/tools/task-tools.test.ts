@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
 import type { Schema } from "effect";
 
-import { decodeTaskCall } from "#src/task-tools";
+import { decodeTaskCall } from "#src/tools/task-tools";
 
 const fields = {
   action: "create",

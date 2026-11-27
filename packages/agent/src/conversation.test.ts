@@ -8,16 +8,16 @@ import { SessionReadResult, SessionSearchMatch, Store } from "@poppet/store";
 import { Effect, Fiber, Schema, Stream } from "effect";
 import OpenAI from "openai";
 
-import { Bash, commandReviewInstructions } from "#src/bash";
 import { AgentError } from "#src/errors";
-import { ExternalTools } from "#src/external-tools";
-import type { ExternalTool } from "#src/external-tools";
-import { Pages, fetchPageDefinition } from "#src/pages";
+import { Pages, fetchPageDefinition } from "#src/pages/pages";
 import { Agent } from "#src/service";
 import type { ChatPolicy } from "#src/settings";
-import { Skills } from "#src/skills";
-import { ChatTasks } from "#src/task-tools";
+import { Skills } from "#src/skills/skills";
 import { agentHarness, optionalService, testModel } from "#src/test/harness";
+import { Bash, commandReviewInstructions } from "#src/tools/bash";
+import { ExternalTools } from "#src/tools/external-tools";
+import type { ExternalTool } from "#src/tools/external-tools";
+import { ChatTasks } from "#src/tools/task-tools";
 
 const tool = (
   name: string,

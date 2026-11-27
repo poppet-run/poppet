@@ -6,14 +6,14 @@ import { brotliCompressSync, deflateSync, gzipSync } from "node:zlib";
 
 import { Schema } from "effect";
 
-import { pageURL, publicAddress, requestPage, resolvePage } from "#src/page-network";
+import { pageURL, publicAddress, requestPage, resolvePage } from "#src/pages/page-network";
 import { defaultPolicy } from "#src/settings";
 
 const maxPageBytes = defaultPolicy.pageBytes;
 
-const certificate = fileURLToPath(new URL("./test/fixtures/pages/cert.pem", import.meta.url));
+const certificate = fileURLToPath(new URL("../test/fixtures/pages/cert.pem", import.meta.url));
 
-const key = fileURLToPath(new URL("./test/fixtures/pages/key.pem", import.meta.url));
+const key = fileURLToPath(new URL("../test/fixtures/pages/key.pem", import.meta.url));
 
 const listen = async (server: ReturnType<typeof createServer>) => {
   await new Promise<void>((resolve, reject) => {

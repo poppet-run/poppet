@@ -2,16 +2,16 @@ import type { Tool } from "@poppet/provider";
 import { Context, Effect, Schema } from "effect";
 import type { Scope } from "effect";
 
-import { ParkRequest, escapedApprovalJSON } from "#src/action-approval";
-import { MCPReview, reviewAction } from "#src/action-review";
+import { ParkRequest, escapedApprovalJSON } from "#src/approvals/action-approval";
+import { MCPReview, reviewAction } from "#src/approvals/action-review";
+import { AgentError } from "#src/errors";
 import type {
   AgentTool,
   FailurePolicy,
   ReviewableCall,
   ToolCall,
   ToolContext,
-} from "#src/agent-tool";
-import { AgentError } from "#src/errors";
+} from "#src/tools/agent-tool";
 
 export interface ExternalTool {
   readonly definition: Tool;

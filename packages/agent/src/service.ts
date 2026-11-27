@@ -19,16 +19,16 @@ import {
 } from "effect";
 import type { Schema, Scope } from "effect";
 
-import type { RunContext } from "#src/agent-tool";
 import { prepareAttachments } from "#src/attachments";
 import type { AttachmentInput } from "#src/attachments";
 import { conversation } from "#src/conversation";
 import { AgentError } from "#src/errors";
 import { memoryPrompt } from "#src/memory";
 import { ChatSettings } from "#src/settings";
-import { loadMentionedSkills } from "#src/skill-mentions";
-import { Skills, skillAuthorityRule } from "#src/skills";
+import { loadMentionedSkills } from "#src/skills/skill-mentions";
+import { Skills, skillAuthorityRule } from "#src/skills/skills";
 import { generateTitle, sessionTitle } from "#src/title";
+import type { RunContext } from "#src/tools/agent-tool";
 
 export class ModelResolver extends Context.Service<
   ModelResolver,

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { Effect } from "effect";
 
-import { decodeMemoryCall } from "#src/memory-tools";
+import { decodeMemoryCall } from "#src/tools/memory-tools";
 
 const call = (args: string) => ({
   type: "tool-call" as const,

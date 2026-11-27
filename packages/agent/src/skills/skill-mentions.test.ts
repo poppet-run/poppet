@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { mentionedSkills } from "#src/skill-mentions";
+import { mentionedSkills } from "#src/skills/skill-mentions";
 
 describe("mentionedSkills", () => {
   test.each([
