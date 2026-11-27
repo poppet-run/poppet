@@ -5,7 +5,7 @@ import type { GatewayPromptSetup } from "@poppet/gateway";
 import { Console, Effect, Schema } from "effect";
 import { Prompt } from "effect/cli";
 
-import { loadDiscordSettings, saveDiscordSettings } from "#src/settings";
+import { loadDiscordSettings, removeDiscordSettings, saveDiscordSettings } from "#src/settings";
 
 const id = (message: string, value: string | undefined) =>
   Prompt.String({
@@ -71,4 +71,9 @@ export const promptDiscordSetup = {
     loadDiscordSettings(dataDirectory).pipe(Effect.map((saved) => saved !== null)),
   ),
   prompt,
+  remove: GatewayEnvironment.use(({ dataDirectory }) =>
+    removeDiscordSettings(dataDirectory).pipe(
+      Effect.as("Removed Discord settings and tokens. Restart the worker to disconnect Discord."),
+    ),
+  ),
 } satisfies GatewayPromptSetup;

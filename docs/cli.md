@@ -71,7 +71,8 @@ always prompts with hidden input, even when the environment holds a key.
 reuses saved choices, offers to reconnect an existing provider, and lists that
 provider's models. It then lists the gateways that have a `promptSetup` in one
 multi-select, with configured gateways selected, and prompts for each selected
-one. Leaving one unselected keeps its settings and tokens. Token input shows asterisks. If the provider's key comes from the
+one. Leaving a configured gateway unselected asks whether to remove its
+settings and tokens, and keeps them unless confirmed. Token input shows asterisks. If the provider's key comes from the
 environment, setup still asks for one and saves it for the background worker.
 
 Saves happen in order: authentication at once, the provider and model after the

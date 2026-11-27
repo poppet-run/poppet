@@ -16,3 +16,4 @@ const Credentials = Schema.Struct({ token: Token });
 const settings = configuredGatewaySettings("discord", "Discord", DiscordConfiguration, Credentials);
 export const saveDiscordSettings = settings.save;
 export const loadDiscordSettings = settings.load;
+export const removeDiscordSettings = settings.remove;
