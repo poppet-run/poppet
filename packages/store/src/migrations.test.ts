@@ -55,6 +55,7 @@ describe("StoreDatabaseLive migrations", () => {
         { migration_id: 5, name: "tool_call_review" },
         { migration_id: 6, name: "session_origin" },
         { migration_id: 7, name: "approvals" },
+        { migration_id: 8, name: "approval_rules" },
       ]);
       expect(
         database.query("SELECT name FROM sqlite_master WHERE name = 'sessions'").get(),
@@ -173,11 +174,12 @@ describe("StoreDatabaseLive migrations", () => {
         "5_tool_call_review": Effect.void,
         "6_session_origin": Effect.void,
         "7_approvals": Effect.void,
-        "8_index": Effect.gen(function* () {
+        "8_approval_rules": Effect.void,
+        "9_index": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`CREATE INDEX sessions_by_provider ON sessions (provider)`;
         }),
-        "9_broken": Effect.gen(function* () {
+        "10_broken": Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           yield* sql`invalid SQL`;
         }),
@@ -193,6 +195,7 @@ describe("StoreDatabaseLive migrations", () => {
         { migration_id: 5 },
         { migration_id: 6 },
         { migration_id: 7 },
+        { migration_id: 8 },
       ]);
       expect(
         database.query("SELECT name FROM sqlite_master WHERE name = 'sessions_by_provider'").get(),

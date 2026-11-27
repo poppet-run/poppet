@@ -6,7 +6,16 @@ import type { SqlClient } from "effect/sql";
 import { StoreError, decodeInput, reportAs, storeFailure } from "#src/errors";
 import { conflict } from "#src/records";
 import type { StoreRecords } from "#src/records";
-import { Approval, Id, NewApproval, ToolApproval } from "#src/schema";
+import {
+  Approval,
+  ApprovalRule,
+  ApprovalRuleCreator,
+  ApprovalRuleMatcher,
+  Id,
+  NewApproval,
+  NewApprovalRule,
+  ToolApproval,
+} from "#src/schema";
 import type { ToolCall } from "#src/schema";
 import type { StoreOperations } from "#src/service";
 import { decodeRow, decodeRows } from "#src/sql";
@@ -18,10 +27,25 @@ const ApprovalRow = Schema.Struct({
   decidedBy: Schema.NullOr(Schema.fromJsonString(ToolApproval)),
 });
 
+const ApprovalRuleRow = Schema.Struct({
+  ...ApprovalRule.fields,
+  matcher: Schema.fromJsonString(ApprovalRuleMatcher),
+  createdBy: Schema.fromJsonString(ApprovalRuleCreator),
+});
+
 // Binds an approval to the exact saved call, so a resumed run can confirm what it dispatches.
 export const callDigest = (call: Pick<ToolCall, "name" | "namespace" | "arguments">) =>
   createHash("sha256")
     .update(JSON.stringify([call.name, call.namespace, call.arguments]))
+    .digest("hex");
+
+export const ruleMatchDigest = (matcher: ApprovalRuleMatcher) =>
+  createHash("sha256")
+    .update(
+      matcher.kind === "bash"
+        ? JSON.stringify(["bash", matcher.command, matcher.cwd])
+        : JSON.stringify(["mcp", matcher.serverId, matcher.toolName, matcher.origin]),
+    )
     .digest("hex");
 
 const approvalRequired = (kind: Approval["kind"]) =>
@@ -81,15 +105,102 @@ export const approvalOperations = (sql: SqlClient.SqlClient, records: StoreRecor
       }),
     );
 
-  const decideApproval: StoreOperations["decideApproval"] = (id, answer) =>
+  const findApprovalRule = (id: string) =>
+    sql`SELECT * FROM approval_rules WHERE id = ${id}`.pipe(decodeRow(ApprovalRuleRow));
+
+  const requireApprovalRule = (id: string) =>
+    Effect.flatMap(findApprovalRule(id), (rule) =>
+      rule === null
+        ? Effect.die(new Error("A saved approval rule could not be read back."))
+        : Effect.succeed(rule),
+    );
+
+  const upsertRule = (input: NewApprovalRule, at: number) =>
+    Effect.gen(function* () {
+      const rule = yield* decodeInput(NewApprovalRule, input, { onExcessProperty: "error" });
+      const expiresAt = rule.expiresAt ?? null;
+
+      if (expiresAt !== null && expiresAt <= at) {
+        return yield* new StoreError({
+          reason: "invalid-request",
+          message: "An approval rule must expire after it is created.",
+        });
+      }
+
+      const matchDigest = ruleMatchDigest(rule.matcher);
+
+      const existing =
+        yield* sql`SELECT * FROM approval_rules WHERE match_digest = ${matchDigest} AND revoked_at IS NULL`.pipe(
+          decodeRow(ApprovalRuleRow),
+        );
+
+      if (existing !== null) {
+        if (existing.expiresAt === null || existing.expiresAt > at) {
+          return existing;
+        }
+
+        yield* sql`UPDATE approval_rules SET revoked_at = ${at} WHERE id = ${existing.id}`;
+      }
+
+      const id = randomUUID();
+
+      yield* sql`INSERT INTO approval_rules ${sql.insert({
+        id,
+        kind: rule.matcher.kind,
+        matchDigest,
+        matcher: JSON.stringify(rule.matcher),
+        createdAt: at,
+        createdBy: JSON.stringify(rule.createdBy),
+        sourceApprovalId: rule.sourceApprovalId ?? null,
+        expiresAt,
+      })}`;
+
+      return yield* requireApprovalRule(id);
+    });
+
+  const decideApproval: StoreOperations["decideApproval"] = (id, answer, options) =>
     transaction(
       Effect.gen(function* () {
         const at = yield* Clock.currentTimeMillis;
-        const decision = yield* decodeInput(ToolApproval, answer, { onExcessProperty: "error" });
+
+        const decodedAnswer = yield* decodeInput(ToolApproval, answer, {
+          onExcessProperty: "error",
+        });
+
+        const approvalId = yield* decodeInput(Id, id);
+
+        const existing = yield* sql`SELECT run_id, call_id FROM approvals
+            WHERE id = ${approvalId} AND state = 'pending' AND expires_at > ${at}`.pipe(
+          decodeRow(Schema.Struct({ runId: Id, callId: Schema.NonEmptyString })),
+        );
+
+        if (existing === null) {
+          return null;
+        }
+
+        let decision = decodedAnswer;
+
+        if (options?.rule !== undefined && decodedAnswer.decision === "approved") {
+          const savedRule = yield* upsertRule(
+            {
+              matcher: options.rule,
+              createdBy: {
+                adapter: decodedAnswer.adapter,
+                senderId: decodedAnswer.senderId,
+                at: decodedAnswer.at,
+              },
+              sourceApprovalId: approvalId,
+              expiresAt: options.expiresAt ?? null,
+            },
+            at,
+          );
+
+          decision = { ...decodedAnswer, ruleId: savedRule.id };
+        }
 
         const claimed = yield* sql`UPDATE approvals SET state = ${decision.decision},
             decided_at = ${at}, decided_by = ${JSON.stringify(decision)}
-          WHERE id = ${yield* decodeInput(Id, id)} AND state = 'pending' AND expires_at > ${at}
+          WHERE id = ${approvalId} AND state = 'pending' AND expires_at > ${at}
           RETURNING run_id, call_id`.pipe(
           decodeRow(Schema.Struct({ runId: Id, callId: Schema.NonEmptyString })),
         );
@@ -109,9 +220,60 @@ export const approvalOperations = (sql: SqlClient.SqlClient, records: StoreRecor
         yield* sql`UPDATE tool_calls SET review = ${JSON.stringify({ ...call.review, approval: decision })}
           WHERE run_id = ${claimed.runId} AND call_id = ${claimed.callId}`;
 
-        return yield* requireApproval(id);
+        return yield* requireApproval(approvalId);
       }),
     );
+
+  const createApprovalRule: StoreOperations["createApprovalRule"] = (input) =>
+    transaction(
+      Effect.gen(function* () {
+        const at = yield* Clock.currentTimeMillis;
+
+        return yield* upsertRule(input, at);
+      }),
+    );
+
+  const matchApprovalRule: StoreOperations["matchApprovalRule"] = (matcher) =>
+    transaction(
+      Effect.gen(function* () {
+        const at = yield* Clock.currentTimeMillis;
+
+        const decoded = yield* decodeInput(ApprovalRuleMatcher, matcher, {
+          onExcessProperty: "error",
+        });
+
+        const matchDigest = ruleMatchDigest(decoded);
+
+        return yield* sql`UPDATE approval_rules
+          SET use_count = use_count + 1, last_used_at = ${at}
+          WHERE match_digest = ${matchDigest}
+            AND revoked_at IS NULL
+            AND (expires_at IS NULL OR expires_at > ${at})
+          RETURNING *`.pipe(decodeRow(ApprovalRuleRow));
+      }),
+    );
+
+  const revokeApprovalRule: StoreOperations["revokeApprovalRule"] = (id) =>
+    transaction(
+      Effect.gen(function* () {
+        const at = yield* Clock.currentTimeMillis;
+        const ruleId = yield* decodeInput(Id, id);
+
+        return yield* sql`UPDATE approval_rules SET revoked_at = ${at}
+          WHERE id = ${ruleId} AND revoked_at IS NULL
+          RETURNING *`.pipe(decodeRow(ApprovalRuleRow));
+      }),
+    );
+
+  const revokeAllApprovalRules: StoreOperations["revokeAllApprovalRules"] = transaction(
+    Effect.gen(function* () {
+      const at = yield* Clock.currentTimeMillis;
+
+      return yield* sql`UPDATE approval_rules SET revoked_at = ${at}
+        WHERE revoked_at IS NULL
+        RETURNING *`.pipe(decodeRows(ApprovalRuleRow));
+    }),
+  );
 
   const expireApprovals: StoreOperations["expireApprovals"] = transaction(
     Effect.gen(function* () {
@@ -153,6 +315,19 @@ export const approvalOperations = (sql: SqlClient.SqlClient, records: StoreRecor
       ),
     pendingApprovals: sql`SELECT * FROM approvals WHERE state = 'pending'
       ORDER BY created_at, id`.pipe(decodeRows(ApprovalRow), reportAs(storeFailure)),
+    createApprovalRule,
+    matchApprovalRule,
+    approvalRule: (id) =>
+      decodeInput(Id, id).pipe(Effect.flatMap(findApprovalRule), reportAs(storeFailure)),
+    approvalRules: Effect.gen(function* () {
+      const at = yield* Clock.currentTimeMillis;
+
+      return yield* sql`SELECT * FROM approval_rules
+        WHERE revoked_at IS NULL AND (expires_at IS NULL OR expires_at > ${at})
+        ORDER BY created_at, id`.pipe(decodeRows(ApprovalRuleRow));
+    }).pipe(reportAs(storeFailure)),
+    revokeApprovalRule,
+    revokeAllApprovalRules,
   } satisfies Pick<
     StoreOperations,
     | "parkRun"
@@ -161,5 +336,11 @@ export const approvalOperations = (sql: SqlClient.SqlClient, records: StoreRecor
     | "approval"
     | "latestApproval"
     | "pendingApprovals"
+    | "createApprovalRule"
+    | "matchApprovalRule"
+    | "approvalRule"
+    | "approvalRules"
+    | "revokeApprovalRule"
+    | "revokeAllApprovalRules"
   >;
 };
