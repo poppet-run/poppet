@@ -1,12 +1,19 @@
 import { describe, expect, test } from "bun:test";
 
-import { GatewayError } from "@poppet/gateway";
+import { SkillsLive } from "@poppet/agent";
+import { agentHarness } from "@poppet/agent/test";
+import { GatewayAdapter, GatewayError } from "@poppet/gateway";
+import type { GatewayRegistration } from "@poppet/gateway";
 import { LogfmtLoggerLive } from "@poppet/io";
 import { StoreError } from "@poppet/store";
-import { Clock, Console, Effect, Fiber } from "effect";
+import { Clock, ConfigProvider, Console, Effect, Fiber, Layer, Stream } from "effect";
 import { TestClock } from "effect/testing";
 
-import { superviseAdapter } from "#src/commands/gateway/gateways";
+import {
+  MessagingWorker,
+  MessagingWorkerLive,
+  superviseAdapter,
+} from "#src/commands/gateway/gateways";
 import type { AdapterHealth } from "#src/commands/gateway/gateways";
 
 const quiet: Console.Console = { ...console, error: () => {} };
@@ -144,5 +151,84 @@ describe("superviseAdapter", () => {
         yield* Fiber.interrupt(fiber);
       }),
     );
+  });
+});
+
+const registration = (id: string, home: string | undefined): GatewayRegistration => {
+  const adapter: GatewayAdapter["Service"] = {
+    id,
+    accountId: Effect.succeed(`${id}-bot`),
+    policy: { ownerId: "owner", scopeId: `${id}-scope` },
+    messages: Stream.never,
+    checkAccess: () => Effect.void,
+    destination: () => Effect.succeed("parent"),
+    typing: () => Effect.void,
+    mark: () => Effect.void,
+    send: () => Effect.die("Unexpected send"),
+    status: Effect.succeed({ connected: true }),
+    textLimit: 2000,
+    naming: {
+      sanitize: (title) => title,
+      changes: Stream.never,
+      conversation: () => Effect.die("Unexpected conversation"),
+      current: () => Effect.die("Unexpected name lookup"),
+      rename: () => Effect.die("Unexpected rename"),
+    },
+  };
+
+  return {
+    id,
+    name: id,
+    setupHelp: "setup",
+    setup: () => Effect.die("Unexpected setup"),
+    load: Effect.succeed(
+      Layer.succeed(
+        GatewayAdapter,
+        home === undefined ? adapter : { ...adapter, homeConversationId: home },
+      ),
+    ),
+  };
+};
+
+describe("MessagingWorker home destination", () => {
+  test.each([
+    [undefined, "discord"],
+    ["slack", "slack"],
+    ["telegram", "discord"],
+    ["unknown", "discord"],
+  ] as const)("when homeGateway is %p, uses the %s home conversation", async (home, expected) => {
+    const harness = await agentHarness();
+
+    try {
+      const agent = harness.agent(
+        () => Effect.die("Unexpected model"),
+        SkillsLive.pipe(Layer.provide(harness.config)),
+      );
+
+      const gateways = [
+        registration("discord", "discord-home"),
+        registration("telegram", undefined),
+        registration("slack", "slack-home"),
+      ];
+
+      const destination = await Effect.runPromise(
+        MessagingWorker.use((worker) => worker.homeDestination).pipe(
+          Effect.provide([
+            MessagingWorkerLive(gateways).pipe(Layer.provide(agent)),
+            LogfmtLoggerLive,
+          ]),
+          Effect.provideService(Console.Console, quiet),
+          Effect.provideService(
+            ConfigProvider.ConfigProvider,
+            ConfigProvider.fromUnknown(home === undefined ? {} : { homeGateway: home }),
+          ),
+        ),
+      );
+
+      expect(destination?.adapter).toBe(expected);
+      expect(destination?.conversationId).toBe(`${expected}-home`);
+    } finally {
+      await harness.close();
+    }
   });
 });
