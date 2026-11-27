@@ -3,7 +3,12 @@ import type { ModelDescription, ModelRequest } from "#src/index";
 
 export type UserPart =
   | { readonly type: "text"; readonly text: string }
-  | { readonly type: "image"; readonly url: string };
+  | {
+      readonly type: "image";
+      readonly url: string;
+      readonly mediaType: string;
+      readonly base64: string;
+    };
 
 type UserMessage = Extract<ModelRequest["messages"][number], { readonly role: "user" }>;
 
@@ -24,7 +29,12 @@ export const userParts = (
 
     parts.push(
       "base64" in content
-        ? { type: "image", url: `data:${reference.mediaType};base64,${content.base64}` }
+        ? {
+            type: "image",
+            url: `data:${reference.mediaType};base64,${content.base64}`,
+            mediaType: reference.mediaType,
+            base64: content.base64,
+          }
         : {
             type: "text",
             text: [

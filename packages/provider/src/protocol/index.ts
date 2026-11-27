@@ -20,3 +20,7 @@ export {
   fetchModelCatalog,
   createCatalogCache,
 } from "#src/protocol/openai-compatible";
+
+export { userParts, type UserPart } from "#src/protocol/attachments";
+
+export { modelStream } from "#src/protocol/scoped-stream";
