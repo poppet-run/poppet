@@ -14,10 +14,15 @@ export class GatewayInput extends Context.Service<
   { readonly readSecret: Effect.Effect<Redacted.Redacted<string>, GatewayError> }
 >()("poppet/GatewayInput") {}
 
+export interface GatewaySetupDraft {
+  readonly summary: string;
+  readonly save: Effect.Effect<string, GatewayError>;
+}
+
 export interface GatewayPromptSetup {
   readonly configured: Effect.Effect<boolean, GatewayError, GatewayEnvironment>;
   readonly prompt: Effect.Effect<
-    Effect.Effect<string, GatewayError>,
+    GatewaySetupDraft,
     GatewayError | Terminal.QuitError,
     GatewayEnvironment | Prompt.Environment
   >;

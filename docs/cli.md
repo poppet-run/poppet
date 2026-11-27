@@ -84,9 +84,12 @@ remove its settings and tokens, and keeps them unless confirmed. Token input
 shows asterisks. If the provider's key comes from the environment, setup still
 asks for one and saves it for the background worker.
 
-Saves happen in order: authentication at once, the provider and model after the
-prompts, then each gateway. Cancelling or a later failure keeps completed saves
-and reports them. Setup preserves other `config.json` settings, never overwrites
+Before saving, setup shows a review of the provider, model, and each gateway's
+pending change, with tokens shown only as replaced or kept. The owner can save,
+redo the provider or gateway step, or cancel without saving. Redoing the gateway
+step starts again from the saved settings. Saves happen in order: authentication
+at once, then the provider and model, then each gateway. Cancelling or a later
+failure keeps completed saves and reports them. Setup preserves other `config.json` settings, never overwrites
 invalid configuration, and runs no inference or messaging check. On macOS and
 Linux with systemd, it offers to install, start, or restart the worker. A restart
 can interrupt active runs.

@@ -75,7 +75,7 @@ export const runSetup = (context: CLIContext, only: SetupSection | null = null) 
         `  Provider  ${file.provider === undefined ? "not chosen" : `${file.provider}, model ${file.model ?? "not chosen"}`}`,
         `  Gateways  ${describeGateways(gateways)}`,
         `  Worker    ${describeWorker(worker)}`,
-        "Sign-ins are saved immediately; configuration is saved after the prompts.",
+        "Sign-ins are saved immediately; other changes are saved after you review them.",
       ].join("\n"),
     );
 
@@ -92,24 +92,80 @@ export const runSetup = (context: CLIContext, only: SetupSection | null = null) 
         `Step ${sections.indexOf(section) + 1} of ${sections.length}: ${sectionTitles[section]}`,
       );
 
-    const chosen = sections.includes("provider")
+    const promptDrafts = promptGateways(gateways).pipe(
+      Effect.provideService(GatewayEnvironment, environment),
+    );
+
+    let chosen = sections.includes("provider")
       ? yield* step("provider").pipe(Effect.andThen(promptProvider(context, config)))
       : null;
 
-    const saves = sections.includes("gateways")
-      ? yield* step("gateways").pipe(
-          Effect.andThen(promptGateways(gateways)),
-          Effect.provideService(GatewayEnvironment, environment),
-        )
+    let drafts = sections.includes("gateways")
+      ? yield* step("gateways").pipe(Effect.andThen(promptDrafts))
       : [];
 
-    if (chosen !== null) {
-      yield* updateConfigFile(config.dataDirectory, (current) => ({ ...current, ...chosen }));
-      yield* Console.log(`Saved provider ${chosen.provider} and model ${chosen.model} to ${path}.`);
+    while (chosen !== null || drafts.length > 0) {
+      const width = Math.max(8, ...drafts.map(({ name }) => name.length));
+
+      const lines: Array<{ readonly label: string; readonly value: string }> = drafts.map(
+        ({ name, draft }) => ({ label: name, value: draft?.summary ?? "unchanged" }),
+      );
+
+      if (chosen !== null) {
+        const unchanged = chosen.provider === file.provider && chosen.model === file.model;
+
+        lines.unshift({
+          label: "Provider",
+          value: `${chosen.provider}, model ${chosen.model}${unchanged ? " (unchanged)" : ""}`,
+        });
+      }
+
+      yield* heading("Review");
+      yield* Console.log(
+        lines.map(({ label, value }) => `  ${label.padEnd(width)}  ${value}`).join("\n"),
+      );
+
+      const next = yield* Prompt.Select({
+        message: "Save these changes?",
+        choices: [
+          { title: "Save", value: "save" as const },
+          ...(chosen === null
+            ? []
+            : [{ title: "Change the provider and model", value: "provider" as const }]),
+          ...(sections.includes("gateways")
+            ? [{ title: "Change the gateways", value: "gateways" as const }]
+            : []),
+          { title: "Cancel without saving", value: "cancel" as const },
+        ],
+      });
+
+      if (next === "save") {
+        break;
+      }
+
+      if (next === "cancel") {
+        return yield* Effect.fail(
+          new UsageError({ message: "Setup cancelled without saving configuration." }),
+        );
+      }
+
+      if (next === "provider" && chosen !== null) {
+        chosen = yield* promptProvider(context, chosen);
+      } else {
+        drafts = yield* promptDrafts;
+      }
     }
 
-    for (const { name, save } of saves) {
-      yield* Console.log(save === null ? `${name} configuration left unchanged.` : yield* save);
+    if (chosen !== null) {
+      const { provider, model } = chosen;
+      yield* updateConfigFile(config.dataDirectory, (current) => ({ ...current, provider, model }));
+      yield* Console.log(`Saved provider ${provider} and model ${model} to ${path}.`);
+    }
+
+    for (const { name, draft } of drafts) {
+      yield* Console.log(
+        draft === null ? `${name} configuration left unchanged.` : yield* draft.save,
+      );
     }
 
     yield* step("worker");
