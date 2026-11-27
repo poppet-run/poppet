@@ -4,8 +4,8 @@ import { Effect } from "effect";
 import { byteSize } from "#src/context";
 import type { AgentError } from "#src/errors";
 import type { ChatPolicy } from "#src/settings";
-import { isManualOnly, skillAuthorityRule } from "#src/skills";
-import type { Skills } from "#src/skills";
+import { isManualOnly, skillAuthorityRule } from "#src/skills/skills";
+import type { Skills } from "#src/skills/skills";
 
 const truncate = (text: string, bytes: number) =>
   byteSize(text) <= bytes ? text : `${clip(text, bytes - byteSize("…")).trimEnd()}…`;

@@ -6,15 +6,15 @@ Memory is three inputs that every run reads once at start: the personality in
 `soul.md`, the owner's profile in `profile.md`, and saved facts. The
 [user guide](https://poppet.run/docs/memory/) covers the `memory` commands.
 
-| Module                                | Owns                                                |
-| ------------------------------------- | --------------------------------------------------- |
-| `packages/memory/src/service.ts`      | The `Memory` service and `MemoryError`              |
-| `packages/memory/src/schema.ts`       | Key, value, origin, and snapshot schemas and limits |
-| `packages/memory/src/local.ts`        | `LocalMemoryLive`, fact SQL, and bounded snapshots  |
-| `packages/memory/src/context-file.ts` | Bounded reads of `soul.md` and `profile.md`         |
-| `packages/memory/src/migrations.ts`   | The memory schema                                   |
-| `packages/agent/src/memory.ts`        | Formatting the snapshot into model instructions     |
-| `packages/agent/src/memory-tools.ts`  | The `poppet_memory.memory` tool                     |
+| Module                                     | Owns                                                |
+| ------------------------------------------ | --------------------------------------------------- |
+| `packages/memory/src/service.ts`           | The `Memory` service and `MemoryError`              |
+| `packages/memory/src/schema.ts`            | Key, value, origin, and snapshot schemas and limits |
+| `packages/memory/src/local.ts`             | `LocalMemoryLive`, fact SQL, and bounded snapshots  |
+| `packages/memory/src/context-file.ts`      | Bounded reads of `soul.md` and `profile.md`         |
+| `packages/memory/src/migrations.ts`        | The memory schema                                   |
+| `packages/agent/src/memory.ts`             | Formatting the snapshot into model instructions     |
+| `packages/agent/src/tools/memory-tools.ts` | The `poppet_memory.memory` tool                     |
 
 ## Service
 

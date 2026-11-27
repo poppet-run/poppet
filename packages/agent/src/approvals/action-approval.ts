@@ -1,8 +1,8 @@
 import { Data } from "effect";
 import type { Schema } from "effect";
 
-import type { BashArguments } from "#src/bash";
 import { AgentError } from "#src/errors";
+import type { BashArguments } from "#src/tools/bash";
 
 export type ActionApproval =
   | (BashArguments & { readonly kind: "bash"; readonly reason: string })

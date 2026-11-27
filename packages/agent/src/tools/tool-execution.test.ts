@@ -2,13 +2,13 @@ import { describe, expect, test } from "bun:test";
 
 import { StoreError } from "@poppet/store";
 
-import { builtinFailures } from "#src/agent-tool";
-import { bashFailures } from "#src/bash";
 import { AgentError } from "#src/errors";
-import { externalFailures } from "#src/external-tools";
-import { memoryFailures } from "#src/memory-tools";
-import { taskFailures } from "#src/task-tools";
-import { toolFailureKind } from "#src/tool-execution";
+import { builtinFailures } from "#src/tools/agent-tool";
+import { bashFailures } from "#src/tools/bash";
+import { externalFailures } from "#src/tools/external-tools";
+import { memoryFailures } from "#src/tools/memory-tools";
+import { taskFailures } from "#src/tools/task-tools";
+import { toolFailureKind } from "#src/tools/tool-execution";
 
 const policies = {
   read_session: builtinFailures,

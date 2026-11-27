@@ -5,18 +5,18 @@ import type { ModelOperations } from "@poppet/provider";
 import type { Run } from "@poppet/store";
 import { Context, Effect, Option, Schema } from "effect";
 
-import { ParkRequest } from "#src/action-approval";
-import { BashReview, reviewAction } from "#src/action-review";
+import { ParkRequest } from "#src/approvals/action-approval";
+import { BashReview, reviewAction } from "#src/approvals/action-review";
+import { AgentError } from "#src/errors";
+import { ChatSettings } from "#src/settings";
 import type {
   AgentTool,
   FailurePolicy,
   ReviewableCall,
   ToolCall,
   ToolContext,
-} from "#src/agent-tool";
-import { AgentError } from "#src/errors";
-import { ChatSettings } from "#src/settings";
-import { BoundedText, toolArguments } from "#src/tool-schema";
+} from "#src/tools/agent-tool";
+import { BoundedText, toolArguments } from "#src/tools/tool-schema";
 
 const Arguments = Schema.Struct({
   command: BoundedText(8192)

@@ -4,8 +4,8 @@ import { Effect } from "effect";
 
 import { AgentError } from "#src/errors";
 import { defaultPolicy } from "#src/settings";
-import { skillDescription, skillIndex } from "#src/skill-index";
-import type { Skills } from "#src/skills";
+import { skillDescription, skillIndex } from "#src/skills/skill-index";
+import type { Skills } from "#src/skills/skills";
 
 const service = (names: ReadonlyArray<string>): Skills["Service"] => ({
   list: Effect.succeed(names),

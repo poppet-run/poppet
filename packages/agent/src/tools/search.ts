@@ -4,11 +4,11 @@ import { SessionReadQuery, SessionSearchQuery, Store } from "@poppet/store";
 import type { StoreError } from "@poppet/store";
 import { Effect, Schema } from "effect";
 
-import { contextTool } from "#src/agent-tool";
-import type { ToolCall } from "#src/agent-tool";
 import { AgentError } from "#src/errors";
 import { ChatSettings } from "#src/settings";
-import { toolArguments } from "#src/tool-schema";
+import { contextTool } from "#src/tools/agent-tool";
+import type { ToolCall } from "#src/tools/agent-tool";
+import { toolArguments } from "#src/tools/tool-schema";
 
 const SearchArguments = Schema.Struct({
   query: SessionSearchQuery.annotate({ description: "Plain-text search query." }),

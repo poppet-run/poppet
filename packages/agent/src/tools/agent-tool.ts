@@ -10,7 +10,7 @@ import type {
 import type { Approval } from "@poppet/store";
 import type { Effect, Schema } from "effect";
 
-import type { ParkRequest } from "#src/action-approval";
+import type { ParkRequest } from "#src/approvals/action-approval";
 import type { AgentError } from "#src/errors";
 
 export type ToolCall = Extract<Output, { type: "tool-call" }>;

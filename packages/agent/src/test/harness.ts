@@ -9,7 +9,7 @@ import { StoreLive } from "@poppet/store";
 import { Deferred, Effect, Layer, Stream } from "effect";
 import type { Context } from "effect";
 
-import { Pages } from "#src/pages";
+import { Pages } from "#src/pages/pages";
 import { AgentLive, ModelResolver } from "#src/service";
 import { ChatSettings, defaultPolicy } from "#src/settings";
 import type { ChatPolicy } from "#src/settings";

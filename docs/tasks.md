@@ -6,19 +6,19 @@ A task is a saved prompt with a schedule. The worker runs each due occurrence as
 a fresh scheduled chat run and can deliver the answer to a gateway. The
 [user guide](https://poppet.run/docs/tasks/) covers the `tasks` commands.
 
-| Module                                | Owns                                                             |
-| ------------------------------------- | ---------------------------------------------------------------- |
-| `packages/tasks/src/task-schema.ts`   | Commands, schedules, timestamps, and `nextSlot`                  |
-| `packages/tasks/src/task-store.ts`    | `TaskRepository`, scheduling, claims, and occurrence transitions |
-| `packages/tasks/src/task-controls.ts` | Edit, skip, snooze, and run-now transactions                     |
-| `packages/tasks/src/task-records.ts`  | Task and occurrence records shared with the scheduler            |
-| `packages/tasks/src/scheduler.ts`     | The wake queue, `reconcileTasks`, and `executeOccurrence`        |
-| `packages/tasks/src/commands.ts`      | Task operations, inspection, and delivery state                  |
-| `packages/tasks/src/chat-tools.ts`    | `ChatTasksLive` for the chat tool                                |
-| `packages/tasks/src/task-socket.ts`   | The task command client for the worker socket                    |
-| `packages/agent/src/task-tools.ts`    | `poppet_tasks.manage_tasks` and the `ChatTasks` capability       |
-| `packages/agent/src/task-note.ts`     | `poppet_tasks.save_note`                                         |
-| `apps/cli/src/commands/tasks/`        | The `tasks` command and its argument parsing                     |
+| Module                                   | Owns                                                             |
+| ---------------------------------------- | ---------------------------------------------------------------- |
+| `packages/tasks/src/task-schema.ts`      | Commands, schedules, timestamps, and `nextSlot`                  |
+| `packages/tasks/src/task-store.ts`       | `TaskRepository`, scheduling, claims, and occurrence transitions |
+| `packages/tasks/src/task-controls.ts`    | Edit, skip, snooze, and run-now transactions                     |
+| `packages/tasks/src/task-records.ts`     | Task and occurrence records shared with the scheduler            |
+| `packages/tasks/src/scheduler.ts`        | The wake queue, `reconcileTasks`, and `executeOccurrence`        |
+| `packages/tasks/src/commands.ts`         | Task operations, inspection, and delivery state                  |
+| `packages/tasks/src/chat-tools.ts`       | `ChatTasksLive` for the chat tool                                |
+| `packages/tasks/src/task-socket.ts`      | The task command client for the worker socket                    |
+| `packages/agent/src/tools/task-tools.ts` | `poppet_tasks.manage_tasks` and the `ChatTasks` capability       |
+| `packages/agent/src/tools/task-note.ts`  | `poppet_tasks.save_note`                                         |
+| `apps/cli/src/commands/tasks/`           | The `tasks` command and its argument parsing                     |
 
 ## Tasks and occurrences
 

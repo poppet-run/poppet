@@ -3,12 +3,12 @@ import { toolParameters } from "@poppet/provider";
 import type { Tool } from "@poppet/provider";
 import { Effect, Schema } from "effect";
 
-import { builtinFailures } from "#src/agent-tool";
-import type { AgentTool, FailurePolicy, ToolCall } from "#src/agent-tool";
 import { byteSize } from "#src/context";
 import { AgentError } from "#src/errors";
 import { ChatSettings } from "#src/settings";
-import { toolArguments } from "#src/tool-schema";
+import { builtinFailures } from "#src/tools/agent-tool";
+import type { AgentTool, FailurePolicy, ToolCall } from "#src/tools/agent-tool";
+import { toolArguments } from "#src/tools/tool-schema";
 
 const Arguments = Schema.Struct({
   action: Schema.Literals(["remember", "replace", "forget"]).annotate({

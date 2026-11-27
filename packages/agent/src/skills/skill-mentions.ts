@@ -3,8 +3,8 @@ import type { SkillSnapshot } from "@poppet/store";
 import { Effect } from "effect";
 
 import { AgentError } from "#src/errors";
-import { skillAuthorityRule } from "#src/skills";
-import type { Skills } from "#src/skills";
+import { skillAuthorityRule } from "#src/skills/skills";
+import type { Skills } from "#src/skills/skills";
 
 const code = /```[\s\S]*?(?:```|$)|`[^`\n]*`/gu;
 

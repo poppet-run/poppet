@@ -4,10 +4,10 @@ import type { DeliveryDestination, StoreError } from "@poppet/store";
 import { Session, SkillName } from "@poppet/store";
 import { Context, Effect, Option, Schema } from "effect";
 
-import { builtinFailures, reportedStoreReasons } from "#src/agent-tool";
-import type { AgentTool, FailurePolicy, PreparedCall, ToolCall } from "#src/agent-tool";
 import { AgentError } from "#src/errors";
-import { BoundedText, toolArguments } from "#src/tool-schema";
+import { builtinFailures, reportedStoreReasons } from "#src/tools/agent-tool";
+import type { AgentTool, FailurePolicy, PreparedCall, ToolCall } from "#src/tools/agent-tool";
+import { BoundedText, toolArguments } from "#src/tools/tool-schema";
 
 const TaskSchedule = Schema.Union([
   Schema.Struct({ type: Schema.Literal("once"), at: BoundedText(64) }),

@@ -2,7 +2,7 @@ import { fitText, readableSize } from "@poppet/io";
 import { decodeHTML } from "entities/decode";
 
 import { AgentError } from "#src/errors";
-import { pageFailure } from "#src/page-network";
+import { pageFailure } from "#src/pages/page-network";
 
 const textPage = (body: Uint8Array, contentType: string | undefined, maxBytes: number) => {
   if (body.byteLength > maxBytes) {

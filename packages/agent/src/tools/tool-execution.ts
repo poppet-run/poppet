@@ -3,10 +3,10 @@ import { Store, StoreError } from "@poppet/store";
 import type { Run } from "@poppet/store";
 import { Effect } from "effect";
 
-import type { ParkRequest } from "#src/action-approval";
-import { reportedReasons, reportedStoreReasons } from "#src/agent-tool";
-import type { AgentTool, FailurePolicy, PreparedCall, ReviewableCall } from "#src/agent-tool";
+import type { ParkRequest } from "#src/approvals/action-approval";
 import { AgentError } from "#src/errors";
+import { reportedReasons, reportedStoreReasons } from "#src/tools/agent-tool";
+import type { AgentTool, FailurePolicy, PreparedCall, ReviewableCall } from "#src/tools/agent-tool";
 
 export const failureReason = (error: AgentError | StoreError) =>
   `${error instanceof AgentError ? "agent" : "store"}:${error.reason}`;
