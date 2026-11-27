@@ -1,3 +1,4 @@
+import { updateConfigFile } from "@poppet/config";
 import { GatewayEnvironment } from "@poppet/gateway";
 import type { GatewayPromptSetup } from "@poppet/gateway";
 import { Effect, Result } from "effect";
@@ -40,7 +41,40 @@ export const describeGateways = (states: ReadonlyArray<GatewayState>) =>
         )
         .join(", ");
 
-export const promptGateways = (states: ReadonlyArray<GatewayState>) =>
+/**
+ * Asks which gateway's home conversation receives approval prompts for
+ * scheduled tasks without a destination, once two or more stay configured.
+ */
+const promptHomeGateway = (
+  states: ReadonlyArray<GatewayState>,
+  active: ReadonlySet<string>,
+  saved: string | undefined,
+) =>
+  Effect.gen(function* () {
+    const choices = states.filter(({ id }) => active.has(id));
+
+    const stale =
+      saved !== undefined && states.some(({ id }) => id === saved) && !active.has(saved);
+
+    if (choices.length < 2) {
+      return stale ? { id: null, name: "", summary: "cleared" } : null;
+    }
+
+    const id = yield* Prompt.Select({
+      message: "Home gateway for approval prompts from scheduled tasks without a destination",
+      choices: choices.map((gateway) => ({
+        title: gateway.name,
+        value: gateway.id,
+        selected: gateway.id === saved,
+      })),
+    });
+
+    const name = choices.find((gateway) => gateway.id === id)?.name ?? id;
+
+    return { id, name, summary: id === saved ? `${name} (unchanged)` : name };
+  });
+
+export const promptGateways = (states: ReadonlyArray<GatewayState>, home: string | undefined) =>
   Effect.gen(function* () {
     const chosen = yield* Prompt.MultiSelect({
       message: "Messaging gateways to set up (space toggles, enter confirms)",
@@ -53,6 +87,7 @@ export const promptGateways = (states: ReadonlyArray<GatewayState>) =>
 
     const environment = yield* GatewayEnvironment;
     const saves = [];
+    const active = new Set<string>();
 
     for (const gateway of states) {
       const picked = chosen.includes(gateway.id);
@@ -66,6 +101,10 @@ export const promptGateways = (states: ReadonlyArray<GatewayState>) =>
           initial: false,
         }));
 
+      if (prompted !== null || (gateway.configured && !removed)) {
+        active.add(gateway.id);
+      }
+
       const save = removed
         ? {
             summary: "remove saved settings and tokens",
@@ -77,6 +116,27 @@ export const promptGateways = (states: ReadonlyArray<GatewayState>) =>
         name: gateway.name,
         draft: save,
         saved: gateway.configured || gateway.unreadable !== null,
+      });
+    }
+
+    const homeGateway = yield* promptHomeGateway(states, active, home);
+
+    if (homeGateway !== null) {
+      saves.push({
+        name: "Home gateway",
+        saved: true,
+        draft: {
+          summary: homeGateway.summary,
+          save: updateConfigFile(environment.dataDirectory, ({ homeGateway: _old, ...file }) =>
+            homeGateway.id === null ? file : { ...file, homeGateway: homeGateway.id },
+          ).pipe(
+            Effect.as(
+              homeGateway.id === null
+                ? "Cleared the home gateway."
+                : `Saved home gateway ${homeGateway.name}.`,
+            ),
+          ),
+        },
       });
     }
 

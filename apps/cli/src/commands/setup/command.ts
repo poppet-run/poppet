@@ -146,7 +146,7 @@ export const runSetup = (
         `Step ${sections.indexOf(section) + 1} of ${sections.length}: ${sectionTitles[section]}`,
       );
 
-    const promptDrafts = promptGateways(gateways).pipe(
+    const promptDrafts = promptGateways(gateways, file.homeGateway).pipe(
       Effect.provideService(GatewayEnvironment, environment),
     );
 
