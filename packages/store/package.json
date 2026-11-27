@@ -15,11 +15,11 @@
     "test": "bun --no-env-file ../../tools/testing/run.ts"
   },
   "dependencies": {
-    "@effect/sql-sqlite-bun": "4.1.5",
+    "@effect/sql-sqlite-bun": "4.1.6",
     "@poppet/config": "workspace:*",
     "@poppet/credentials": "workspace:*",
     "@poppet/io": "workspace:*",
     "@poppet/provider": "workspace:*",
-    "effect": "4.1.5"
+    "effect": "4.1.6"
   }
 }

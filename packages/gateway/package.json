@@ -22,6 +22,6 @@
     "@poppet/provider": "workspace:*",
     "@poppet/store": "workspace:*",
     "@poppet/tasks": "workspace:*",
-    "effect": "4.1.5"
+    "effect": "4.1.6"
   }
 }
