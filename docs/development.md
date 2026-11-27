@@ -243,12 +243,8 @@ packages/
     src/migrations/         Store baseline and later migrations
     src/schema.ts           Durable session, message, and run schemas
     src/service.ts          Store service and record operations
-    src/sessions.ts         Session records, titles, and deletion
-    src/runs.ts             Run lifecycle transitions
-    src/tool-calls.ts       Tool call journal
-    src/search.ts           Conversation search index queries
-    src/recall.ts           Bounded session reads for conversation recall
     src/sql.ts              Row decoding helpers shared with other packages
+    src/queries/            Session, run, tool-call, approval, search, and recall queries
   tasks/                    @poppet/tasks
     src/scheduler.ts        Serialized scheduled runs and wake queue
     src/schema.ts           Typed commands, cron expressions, and timestamps

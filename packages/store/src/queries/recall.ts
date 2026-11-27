@@ -3,9 +3,9 @@ import { Effect, Schema } from "effect";
 import type { SqlClient } from "effect/sql";
 
 import { StoreError, decodeInput } from "#src/errors";
+import { MaxBytes } from "#src/queries/search";
 import { Session, SessionReadMessage, SessionReadQuery } from "#src/schema";
 import type { SessionReadResult } from "#src/schema";
-import { MaxBytes } from "#src/search";
 import { decodeRow, decodeRows } from "#src/sql";
 
 const RecallRow = Schema.Struct({
