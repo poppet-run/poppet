@@ -1521,6 +1521,7 @@ describe("makeCLI", () => {
       await configure(directory, {
         provider: "openrouter",
         model: "file-model",
+        homeGateway: "slack",
         chat: { outputTokens: 4096, logReasoning: true, maxConcurrentRequests: 2 },
       });
 
@@ -1535,6 +1536,7 @@ describe("makeCLI", () => {
       const saved = JSON.parse(result.stdout);
       expect(saved).toMatchObject({
         model: "file-model",
+        homeGateway: "slack",
         environmentOverrides: ["POPPET_DATA_DIR"],
       });
       expect(saved.chat).toEqual({
@@ -1554,6 +1556,8 @@ describe("makeCLI", () => {
       });
 
       expect(inspection.exitCode).toBe(0);
+      await configure(directory, { homeGateway: "Not A Gateway" });
+      expect((await invoke(["config", "--json"], { POPPET_DATA_DIR: directory })).exitCode).toBe(1);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
