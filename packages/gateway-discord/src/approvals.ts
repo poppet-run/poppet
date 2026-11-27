@@ -118,13 +118,26 @@ export const approvalEmbed = (
     });
     embed.setFooter({ text: "Permits one execution only" });
   } else {
+    if (prompt.alwaysAllow !== undefined) {
+      embed.addFields({
+        name: "Always allow saves",
+        value: clamp(prompt.alwaysAllow, MAX_FIELD_VALUE),
+        inline: false,
+      });
+    }
+
     const unixSeconds = Math.floor(prompt.expiresAt / 1000);
     embed.addFields({
       name: "Expires",
       value: `<t:${unixSeconds}:R>`,
       inline: true,
     });
-    embed.setFooter({ text: "Permits one execution only" });
+    embed.setFooter({
+      text:
+        prompt.alwaysAllow !== undefined
+          ? "Approve once or save a reusable rule"
+          : "Permits one execution only",
+    });
   }
 
   return embed;
@@ -148,12 +161,24 @@ export const settledFallbackEmbed = (
     .setFooter({ text: "Permits one execution only" });
 };
 
-export const approvalComponents = (id: string, showDetails = false) => {
+export const approvalComponents = (id: string, showDetails = false, alwaysAllow = false) => {
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`${prefix}approve:${id}`)
       .setLabel("Approve once")
       .setStyle(ButtonStyle.Success),
+  );
+
+  if (alwaysAllow) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${prefix}always:${id}`)
+        .setLabel("Always allow")
+        .setStyle(ButtonStyle.Secondary),
+    );
+  }
+
+  row.addComponents(
     new ButtonBuilder()
       .setCustomId(`${prefix}deny:${id}`)
       .setLabel("Deny")
@@ -187,7 +212,7 @@ export const approvalActions = (
         return;
       }
 
-      const match = /^poppet:approval:(approve|deny|details):([a-f0-9-]{36})$/.exec(
+      const match = /^poppet:approval:(approve|always|deny|details):([a-f0-9-]{36})$/.exec(
         interaction.customId,
       );
 
@@ -291,10 +316,18 @@ export const approvalActions = (
           return;
         }
 
+        let decision: ApprovalAction["decision"] = "deny";
+
+        if (kind === "always") {
+          decision = "approve-always";
+        } else if (kind === "approve") {
+          decision = "approve";
+        }
+
         if (
           !Queue.offerUnsafe(actions, {
             requestId,
-            decision: kind === "approve" ? "approve" : "deny",
+            decision,
             source: {
               messageId: interaction.message.id,
               scopeId: settings.guildId,

@@ -1,3 +1,4 @@
+import { deriveApprovalRule, describeApprovalRule } from "@poppet/agent";
 import type { ActionApproval } from "@poppet/agent";
 import { Schema } from "effect";
 
@@ -103,6 +104,7 @@ export interface ApprovalPrompt {
   readonly omittedArgsCount?: number;
   readonly expiresAt: number;
   readonly expiresAfterSeconds: number;
+  readonly alwaysAllow?: string;
   readonly canonicalPayload: string;
   readonly truncated: boolean;
   readonly fallbackText: string;
@@ -163,9 +165,15 @@ export const formatApprovalMarkdown = (prompt: Omit<ApprovalPrompt, "fallbackTex
     }
   }
 
+  if (prompt.alwaysAllow !== undefined) {
+    lines.push(`Always allow saves: ${prompt.alwaysAllow}`);
+  }
+
   const expiry = formatApprovalDuration(prompt.expiresAfterSeconds);
   lines.push(
-    `Reply \`/approve ${prompt.requestId}\` or \`/deny ${prompt.requestId}\`. Expires in ${expiry}; permits one execution only.`,
+    prompt.alwaysAllow !== undefined
+      ? `Reply \`/approve ${prompt.requestId}\`, \`/approve-always ${prompt.requestId}\`, or \`/deny ${prompt.requestId}\`. Expires in ${expiry}.`
+      : `Reply \`/approve ${prompt.requestId}\` or \`/deny ${prompt.requestId}\`. Expires in ${expiry}; permits one execution only.`,
   );
 
   return lines.join("\n");
@@ -180,7 +188,12 @@ export const formatApprovalMessages = (
   }
 
   const expiry = formatApprovalDuration(prompt.expiresAfterSeconds);
-  const controls = `Reply \`/approve ${prompt.requestId}\` or \`/deny ${prompt.requestId}\`. Expires in ${expiry}; permits one execution only.`;
+
+  const controls =
+    prompt.alwaysAllow !== undefined
+      ? `Reply \`/approve ${prompt.requestId}\`, \`/approve-always ${prompt.requestId}\`, or \`/deny ${prompt.requestId}\`. Expires in ${expiry}.`
+      : `Reply \`/approve ${prompt.requestId}\` or \`/deny ${prompt.requestId}\`. Expires in ${expiry}; permits one execution only.`;
+
   const body = prompt.fallbackText.slice(0, prompt.fallbackText.length - controls.length).trimEnd();
 
   return [...chunks(body, textLimit), controls];
@@ -198,6 +211,12 @@ export const formatApprovalPrompt = ({
   readonly expiresAfterSeconds: number;
 }): ApprovalPrompt => {
   const summaryResult = truncateText(escapeApprovalInline(approval.reason), MAX_FIELD_CHARS);
+  const derivedRule = deriveApprovalRule(approval);
+
+  const alwaysAllow =
+    derivedRule === null
+      ? undefined
+      : truncateText(escapeApprovalInline(describeApprovalRule(derivedRule)), MAX_FIELD_CHARS).text;
 
   if (approval.kind === "bash") {
     const commandResult = truncateText(
@@ -242,6 +261,7 @@ export const formatApprovalPrompt = ({
       ],
       expiresAt,
       expiresAfterSeconds,
+      ...(alwaysAllow !== undefined && { alwaysAllow }),
       canonicalPayload,
       truncated,
     };
@@ -339,6 +359,7 @@ export const formatApprovalPrompt = ({
       ...(omittedArgsCount !== undefined && { omittedArgsCount }),
       expiresAt,
       expiresAfterSeconds,
+      ...(alwaysAllow !== undefined && { alwaysAllow }),
       canonicalPayload,
       truncated,
     };

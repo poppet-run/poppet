@@ -94,22 +94,35 @@ A late answer to a known request gets a reply that says how it ended instead of
 
 `approval-format.ts` builds a structured view model and Markdown fallback for
 each request. It escapes control characters, bidi characters, and code fences so
-untrusted text stays data. Every gateway accepts `/approve <id>` and `/deny <id>`
-as control messages, and the terminal can list and answer pending approvals
-from any surface with `poppet approvals list`, `poppet approvals approve <id>`,
-and `poppet approvals deny <id>`. An adapter that implements the optional `approvals`
-capability renders native controls and updates the prompt once settled:
+untrusted text stays data. Every gateway accepts `/approve <id>`,
+`/approve-always <id>`, and `/deny <id>` as control messages, plus
+`/approvals list` and `/approvals revoke <id|all>` to inspect or revoke saved
+rules. The terminal can list and answer pending approvals and manage saved rules
+with `poppet approvals list`, `poppet approvals approve <id> [--always]`,
+`poppet approvals deny <id>`, `poppet approvals rules [list]`, and
+`poppet approvals rules revoke <id|--all>`. An adapter that implements the
+optional `approvals` capability renders native controls and updates the prompt
+once settled:
 
 - Discord renders an amber embed with a live countdown (`<t:unix:R>`), **Approve
-  once** and **Deny** buttons, and a **Show details** button when truncated
-  (replying ephemerally or attaching `approval-details.json`). On settlement it
-  removes the buttons and updates the embed with the outcome and decider.
+  once**, **Deny**, a grey **Always allow** button when a safe deterministic
+  rule can be derived, and a **Show details** button when truncated (replying
+  ephemerally or attaching `approval-details.json`). On settlement it removes
+  the buttons and updates the embed with the outcome and decider.
 - Slack renders structured Block Kit `mrkdwn` blocks with `<!date^...>` expiry
   and the same buttons, replacing the buttons with a status context line once
   settled.
 - Telegram renders HTML-formatted prompts with inline **Approve once**,
-  **Deny**, and (when truncated) **Show details** buttons, answering callback
-  queries and editing the message to remove buttons once settled.
+  **Deny**, optional **Always allow**, and (when truncated) **Show details**
+  buttons, answering callback queries and editing the message to remove buttons
+  once settled.
+
+Saved rules are derived deterministically in `packages/agent/src/approvals/approval-rules.ts`
+and re-derived server-side on approval: exact `(command, cwd)` for simple Bash
+commands (excluding shell metacharacters, privilege escalation, destructive
+commands, downloaders, and inline eval), or `(serverId, toolName, origin)` for
+reviewed MCP tools. Saved rules apply only to clean interactive runs and never
+override a reviewer `deny` or apply to scheduled runs.
 
 - Only the configured owner, in the same conversation, can answer.
 - The gateway checks access again before running the command.

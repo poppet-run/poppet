@@ -5,7 +5,7 @@ import { GatewayError, IncomingMessage } from "#src/adapter";
 import type { ActionApprovals } from "#src/approvals/approvals";
 import { authorized, finish, mark, wake } from "#src/pipeline/context";
 import type { GatewayContext, RunningRequest } from "#src/pipeline/context";
-import { isApprovalReply, isControl } from "#src/pipeline/request";
+import { isApprovalManagement, isApprovalReply, isControl } from "#src/pipeline/request";
 import type { Inbox } from "#src/repository";
 
 export interface Controls {
@@ -31,6 +31,12 @@ const controlReply = (
       yield* adapter.checkAccess(message, conversation);
 
       return yield* controls.approvals.answer(conversation, message);
+    }
+
+    if (isApprovalManagement(message.text)) {
+      yield* adapter.checkAccess(message, conversation);
+
+      return yield* controls.approvals.manageRules(message);
     }
 
     if (session === null) {
@@ -134,9 +140,11 @@ export const accept = (context: GatewayContext, controls: Controls, input: Incom
         ? null
         : yield* repo.binding(adapter.id, account, message.scopeId, conversation);
 
-    const approvalReply = conversation !== null && isApprovalReply(message.text);
+    const approvalControl =
+      conversation !== null &&
+      (isApprovalReply(message.text) || isApprovalManagement(message.text));
 
-    if (session === null && !message.mentioned && !approvalReply) {
+    if (session === null && !message.mentioned && !approvalControl) {
       return;
     }
 
@@ -152,7 +160,7 @@ export const accept = (context: GatewayContext, controls: Controls, input: Incom
       return;
     }
 
-    if (conversation === null || (session === null && !approvalReply)) {
+    if (conversation === null || (session === null && !approvalControl)) {
       return;
     }
 
