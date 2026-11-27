@@ -152,7 +152,7 @@ the browser with PKCE and a resource indicator. It uses the shared
 - A callback `iss` must appear once and match the discovered issuer.
 - A `WWW-Authenticate` resource metadata URL must share the MCP server's origin
   unless `resourceMetadataUrl` is set.
-- `mcp/src/oauth-network.ts` requires public HTTPS for discovery, registration,
+- `mcp/src/oauth/oauth-network.ts` requires public HTTPS for discovery, registration,
   and token requests, and allows plain HTTP only for loopback MCP servers. Login
   checks the browser destination before opening it.
 - Client metadata documents and unattended grants are not supported.

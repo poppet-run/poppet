@@ -15,8 +15,8 @@ import {
   runtimeAuthorization,
   signIn,
   signOut,
-} from "#src/oauth";
-import type { MCPOAuthServer } from "#src/oauth";
+} from "#src/oauth/oauth";
+import type { MCPOAuthServer } from "#src/oauth/oauth";
 import { MCP, makeMCPLive } from "#src/service";
 import { serveOAuth } from "#src/test/oauth-server";
 import type { OAuthFixtureOptions } from "#src/test/oauth-server";

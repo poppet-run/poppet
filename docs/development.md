@@ -199,8 +199,7 @@ packages/
     src/tools.ts            Tool compilation, argument validation, and execution
     src/catalog.ts          Schema validation, stable names, and bounded results
     src/config.ts           Server schemas and environment and file configuration
-    src/oauth.ts            OAuth sign-in, token storage, and refresh
-    src/oauth-network.ts    OAuth endpoint address checks
+    src/oauth/              OAuth sign-in, token storage, refresh, and endpoint address checks
     src/transport.ts        Scoped stdio teardown and bounded HTTP requests
     src/commands.ts         Read-only inspection commands
     src/instructions.ts     Host-owned MCP tool policy

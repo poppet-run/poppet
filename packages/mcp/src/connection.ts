@@ -12,8 +12,13 @@ import { Data, Effect, Redacted, Ref } from "effect";
 import { isHTTPServer } from "#src/config";
 import type { MCPReference, MCPServer } from "#src/config";
 import { MCPError } from "#src/errors";
-import { isOAuthServer, MCPLoginRequired, MCPSignIns, runtimeAuthorization } from "#src/oauth";
-import type { RuntimeAuthorization } from "#src/oauth";
+import {
+  isOAuthServer,
+  MCPLoginRequired,
+  MCPSignIns,
+  runtimeAuthorization,
+} from "#src/oauth/oauth";
+import type { RuntimeAuthorization } from "#src/oauth/oauth";
 import {
   boundedFetch,
   checkReviewedToken,

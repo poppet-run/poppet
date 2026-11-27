@@ -8,3 +8,4 @@ coverage/
 .poppet/
 apps/web/.generated/
 .build/
+.claude/worktrees/

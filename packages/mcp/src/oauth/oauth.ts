@@ -19,7 +19,7 @@ import { Context, Data, Effect, Layer, Option, Redacted, Schema } from "effect";
 import type { Types } from "effect";
 
 import type { MCPHTTPServer, MCPOAuth } from "#src/config";
-import { BlockedOAuthEndpoint, oauthAddress, oauthFetch } from "#src/oauth-network";
+import { BlockedOAuthEndpoint, oauthAddress, oauthFetch } from "#src/oauth/oauth-network";
 
 export class MCPLoginRequired extends Data.TaggedError("MCPLoginRequired")<{
   readonly message: string;
