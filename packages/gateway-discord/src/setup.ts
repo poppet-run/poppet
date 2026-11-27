@@ -103,9 +103,12 @@ const prompt = Effect.gen(function* () {
     defaults?.ownerId ?? (yield* found(probe.owner, null)) ?? undefined,
   );
 
-  const guilds = yield* found(probe.guilds, []);
+  const guildLookup = checked ? yield* probe.guilds.pipe(Effect.result) : null;
+  const guilds = guildLookup !== null && Result.isSuccess(guildLookup) ? guildLookup.success : [];
 
-  if (account !== null && guilds.length === 0) {
+  if (guildLookup !== null && Result.isFailure(guildLookup)) {
+    yield* Console.log(`${guildLookup.failure.message} Enter the server ID instead.`);
+  } else if (account !== null && guilds.length === 0) {
     yield* Console.log(
       `The bot is not in a server yet. Invite it from https://discord.com/oauth2/authorize?client_id=${account.id}&scope=bot with the permissions in the guide.`,
     );
@@ -118,7 +121,14 @@ const prompt = Effect.gen(function* () {
     id("Server ID (right-click the server icon > Copy Server ID)", defaults?.guildId),
   );
 
-  const channels = yield* found(probe.textChannels(guildId), []);
+  const channelLookup = checked ? yield* probe.textChannels(guildId).pipe(Effect.result) : null;
+
+  const channels =
+    channelLookup !== null && Result.isSuccess(channelLookup) ? channelLookup.success : [];
+
+  if (channelLookup !== null && Result.isFailure(channelLookup)) {
+    yield* Console.log(`${channelLookup.failure.message} Enter the home channel ID instead.`);
+  }
 
   const homeChannelId = yield* pickSetupId(
     "Home channel for scheduled results and notifications",
