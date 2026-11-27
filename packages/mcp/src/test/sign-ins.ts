@@ -1,6 +1,6 @@
 import { Effect, Layer } from "effect";
 
-import { MCPSignIns } from "#src/oauth";
+import { MCPSignIns } from "#src/oauth/oauth";
 
 export const NoSignInsLive = Layer.succeed(MCPSignIns, {
   read: () => Effect.die("Unexpected sign-in read"),

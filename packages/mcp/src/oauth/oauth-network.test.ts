@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { oauthFetch } from "#src/oauth-network";
+import { oauthFetch } from "#src/oauth/oauth-network";
 
 describe("oauthFetch", () => {
   test.each([

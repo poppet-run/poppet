@@ -10,7 +10,7 @@ export {
   signIn,
   signOut,
   type MCPOAuthServer,
-} from "#src/oauth";
+} from "#src/oauth/oauth";
 
 export {
   isHTTPServer,
