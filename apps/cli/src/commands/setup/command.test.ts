@@ -187,6 +187,28 @@ const fixture = async (includeSlack = false) => {
   return { directory, path, state, actions, output, run };
 };
 
+const saveDiscord = (directory: string) =>
+  Effect.runPromise(
+    gateways[0]!
+      .setup([
+        "setup",
+        "--owner-id",
+        "200",
+        "--guild-id",
+        "300",
+        "--home-channel-id",
+        "400",
+        "--bot-token",
+        "saved-secret",
+      ])
+      .pipe(
+        Effect.provideService(GatewayEnvironment, { dataDirectory: directory }),
+        Effect.provideService(GatewayInput, {
+          readSecret: Effect.die("Setup must not read stdin"),
+        }),
+      ),
+  );
+
 describe("setup", () => {
   test("fresh setup authenticates, filters models, saves Discord privately, and installs the worker only when chosen", async () => {
     const f = await fixture();
@@ -245,26 +267,7 @@ describe("setup", () => {
   test("editing Discord keeps the saved token and validates IDs before saving", async () => {
     const f = await fixture();
     f.state.connected = true;
-    await Effect.runPromise(
-      gateways[0]!
-        .setup([
-          "setup",
-          "--owner-id",
-          "200",
-          "--guild-id",
-          "300",
-          "--home-channel-id",
-          "400",
-          "--bot-token",
-          "saved-secret",
-        ])
-        .pipe(
-          Effect.provideService(GatewayEnvironment, { dataDirectory: f.directory }),
-          Effect.provideService(GatewayInput, {
-            readSecret: Effect.die("Setup must not read stdin"),
-          }),
-        ),
-    );
+    await saveDiscord(f.directory);
     expect(
       await f.run([
         answer(),
@@ -290,6 +293,25 @@ describe("setup", () => {
     expect(f.output.join("\n")).toContain("Enter a numeric Discord ID");
     expect(f.output.join("\n")).not.toContain("saved-secret");
   });
+
+  test.each([true, false])(
+    "deselecting configured Discord removes its settings only when confirmed (%p)",
+    async (remove) => {
+      const f = await fixture();
+      f.state.connected = true;
+      await saveDiscord(f.directory);
+      expect(
+        await f.run([answer(), answer(), answer(), selectAll, answer(remove ? "y" : ""), answer()]),
+      ).toBeNull();
+      const config = JSON.parse(await readFile(f.path, "utf8"));
+      const credentials = join(f.directory, "channels/discord.json");
+      expect(config.discord === undefined).toBe(remove);
+      expect(await Bun.file(credentials).exists()).toBe(!remove);
+      expect(f.output.join("\n")).toContain(
+        remove ? "Removed Discord settings" : "Discord configuration left unchanged.",
+      );
+    },
+  );
 
   test.each(["cancel", "discord-cancel", "login", "catalog"])(
     "%s stops setup without changing existing configuration",

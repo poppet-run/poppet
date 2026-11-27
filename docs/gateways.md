@@ -41,8 +41,9 @@ load their SDKs lazily. Telegram calls the Bot API with `fetch`.
 concrete gateway package, and lint enforces it. The CLI generates setup help and
 dispatches `gateway <id> setup` through the registration. `promptSetup` has a
 `configured` check, which `poppet setup` uses to preselect the gateway, and a
-`prompt` that collects choices and returns a save effect. The host runs the save
-after the remaining choices. `poppet setup` uses the bundled Discord and Slack
+`prompt` that collects choices and returns a save effect, and a `remove` for a
+configured gateway the owner deselects. The host runs the save or removal after
+the remaining choices. `poppet setup` uses the bundled Discord and Slack
 registrations only.
 
 The host supplies `GatewayEnvironment` with the data directory and `GatewayInput`
