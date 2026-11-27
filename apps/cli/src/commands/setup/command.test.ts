@@ -51,7 +51,7 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
     connected: false,
     source: "stored",
     logins: 0,
-    failLogin: false,
+    loginFailures: 0,
     failModels: false,
     failVerify: false,
     verifies: new Array<string>(),
@@ -82,10 +82,11 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
     }),
   );
 
-  const platform = async (input: string) => {
+  const platform = async (input: string, init: RequestInit) => {
     const url = new URL(input);
+    const rejected = new Headers(init.headers).get("Authorization")?.endsWith("bad-token") === true;
 
-    if (state.api) {
+    if (state.api && !rejected) {
       return Response.json(replies.get(url.pathname));
     }
 
@@ -125,7 +126,9 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
         status: Effect.sync(() => ({ connected: state.connected, source: state.source })),
         login: () =>
           Effect.gen(function* () {
-            if (state.failLogin) {
+            if (state.loginFailures > 0) {
+              state.loginFailures--;
+
               return yield* Effect.fail(invalidRequest(id, "Login failed."));
             }
 
@@ -395,6 +398,7 @@ describe("setup", () => {
           answer(),
           answer(),
           answer(outcome === "is declined" ? "n" : ""),
+          ...(outcome === "fails" ? [answer()] : []),
           answer(),
           answer(),
         ]),
@@ -442,6 +446,7 @@ describe("setup", () => {
         answer(),
         answer(),
         answer(),
+        down(1),
         answer(),
         answer(),
         [
@@ -463,6 +468,28 @@ describe("setup", () => {
     expect(f.output.join("\n")).toContain("Enter a numeric Discord ID");
     expect(f.output.join("\n")).not.toContain("saved-secret");
   });
+
+  test.each(["retry", "skip"] as const)(
+    "a rejected Discord token can be entered again or the gateway skipped (%s)",
+    async (choice) => {
+      const f = await fixture();
+
+      const after =
+        choice === "retry"
+          ? [answer(), answer("discord-secret"), answer(), answer(), answer(), answer(), answer()]
+          : [down(2), answer(), answer()];
+
+      expect(
+        await f.run([answer(), answer(), answer(), selectAll, answer("bad-token"), ...after]),
+      ).toBeNull();
+      expect(f.output.join("\n")).toContain("Discord rejected the bot token.");
+      const config = JSON.parse(await readFile(f.path, "utf8"));
+      expect(config.discord?.homeChannelId).toBe(choice === "retry" ? "400" : undefined);
+      expect(await Bun.file(join(f.directory, "channels/discord.json")).exists()).toBe(
+        choice === "retry",
+      );
+    },
+  );
 
   test.each([true, false])(
     "deselecting configured Discord removes its settings only when confirmed (%p)",
@@ -501,14 +528,14 @@ describe("setup", () => {
         '{"provider":"saved-provider","model":"saved-model","tasks":{"catchUpMinutes":15}}\n';
 
       await writeFile(f.path, saved);
-      f.state.failLogin = failure === "login";
+      f.state.loginFailures = failure === "login" ? 1 : 0;
       f.state.failModels = failure === "catalog";
 
       const steps = {
         cancel: [answer(), answer(), []],
         "discord-cancel": [answer(), answer(), answer(), answer(), selectAll, []],
-        login: [answer(), answer()],
-        catalog: [answer(), answer()],
+        login: [answer(), answer(), down(2)],
+        catalog: [answer(), answer(), down(2)],
       };
 
       const result = await f.run(steps[failure]);
@@ -534,6 +561,15 @@ describe("setup", () => {
     expect(await readFile(f.path, "utf8")).toBe("broken config");
     expect(f.state.logins).toBe(0);
     expect(f.actions).toEqual([]);
+  });
+
+  test("a failed sign-in can be retried without restarting setup", async () => {
+    const f = await fixture([]);
+    f.state.loginFailures = 1;
+    expect(await f.run([answer(), answer(), answer(), answer(), answer(), answer()])).toBeNull();
+    expect(f.output.join("\n")).toContain("Login failed");
+    expect(f.state.logins).toBe(1);
+    expect(JSON.parse(await readFile(f.path, "utf8")).provider).toBe("first-provider");
   });
 
   test("environment credentials still require login before worker setup", async () => {

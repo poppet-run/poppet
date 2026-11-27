@@ -41,7 +41,8 @@ load their SDKs lazily. Telegram calls the Bot API with `fetch`.
 concrete gateway package, and lint enforces it. The CLI generates setup help and
 dispatches `gateway <id> setup` through the registration. `promptSetup` has
 three parts. `configured` lets `poppet setup` preselect the gateway. `prompt`
-collects choices and returns a review summary with a save effect. It may make
+collects choices and returns a review summary with a save effect, or `null` when
+the owner skips the gateway. It may make
 read-only platform calls through `GatewayFetch`, which tests replace, and offer
 what they find with `pickSetupId`. `remove`
 deletes a configured gateway the owner deselects. The host runs the save or
