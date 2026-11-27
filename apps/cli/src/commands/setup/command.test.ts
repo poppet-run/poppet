@@ -258,6 +258,14 @@ describe("setup", () => {
 
     await writeFile(f.path, JSON.stringify(saved));
     expect(await f.run([answer(), answer(), answer(), answer(), answer()])).toBeNull();
+    expect(f.output.join("\n")).toContain(
+      [
+        "  Provider  saved-provider, model saved-model",
+        "  Gateways  Discord not configured",
+        "  Worker    installed and running",
+      ].join("\n"),
+    );
+    expect(f.output.join("\n")).toContain("Step 3 of 3: Background worker");
     expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual(saved);
     expect(f.state.logins).toBe(0);
     expect(f.actions).toEqual(["status"]);
@@ -342,7 +350,7 @@ describe("setup", () => {
         }[failure],
       );
       expect(await readFile(f.path, "utf8")).toBe(saved);
-      expect(f.actions).toEqual([]);
+      expect(f.actions).toEqual(["status"]);
       expect(f.state.logins).toBe(failure === "login" ? 0 : 1);
       expect(f.output.join("\n")).toContain("Completed steps above remain saved");
     },
