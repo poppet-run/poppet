@@ -15,6 +15,7 @@ import { readChatLine } from "#src/commands/chat/prompt";
 import { createCLIContext } from "#src/commands/context";
 import { gateways } from "#src/commands/gateway/registry";
 import { runSetup } from "#src/commands/setup/command";
+import type { SetupSection } from "#src/commands/setup/command";
 import type { manageWorker } from "#src/commands/worker/service";
 
 const key = (name: string, input?: string, ctrl = false): Terminal.UserInput => ({
@@ -36,7 +37,7 @@ afterEach(async () => {
   );
 });
 
-const fixture = async (includeSlack = false) => {
+const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
   const directory = await mkdtemp(join(tmpdir(), "poppet-setup-"));
   directories.push(directory);
   const path = join(directory, "config.json");
@@ -122,12 +123,15 @@ const fixture = async (includeSlack = false) => {
     [registration("first-provider"), registration("saved-provider")],
     () => Effect.void,
     worker,
-    includeSlack ? gateways : gateways.filter((gateway) => gateway.id === "discord"),
+    gateways.filter((gateway) => gatewayIds.includes(gateway.id)),
     readChatLine,
     () => Effect.void,
   );
 
-  const run = async (steps: ReadonlyArray<ReadonlyArray<Terminal.UserInput>>) => {
+  const run = async (
+    steps: ReadonlyArray<ReadonlyArray<Terminal.UserInput>>,
+    only: SetupSection | null = null,
+  ) => {
     const remaining = [...steps];
 
     const terminal = Terminal.make({
@@ -155,7 +159,7 @@ const fixture = async (includeSlack = false) => {
     });
 
     const result = await Effect.runPromise(
-      runSetup(context).pipe(
+      runSetup(context, only).pipe(
         Effect.provideService(Terminal.Terminal, terminal),
         Effect.provideService(CredentialInput, {
           readKey: () => Effect.succeed(Redacted.make("provider-secret")),
@@ -292,6 +296,24 @@ describe("setup", () => {
       expect(f.actions).toEqual([...actions]);
     },
   );
+
+  test("setup provider skips the rerun menu and the gateways", async () => {
+    const f = await fixture();
+    await writeFile(f.path, JSON.stringify({ provider: "saved-provider", model: "saved-model" }));
+    expect(await f.run([answer(), answer("first"), answer()], "provider")).toBeNull();
+    expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({
+      provider: "saved-provider",
+      model: "first-model",
+    });
+    expect(f.output.join("\n")).toContain("Step 2 of 2: Background worker");
+  });
+
+  test("setup gateways fails clearly when no gateway supports interactive setup", async () => {
+    const f = await fixture([]);
+    expect(await f.run([], "gateways")).toContain(
+      "No installed gateway supports interactive setup",
+    );
+  });
 
   test("editing Discord keeps the saved token and validates IDs before saving", async () => {
     const f = await fixture();
@@ -461,7 +483,7 @@ describe("setup", () => {
 });
 
 test("setup offers both bundled channels in one list and preserves skipped configuration", async () => {
-  const f = await fixture(true);
+  const f = await fixture(["discord", "slack"]);
   expect(await f.run([answer(), answer(), answer(), answer()])).toBeNull();
   expect(f.output.join("\n")).toContain("Slack");
   expect(f.output.join("\n")).toContain("Discord configuration left unchanged.");

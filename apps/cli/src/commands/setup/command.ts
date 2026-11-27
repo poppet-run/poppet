@@ -123,20 +123,28 @@ export const runSetup = (context: CLIContext, only: SetupSection | null = null) 
     Effect.provide(context.runtime.config),
   );
 
+const interactive = (context: CLIContext, only: SetupSection | null) =>
+  Effect.suspend(() =>
+    process.stdin.isTTY && process.stdout.isTTY
+      ? runSetup(context, only).pipe(Effect.provideService(CredentialInput, terminalKeyInput))
+      : Effect.fail(
+          new UsageError({
+            message:
+              "Setup needs an interactive terminal. Use provider login in a terminal for credentials; use gateway discord setup and config.json for scripted configuration.",
+          }),
+        ),
+  );
+
 export const setupCommand = (context: CLIContext) =>
-  Command.make("setup", {}, () =>
-    Effect.suspend(() =>
-      process.stdin.isTTY && process.stdout.isTTY
-        ? runSetup(context).pipe(Effect.provideService(CredentialInput, terminalKeyInput))
-        : Effect.fail(
-            new UsageError({
-              message:
-                "Setup needs an interactive terminal. Use provider login in a terminal for credentials; use gateway discord setup and config.json for scripted configuration.",
-            }),
-          ),
-    ),
-  ).pipe(
+  Command.make("setup", {}, () => interactive(context, null)).pipe(
     Command.withDescription(
       "Set up a provider, model, messaging gateways, and the background worker",
+    ),
+    Command.withSubcommands(
+      (["provider", "gateways", "worker"] as const).map((section) =>
+        Command.make(section, {}, () => interactive(context, section)).pipe(
+          Command.withDescription(`Set up only the ${sectionTitles[section].toLowerCase()}`),
+        ),
+      ),
     ),
   );
