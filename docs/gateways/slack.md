@@ -13,6 +13,7 @@ See [gateways](../gateways.md) for the shared contract.
 | `registration.ts` | The lightweight registration entry                            |
 | `settings.ts`     | The `slack` section of `config.json` and the token file       |
 | `setup.ts`        | Interactive setup                                             |
+| `probe.ts`        | Read-only Web API checks that setup uses for tokens and IDs   |
 | `adapter.ts`      | Socket Mode events, sends, reactions, downloads, and escaping |
 | `approvals.ts`    | Block Kit approval buttons                                    |
 

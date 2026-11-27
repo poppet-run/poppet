@@ -13,6 +13,7 @@ covers bot setup. See [gateways](../gateways.md) for the shared contract.
 | `registration.ts` | The lightweight registration entry                              |
 | `settings.ts`     | The `discord` section of `config.json` and the token file       |
 | `setup.ts`        | Interactive setup                                               |
+| `probe.ts`        | Read-only REST checks that setup uses for the token and IDs     |
 | `adapter.ts`      | Events, mentions, threads, sends, reactions, typing, and naming |
 | `attachments.ts`  | Attachment listing and downloads                                |
 | `approvals.ts`    | Approval buttons                                                |

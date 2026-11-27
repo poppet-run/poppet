@@ -1,6 +1,7 @@
 import { parseArgs } from "node:util";
 
 import { Effect } from "effect";
+import { Prompt } from "effect/cli";
 
 import { GatewayError } from "#src/adapter";
 
@@ -42,4 +43,34 @@ export const parseSetupFlags = (
     },
     catch: () =>
       new GatewayError({ reason: "configuration", message: `Use gateway ${adapter} ${help}.` }),
+  });
+
+/**
+ * Offers IDs that a live check found, with a way to type one instead. With
+ * nothing found, it goes straight to the typed prompt.
+ */
+export const pickSetupId = <E, R>(
+  message: string,
+  found: ReadonlyArray<{ readonly id: string; readonly name: string }>,
+  saved: string | undefined,
+  typed: Effect.Effect<string, E, R>,
+) =>
+  Effect.gen(function* () {
+    if (found.length === 0) {
+      return yield* typed;
+    }
+
+    const choice = yield* Prompt.Select<string | null>({
+      message,
+      choices: [
+        ...found.map(({ id, name }) => ({
+          title: `${name} (${id})`,
+          value: id,
+          selected: id === saved,
+        })),
+        { title: "Enter an ID instead", value: null },
+      ],
+    });
+
+    return choice ?? (yield* typed);
   });

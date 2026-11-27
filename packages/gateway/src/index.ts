@@ -21,6 +21,7 @@ export {
 
 export {
   GatewayEnvironment,
+  GatewayFetch,
   GatewayInput,
   type GatewayPromptSetup,
   type GatewayRegistration,
@@ -42,4 +43,4 @@ export {
 
 export { boundedAttachment } from "#src/attachments";
 
-export { parseSetupFlags } from "#src/setup";
+export { parseSetupFlags, pickSetupId } from "#src/setup";
