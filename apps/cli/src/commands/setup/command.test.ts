@@ -52,6 +52,8 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
     logins: 0,
     failLogin: false,
     failModels: false,
+    failVerify: false,
+    verifies: new Array<string>(),
     installed: false,
     active: false,
     managed: true,
@@ -133,7 +135,14 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
             return "Signed in.";
           }),
         logout: Effect.die("Setup must not log out"),
-        verify: () => Effect.die("Setup must not run inference"),
+        verify: (model) =>
+          Effect.suspend(() => {
+            state.verifies.push(model ?? "default");
+
+            return state.failVerify
+              ? Effect.fail(invalidRequest(id, "The model did not call the tool."))
+              : Effect.succeed(model ?? "default");
+          }),
       }),
     ),
   });
@@ -257,6 +266,7 @@ describe("setup", () => {
       await f.run([
         answer(),
         answer("saved"),
+        answer(),
         selectAll,
         answer("discord-secret"),
         answer(),
@@ -300,7 +310,7 @@ describe("setup", () => {
 
     await writeFile(f.path, JSON.stringify(saved));
     expect(
-      await f.run([answer(), answer(), answer(), answer(), answer(), answer(), answer()]),
+      await f.run([answer(), answer(), answer(), answer(), answer(), answer(), answer(), answer()]),
     ).toBeNull();
     expect(f.output.join("\n")).toContain(
       [
@@ -341,6 +351,7 @@ describe("setup", () => {
       await f.run([
         answer(),
         answer(),
+        answer(),
         selectAll,
         answer("discord-secret"),
         answer(),
@@ -350,6 +361,7 @@ describe("setup", () => {
         answer(),
         answer(),
         answer("saved"),
+        answer(),
         down(3),
       ]),
     ).toContain("Setup cancelled without saving configuration");
@@ -364,10 +376,36 @@ describe("setup", () => {
     expect(f.actions).toEqual(["status"]);
   });
 
+  test.each(["passes", "fails", "is declined"] as const)(
+    "when the model test request %s, setup reports it and keeps the chosen model",
+    async (outcome) => {
+      const f = await fixture([]);
+      f.state.failVerify = outcome === "fails";
+      expect(
+        await f.run([
+          answer(),
+          answer(),
+          answer(outcome === "is declined" ? "n" : ""),
+          answer(),
+          answer(),
+        ]),
+      ).toBeNull();
+      expect(JSON.parse(await readFile(f.path, "utf8")).model).toBe("first-model");
+      expect(f.state.verifies).toEqual(outcome === "is declined" ? [] : ["first-model"]);
+      const output = f.output.join("\n");
+      expect(output.includes("first-model answered the test request.")).toBe(outcome === "passes");
+      expect(output.includes("The test request failed: The model did not call the tool.")).toBe(
+        outcome === "fails",
+      );
+    },
+  );
+
   test("setup provider skips the rerun menu and the gateways", async () => {
     const f = await fixture();
     await writeFile(f.path, JSON.stringify({ provider: "saved-provider", model: "saved-model" }));
-    expect(await f.run([answer(), answer("first"), answer(), answer()], "provider")).toBeNull();
+    expect(
+      await f.run([answer(), answer("first"), answer(), answer(), answer()], "provider"),
+    ).toBeNull();
     expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({
       provider: "saved-provider",
       model: "first-model",
@@ -389,6 +427,7 @@ describe("setup", () => {
     await saveDiscord(f.directory);
     expect(
       await f.run([
+        answer(),
         answer(),
         answer(),
         answer(),
@@ -427,6 +466,7 @@ describe("setup", () => {
           answer(),
           answer(),
           answer(),
+          answer(),
           selectAll,
           answer(remove ? "y" : ""),
           answer(),
@@ -457,7 +497,7 @@ describe("setup", () => {
 
       const steps = {
         cancel: [answer(), answer(), []],
-        "discord-cancel": [answer(), answer(), answer(), selectAll, []],
+        "discord-cancel": [answer(), answer(), answer(), answer(), selectAll, []],
         login: [answer(), answer()],
         catalog: [answer(), answer()],
       };
@@ -491,14 +531,16 @@ describe("setup", () => {
     const f = await fixture();
     f.state.connected = true;
     f.state.source = "environment";
-    expect(await f.run([answer(), answer(), answer(), answer(), answer()])).toBeNull();
+    expect(await f.run([answer(), answer(), answer(), answer(), answer(), answer()])).toBeNull();
     expect(f.state.logins).toBe(1);
     expect(f.actions).toEqual(["status"]);
   });
 
   test("cancelling worker startup leaves the completed configuration saved", async () => {
     const f = await fixture();
-    expect(await f.run([answer(), answer(), answer(), answer(), []])).toContain("Setup cancelled");
+    expect(await f.run([answer(), answer(), answer(), answer(), answer(), []])).toContain(
+      "Setup cancelled",
+    );
     expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({
       provider: "first-provider",
       model: "first-model",
@@ -520,7 +562,7 @@ describe("setup", () => {
           });
 
           const result = yield* Effect.promise(() =>
-            f.run([answer(), answer(), answer(), answer()]),
+            f.run([answer(), answer(), answer(), answer(), answer()]),
           );
 
           expect(result).toBeNull();
@@ -543,6 +585,7 @@ describe("setup", () => {
         await f.run([
           answer(),
           answer("y"),
+          answer(),
           answer(),
           answer(),
           answer(),
@@ -572,6 +615,7 @@ test("Slack setup checks both tokens, takes the workspace from the token, and of
     await f.run([
       answer(),
       answer(),
+      answer(),
       selectAll,
       answer("xoxb-secret"),
       answer("xapp-secret"),
@@ -595,7 +639,7 @@ test("Slack setup checks both tokens, takes the workspace from the token, and of
 
 test("setup offers both bundled channels in one list and preserves skipped configuration", async () => {
   const f = await fixture(["discord", "slack"]);
-  expect(await f.run([answer(), answer(), answer(), answer(), answer()])).toBeNull();
+  expect(await f.run([answer(), answer(), answer(), answer(), answer(), answer()])).toBeNull();
   expect(f.output.join("\n")).toContain("Slack");
   expect(f.output.join("\n")).toContain("Discord configuration left unchanged.");
   expect(f.output.join("\n")).toContain("Slack configuration left unchanged.");
