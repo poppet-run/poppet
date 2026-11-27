@@ -121,7 +121,11 @@ export const promptGateways = (states: ReadonlyArray<GatewayState>, home: string
           }
         : prompted;
 
-      saves.push({ name: gateway.name, draft: save });
+      saves.push({
+        name: gateway.name,
+        draft: save,
+        saved: gateway.configured || gateway.unreadable !== null,
+      });
     }
 
     const homeGateway = yield* promptHomeGateway(states, active, home);
@@ -129,6 +133,7 @@ export const promptGateways = (states: ReadonlyArray<GatewayState>, home: string
     if (homeGateway !== null) {
       saves.push({
         name: "Home gateway",
+        saved: true,
         draft: {
           summary: homeGateway.summary,
           save: updateConfigFile(environment.dataDirectory, ({ homeGateway: _old, ...file }) =>

@@ -162,7 +162,10 @@ export const runSetup = (
       const width = Math.max(8, ...drafts.map(({ name }) => name.length));
 
       const lines: Array<{ readonly label: string; readonly value: string }> = drafts.map(
-        ({ name, draft }) => ({ label: name, value: draft?.summary ?? "unchanged" }),
+        ({ name, draft, saved }) => ({
+          label: name,
+          value: draft?.summary ?? (saved ? "unchanged" : "not set up"),
+        }),
       );
 
       if (chosen !== null) {
@@ -216,9 +219,13 @@ export const runSetup = (
       yield* Console.log(`Saved provider ${provider} and model ${model} to ${path}.`);
     }
 
-    for (const { name, draft } of drafts) {
+    for (const { name, draft, saved } of drafts) {
       yield* Console.log(
-        draft === null ? `${name} configuration left unchanged.` : yield* draft.save,
+        draft !== null
+          ? yield* draft.save
+          : saved
+            ? `${name} configuration left unchanged.`
+            : `${name} not set up.`,
       );
     }
 
