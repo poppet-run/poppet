@@ -42,7 +42,7 @@ export const promptProvider = (
         return yield* Effect.fail(invalidRequest(provider, "The provider returned no models."));
       }
 
-      return yield* Prompt.AutoComplete({
+      const model = yield* Prompt.AutoComplete({
         message: "Model (type to filter)",
         choices: models.map((candidate) => ({
           title: `${candidate.name} (${candidate.id})`,
@@ -50,6 +50,23 @@ export const promptProvider = (
           selected: provider === saved.provider && candidate.id === saved.model,
         })),
       });
+
+      if (
+        yield* Prompt.Confirm({
+          message: `Send ${model} a short test request? It uses a little of your quota.`,
+          initial: true,
+        })
+      ) {
+        yield* Console.log(`Testing ${model}...`);
+        yield* connection.verify(model).pipe(
+          Effect.andThen(Console.log(`${model} answered the test request.`)),
+          Effect.catch((error) =>
+            Console.log(`The test request failed: ${error.message} Setup will keep this model.`),
+          ),
+        );
+      }
+
+      return model;
     }).pipe(Effect.provide(context.runtime.selectedProvider(provider)));
 
     return { provider, model };
