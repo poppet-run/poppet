@@ -29,6 +29,8 @@ const answer = (text = "") => (text === "" ? [enter] : [key(text, text), enter])
 
 const selectAll = [key("space"), enter];
 
+const down = (count: number) => [...Array.from({ length: count }, () => key("down")), enter];
+
 const directories: Array<string> = [];
 
 afterEach(async () => {
@@ -225,6 +227,7 @@ describe("setup", () => {
         answer("300"),
         answer("400"),
         answer("discord-secret"),
+        answer(),
         answer("y"),
       ]),
     ).toBeNull();
@@ -261,7 +264,9 @@ describe("setup", () => {
     };
 
     await writeFile(f.path, JSON.stringify(saved));
-    expect(await f.run([answer(), answer(), answer(), answer(), answer(), answer()])).toBeNull();
+    expect(
+      await f.run([answer(), answer(), answer(), answer(), answer(), answer(), answer()]),
+    ).toBeNull();
     expect(f.output.join("\n")).toContain(
       [
         "  Provider  saved-provider, model saved-model",
@@ -277,7 +282,7 @@ describe("setup", () => {
   });
 
   test.each([
-    ["only the gateways", 2, [answer(), answer()], ["status"]],
+    ["only the gateways", 2, [answer(), answer(), answer()], ["status"]],
     ["only the worker", 3, [answer("y")], ["status", "restart"]],
     ["nothing", 4, [], ["status"]],
   ] as const)(
@@ -288,19 +293,46 @@ describe("setup", () => {
       f.state.active = true;
       const saved = { provider: "saved-provider", model: "saved-model" };
       await writeFile(f.path, JSON.stringify(saved));
-      expect(
-        await f.run([[...Array.from({ length: downs }, () => key("down")), enter], ...rest]),
-      ).toBeNull();
+      expect(await f.run([down(downs), ...rest])).toBeNull();
       expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual(saved);
       expect(f.state.logins).toBe(0);
       expect(f.actions).toEqual([...actions]);
     },
   );
 
+  test("review lists pending changes and can revise or discard them before anything is saved", async () => {
+    const f = await fixture();
+    expect(
+      await f.run([
+        answer(),
+        answer(),
+        selectAll,
+        answer("200"),
+        answer("300"),
+        answer("400"),
+        answer("discord-secret"),
+        down(1),
+        answer(),
+        answer(),
+        answer("saved"),
+        down(3),
+      ]),
+    ).toContain("Setup cancelled without saving configuration");
+    const output = f.output.join("\n");
+    expect(output).toContain("Provider  first-provider, model first-model");
+    expect(output).toContain("Provider  first-provider, model saved-model");
+    expect(output).toContain(
+      "Discord   owner 200, server 300, home channel 400, bot token replaced",
+    );
+    expect(await readdir(f.directory)).not.toContain("config.json");
+    expect(await readdir(f.directory)).not.toContain("channels");
+    expect(f.actions).toEqual(["status"]);
+  });
+
   test("setup provider skips the rerun menu and the gateways", async () => {
     const f = await fixture();
     await writeFile(f.path, JSON.stringify({ provider: "saved-provider", model: "saved-model" }));
-    expect(await f.run([answer(), answer("first"), answer()], "provider")).toBeNull();
+    expect(await f.run([answer(), answer("first"), answer(), answer()], "provider")).toBeNull();
     expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({
       provider: "saved-provider",
       model: "first-model",
@@ -335,6 +367,7 @@ describe("setup", () => {
         ],
         answer(),
         answer(),
+        answer(),
       ]),
     ).toBeNull();
     expect(JSON.parse(await readFile(f.path, "utf8")).discord.homeChannelId).toBe("500");
@@ -352,7 +385,15 @@ describe("setup", () => {
       f.state.connected = true;
       await saveDiscord(f.directory);
       expect(
-        await f.run([answer(), answer(), answer(), selectAll, answer(remove ? "y" : ""), answer()]),
+        await f.run([
+          answer(),
+          answer(),
+          answer(),
+          selectAll,
+          answer(remove ? "y" : ""),
+          answer(),
+          answer(),
+        ]),
       ).toBeNull();
       const config = JSON.parse(await readFile(f.path, "utf8"));
       const credentials = join(f.directory, "channels/discord.json");
@@ -412,14 +453,14 @@ describe("setup", () => {
     const f = await fixture();
     f.state.connected = true;
     f.state.source = "environment";
-    expect(await f.run([answer(), answer(), answer(), answer()])).toBeNull();
+    expect(await f.run([answer(), answer(), answer(), answer(), answer()])).toBeNull();
     expect(f.state.logins).toBe(1);
     expect(f.actions).toEqual(["status"]);
   });
 
   test("cancelling worker startup leaves the completed configuration saved", async () => {
     const f = await fixture();
-    expect(await f.run([answer(), answer(), answer(), []])).toContain("Setup cancelled");
+    expect(await f.run([answer(), answer(), answer(), answer(), []])).toContain("Setup cancelled");
     expect(JSON.parse(await readFile(f.path, "utf8"))).toEqual({
       provider: "first-provider",
       model: "first-model",
@@ -439,7 +480,11 @@ describe("setup", () => {
 
             return Effect.succeed(Response.json({ ok: true, value: { running: true } }));
           });
-          const result = yield* Effect.promise(() => f.run([answer(), answer(), answer()]));
+
+          const result = yield* Effect.promise(() =>
+            f.run([answer(), answer(), answer(), answer()]),
+          );
+
           expect(result).toBeNull();
         }),
       ),
@@ -460,6 +505,7 @@ describe("setup", () => {
         await f.run([
           answer(),
           answer("y"),
+          answer(),
           answer(),
           answer(),
           ...(mode === "foreground" ? [] : [answer("y")]),
@@ -484,7 +530,7 @@ describe("setup", () => {
 
 test("setup offers both bundled channels in one list and preserves skipped configuration", async () => {
   const f = await fixture(["discord", "slack"]);
-  expect(await f.run([answer(), answer(), answer(), answer()])).toBeNull();
+  expect(await f.run([answer(), answer(), answer(), answer(), answer()])).toBeNull();
   expect(f.output.join("\n")).toContain("Slack");
   expect(f.output.join("\n")).toContain("Discord configuration left unchanged.");
   expect(f.output.join("\n")).toContain("Slack configuration left unchanged.");

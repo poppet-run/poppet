@@ -56,14 +56,14 @@ const prompt = Effect.gen(function* () {
       )
     : saved.token;
 
-  return saveDiscordSettings(dataDirectory, {
-    ownerId,
-    guildId,
-    homeChannelId,
-    token,
-  }).pipe(
-    Effect.as(`Saved Discord owner ${ownerId}, server ${guildId}, home channel ${homeChannelId}.`),
-  );
+  return {
+    summary: `owner ${ownerId}, server ${guildId}, home channel ${homeChannelId}, bot token ${replaceToken ? "replaced" : "kept"}`,
+    save: saveDiscordSettings(dataDirectory, { ownerId, guildId, homeChannelId, token }).pipe(
+      Effect.as(
+        `Saved Discord owner ${ownerId}, server ${guildId}, home channel ${homeChannelId}.`,
+      ),
+    ),
+  };
 });
 
 export const promptDiscordSetup = {

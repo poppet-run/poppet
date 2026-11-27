@@ -50,10 +50,15 @@ export const promptGateways = (states: ReadonlyArray<GatewayState>) =>
               message: `Remove the saved ${gateway.name} settings and tokens? No keeps them.`,
               initial: false,
             }))
-          ? gateway.setup.remove.pipe(Effect.provideService(GatewayEnvironment, environment))
+          ? {
+              summary: "remove saved settings and tokens",
+              save: gateway.setup.remove.pipe(
+                Effect.provideService(GatewayEnvironment, environment),
+              ),
+            }
           : null;
 
-      saves.push({ name: gateway.name, save });
+      saves.push({ name: gateway.name, draft: save });
     }
 
     return saves;
