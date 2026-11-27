@@ -99,3 +99,8 @@ failure keeps completed saves and reports them. Setup preserves other `config.js
 invalid configuration, and runs inference only for the offered test request. On macOS and
 Linux with systemd, it offers to install, start, or restart the worker. A restart
 can interrupt active runs.
+
+Setup ends by running the [doctor](doctor.md) checks and listing only the
+findings that need attention, then prints next steps for the terminal, each
+configured gateway, and doctor. A worker that has just started can show as not
+responding.

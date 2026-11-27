@@ -60,7 +60,7 @@ export const doctorReport = (checks: ReadonlyArray<DoctorCheck>, directory: stri
   checks,
 });
 
-const checkLabels = new Map([
+export const checkLabels = new Map([
   ["installation", "Installation"],
   ["configuration", "Configuration"],
   ["authentication", "Provider sign-in"],
