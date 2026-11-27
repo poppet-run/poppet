@@ -53,7 +53,7 @@ export const discordProbe = (token: Redacted.Redacted<string>) => {
     owner: get(
       "/oauth2/applications/@me",
       Schema.Struct({
-        owner: Schema.optional(Schema.Struct({ id: Schema.String })),
+        owner: Schema.optional(Schema.NullOr(Schema.Struct({ id: Schema.String }))),
         team: Schema.optional(Schema.NullOr(Schema.Struct({ owner_user_id: Schema.String }))),
       }),
     ).pipe(Effect.map(({ owner, team }) => team?.owner_user_id ?? owner?.id ?? null)),
