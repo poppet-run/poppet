@@ -6,7 +6,8 @@ A provider package turns the shared model contract into requests to one service.
 The agent never imports a concrete provider or its SDK types. It depends on
 `ModelResolver`, which the CLI runtime supplies, and calls the resolved model
 through the contract. Adapter notes are in [ChatGPT](providers/openai-chatgpt.md),
-[OpenCode](providers/opencode.md), and [OpenRouter](providers/openrouter.md).
+[OpenCode](providers/opencode.md), [OpenRouter](providers/openrouter.md), and
+[Gemini](providers/gemini.md).
 
 | Workspace                     | Owns                                                                            |
 | ----------------------------- | ------------------------------------------------------------------------------- |
@@ -14,6 +15,7 @@ through the contract. Adapter notes are in [ChatGPT](providers/openai-chatgpt.md
 | `@poppet/provider-openai`     | ChatGPT sign-in, credentials, catalog, and Responses inference                  |
 | `@poppet/provider-opencode`   | `opencode` and `opencode-go` catalogs, keys, and protocol routing               |
 | `@poppet/provider-openrouter` | OpenRouter catalog capabilities and Chat Completions routing                    |
+| `@poppet/provider-gemini`     | Gemini catalog and native streaming inference                                   |
 | `@poppet/cli`                 | The registration list and composition of the selected provider's layer          |
 
 ## Contract
@@ -77,7 +79,8 @@ apart from answer output and from encrypted continuation.
 ## Protocol adapters
 
 `@poppet/provider/protocol` holds the Responses and Chat Completions codecs and
-`scoped-stream.ts`. They bind a model description to a client Effect that the
+`scoped-stream.ts`. A provider with its own wire protocol uses `modelStream` and
+`userParts` from there directly. They bind a model description to a client Effect that the
 provider supplies, together with request headers, error classification, and
 reasoning-continuation extensions. Shared adapters never branch on provider IDs
 or open a provider's credential store. The root `@poppet/provider` export has no
