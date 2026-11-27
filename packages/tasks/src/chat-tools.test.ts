@@ -13,7 +13,7 @@ import { SqlClient } from "effect/sql";
 import { TestClock } from "effect/testing";
 
 import { ChatTasksLive } from "#src/chat-tools";
-import { TaskRepository, TaskRepositoryLive } from "#src/task-store";
+import { TaskRepository, TaskRepositoryLive } from "#src/store/store";
 
 const now = Date.parse("2026-10-17T10:00:00Z");
 

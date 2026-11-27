@@ -9,9 +9,6 @@ import { DeliveryDestination, Run, decodeRow, decodeRows, migrate, reportAs } fr
 import { Clock, Context, Effect, Layer, Option, Result, Schema, Semaphore } from "effect";
 import { SqlClient } from "effect/sql";
 
-import { taskSchema } from "#src/migrations";
-import { taskControls } from "#src/task-controls";
-import { nextTime, taskFailure, taskRecords, recurringExpiry } from "#src/task-records";
 import {
   NewTask,
   Occurrence,
@@ -22,7 +19,10 @@ import {
   TaskNote,
   checkEndTime,
   dueOccurrences,
-} from "#src/task-schema";
+} from "#src/schema";
+import { taskControls } from "#src/store/controls";
+import { taskSchema } from "#src/store/migrations";
+import { nextTime, taskFailure, taskRecords, recurringExpiry } from "#src/store/records";
 
 interface TaskSkip {
   readonly jobId: string;

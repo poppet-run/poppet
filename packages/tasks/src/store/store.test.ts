@@ -10,12 +10,12 @@ import { Effect, Layer } from "effect";
 import { SqlClient } from "effect/sql";
 import { TestClock } from "effect/testing";
 
-import { taskSchema } from "#src/migrations";
-import { recurringExpiry } from "#src/task-records";
-import { nextOccurrence, parseTimestamp } from "#src/task-schema";
-import type { NewTask } from "#src/task-schema";
-import { makeTaskStore } from "#src/task-store";
-import type { TaskStore } from "#src/task-store";
+import { nextOccurrence, parseTimestamp } from "#src/schema";
+import type { NewTask } from "#src/schema";
+import { taskSchema } from "#src/store/migrations";
+import { recurringExpiry } from "#src/store/records";
+import { makeTaskStore } from "#src/store/store";
+import type { TaskStore } from "#src/store/store";
 
 const start = Date.parse("2026-10-14T09:00:00Z");
 
