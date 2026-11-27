@@ -1,5 +1,5 @@
 import type { ChatFailure } from "@poppet/agent";
-import { AppConfig } from "@poppet/config";
+import { AppConfig, homeGateway } from "@poppet/config";
 import {
   Gateway,
   GatewayEnvironment,
@@ -123,6 +123,7 @@ const disabledWorker = (entry: GatewayRegistration, error?: string) => {
   const status = { id: entry.id, name: entry.name, enabled: false };
 
   return {
+    id: entry.id,
     resolveDestination: null,
     run: Effect.never,
     status: Effect.succeed(error === undefined ? status : { ...status, error }),
@@ -135,6 +136,7 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<GatewayRegistratio
     Effect.gen(function* () {
       const configured = yield* loadGateways(registered);
       const repo = yield* GatewayRepository;
+      const preferred = yield* homeGateway.pipe(Effect.orElseSucceed(() => null));
 
       const workers = yield* Effect.forEach(configured, ({ entry, loaded }) =>
         Effect.gen(function* () {
@@ -158,6 +160,7 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<GatewayRegistratio
           const health: AdapterHealth = { restarts: 0, lastError: null };
 
           return {
+            id: entry.id,
             resolveDestination: gateway.resolveDestination,
             run: superviseAdapter(entry.id, gateway.run, health),
             status: gateway.connectionStatus.pipe(
@@ -191,7 +194,12 @@ export const MessagingWorkerLive = (registered: ReadonlyArray<GatewayRegistratio
               );
         },
         homeDestination: Effect.gen(function* () {
-          for (const worker of workers) {
+          const ordered = [
+            ...workers.filter(({ id }) => id === preferred),
+            ...workers.filter(({ id }) => id !== preferred),
+          ];
+
+          for (const worker of ordered) {
             if (worker.resolveDestination === null) {
               continue;
             }

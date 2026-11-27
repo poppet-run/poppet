@@ -779,6 +779,54 @@ test.each(["skip", "continue"] as const)(
   },
 );
 
+test("with two gateways configured, setup asks for the home gateway and clears it when that gateway is removed", async () => {
+  const f = await fixture(["discord", "slack"]);
+  f.state.connected = true;
+  await saveDiscord(f.directory);
+  expect(
+    await f.run([
+      answer(),
+      answer(),
+      answer(),
+      answer(),
+      [key("down"), key("down"), key("down"), key("space"), enter],
+      answer(),
+      answer(),
+      answer(),
+      answer(),
+      answer("xoxb-secret"),
+      answer("xapp-secret"),
+      answer("U100"),
+      answer(),
+      down(1),
+      answer(),
+      answer(),
+    ]),
+  ).toBeNull();
+  expect(JSON.parse(await readFile(f.path, "utf8")).homeGateway).toBe("slack");
+  expect(f.output.join("\n")).toContain("Home gateway  Slack");
+
+  expect(
+    await f.run([
+      answer(),
+      answer(),
+      answer(),
+      answer(),
+      answer(),
+      [key("down"), key("down"), key("down"), key("space"), enter],
+      answer(),
+      answer(),
+      answer(),
+      answer(),
+      answer("y"),
+      answer(),
+      answer(),
+    ]),
+  ).toBeNull();
+  expect(JSON.parse(await readFile(f.path, "utf8")).homeGateway).toBeUndefined();
+  expect(f.output.join("\n")).toContain("Cleared the home gateway.");
+});
+
 test("setup offers both bundled channels in one list and preserves skipped configuration", async () => {
   const f = await fixture(["discord", "slack"]);
   expect(await f.run([answer(), answer(), answer(), answer(), answer(), answer()])).toBeNull();

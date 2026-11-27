@@ -57,6 +57,7 @@ logs/         worker.log and its archives
 | `slack`                      | Unset            | `ownerId`, `teamId`, `homeChannelId`. Removing it turns Slack off.    |
 | `mcpServers`                 | `[]`             | See [MCP](mcp.md#configuration).                                      |
 | `gatewayPackages`            | `[]`             | See [external adapters](gateways.md#external-adapters).               |
+| `homeGateway`                | Unset            | A gateway ID. See [home gateway](#home-gateway).                      |
 | `tasks.catchUpMinutes`       | `60`             | 0 to 1440. See [the scheduler](tasks.md#scheduler).                   |
 | `tasks.approvals`            | `fail`           | `fail` or `wait`. Default approval policy for scheduled tasks.        |
 | `tasks.quietHours`           | Unset            | See [quiet hours](#quiet-hours).                                      |
@@ -75,6 +76,15 @@ A request waiting for owner approval parks and releases its slot until the owner
 answers. Concurrent ChatGPT requests share one credential lock, so
 `provider login` and `logout` in another terminal report the store as busy until
 no request runs.
+
+## Home gateway
+
+A scheduled task without a destination still needs somewhere to post approval
+prompts when its approval policy is `wait`. The worker uses the home
+conversation of `homeGateway` first, then the other enabled gateways in
+registration order (Discord, Slack, Telegram, then external adapters). An unset,
+unknown, or disabled `homeGateway` falls back to that order. Task results always
+go to each task's saved destination.
 
 ## Time zone
 

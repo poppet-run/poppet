@@ -93,7 +93,10 @@ has an option to type an ID. When a check rejects a
 token, setup offers to enter it again, continue with typed IDs, or skip that
 gateway and keep its saved settings. The review marks a gateway whose check failed as
 not checked. Leaving a configured gateway unselected asks whether to
-remove its settings and tokens, and keeps them unless confirmed. Token input
+remove its settings and tokens, and keeps them unless confirmed. When two or more
+gateways stay configured, setup asks for the
+[home gateway](configuration.md#home-gateway), and it clears a saved home
+gateway that the step removes. Token input
 shows asterisks. If the provider's key comes from the environment, setup still
 asks for one and saves it for the background worker.
 
