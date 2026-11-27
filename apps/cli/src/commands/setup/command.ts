@@ -57,6 +57,41 @@ const setupWorker = (context: CLIContext, directory: string) =>
     }
   });
 
+const promptGateways = (context: CLIContext) =>
+  Effect.gen(function* () {
+    const available = yield* Effect.forEach(
+      context.gateways.flatMap(({ id, name, promptSetup }) =>
+        promptSetup === undefined ? [] : [{ id, name, setup: promptSetup }],
+      ),
+      (gateway) =>
+        gateway.setup.configured.pipe(Effect.map((configured) => ({ ...gateway, configured }))),
+    );
+
+    if (available.length === 0) {
+      return [];
+    }
+
+    const chosen = yield* Prompt.MultiSelect({
+      message: "Messaging gateways to set up (space toggles, enter confirms)",
+      choices: available.map((gateway) => ({
+        title: gateway.configured ? `${gateway.name} (configured)` : gateway.name,
+        value: gateway.id,
+        selected: gateway.configured,
+      })),
+    });
+
+    const saves = [];
+
+    for (const gateway of available) {
+      saves.push({
+        name: gateway.name,
+        save: chosen.includes(gateway.id) ? yield* gateway.setup.prompt : null,
+      });
+    }
+
+    return saves;
+  });
+
 export const runSetup = (context: CLIContext) =>
   Effect.gen(function* () {
     const config = yield* AppConfig;
@@ -106,19 +141,9 @@ export const runSetup = (context: CLIContext) =>
       });
     }).pipe(Effect.provide(context.runtime.selectedProvider(selected)));
 
-    const saves = [];
-
-    for (const gateway of context.gateways) {
-      if (gateway.promptSetup === undefined) {
-        continue;
-      }
-
-      const save = yield* gateway.promptSetup.pipe(
-        Effect.provideService(GatewayEnvironment, { dataDirectory: config.dataDirectory }),
-      );
-
-      saves.push({ name: gateway.name, save });
-    }
+    const saves = yield* promptGateways(context).pipe(
+      Effect.provideService(GatewayEnvironment, { dataDirectory: config.dataDirectory }),
+    );
 
     yield* updateConfigFile(config.dataDirectory, (current) => ({
       ...current,

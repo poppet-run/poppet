@@ -1,6 +1,7 @@
 import { DiscordConfiguration, readConfigFile } from "@poppet/config";
 import { promptSecret } from "@poppet/credentials/input";
 import { GatewayEnvironment, GatewayError } from "@poppet/gateway";
+import type { GatewayPromptSetup } from "@poppet/gateway";
 import { Console, Effect, Schema } from "effect";
 import { Prompt } from "effect/cli";
 
@@ -16,11 +17,7 @@ const id = (message: string, value: string | undefined) =>
         : Effect.fail("Enter a numeric Discord ID, up to 20 digits."),
   });
 
-export const promptDiscordSetup = Effect.gen(function* () {
-  if (!(yield* Prompt.Confirm({ message: "Configure Discord?", initial: false }))) {
-    return null;
-  }
-
+const prompt = Effect.gen(function* () {
   const { dataDirectory } = yield* GatewayEnvironment;
   const saved = yield* loadDiscordSettings(dataDirectory);
 
@@ -68,3 +65,10 @@ export const promptDiscordSetup = Effect.gen(function* () {
     Effect.as(`Saved Discord owner ${ownerId}, server ${guildId}, home channel ${homeChannelId}.`),
   );
 });
+
+export const promptDiscordSetup = {
+  configured: GatewayEnvironment.use(({ dataDirectory }) =>
+    loadDiscordSettings(dataDirectory).pipe(Effect.map((saved) => saved !== null)),
+  ),
+  prompt,
+} satisfies GatewayPromptSetup;

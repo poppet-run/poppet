@@ -69,9 +69,9 @@ always prompts with hidden input, even when the environment holds a key.
 
 `poppet setup` needs an interactive terminal and has no noninteractive mode. It
 reuses saved choices, offers to reconnect an existing provider, and lists that
-provider's models. It then offers the bundled Discord and Slack registrations
-through their `promptSetup`, and skipping one leaves its settings and tokens
-alone. Token input shows asterisks. If the provider's key comes from the
+provider's models. It then lists the gateways that have a `promptSetup` in one
+multi-select, with configured gateways selected, and prompts for each selected
+one. Leaving one unselected keeps its settings and tokens. Token input shows asterisks. If the provider's key comes from the
 environment, setup still asks for one and saves it for the background worker.
 
 Saves happen in order: authentication at once, the provider and model after the

@@ -1,6 +1,7 @@
 import { SlackConfiguration, readConfigFile } from "@poppet/config";
 import { promptSecret } from "@poppet/credentials/input";
 import { GatewayEnvironment, GatewayError } from "@poppet/gateway";
+import type { GatewayPromptSetup } from "@poppet/gateway";
 import { Console, Effect, Schema } from "effect";
 import { Prompt } from "effect/cli";
 
@@ -18,11 +19,7 @@ const id = (
     validate: (input) => (Schema.is(schema)(input) ? Effect.succeed(input) : Effect.fail(hint)),
   });
 
-export const promptSlackSetup = Effect.gen(function* () {
-  if (!(yield* Prompt.Confirm({ message: "Configure Slack?", initial: false }))) {
-    return null;
-  }
-
+const prompt = Effect.gen(function* () {
   const { dataDirectory } = yield* GatewayEnvironment;
   const saved = yield* loadSlackSettings(dataDirectory);
 
@@ -91,3 +88,10 @@ export const promptSlackSetup = Effect.gen(function* () {
     Effect.as(`Saved Slack owner ${ownerId}, workspace ${teamId}, home channel ${homeChannelId}.`),
   );
 });
+
+export const promptSlackSetup = {
+  configured: GatewayEnvironment.use(({ dataDirectory }) =>
+    loadSlackSettings(dataDirectory).pipe(Effect.map((saved) => saved !== null)),
+  ),
+  prompt,
+} satisfies GatewayPromptSetup;
