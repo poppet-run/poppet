@@ -59,6 +59,7 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
     active: false,
     managed: true,
     api: true,
+    channelError: "",
   };
 
   const replies = new Map(
@@ -116,6 +117,10 @@ const fixture = async (gatewayIds: ReadonlyArray<string> = ["discord"]) => {
     const rejected =
       new Headers(init.headers).get("Authorization")?.endsWith("bad-token") === true ||
       url.pathname.includes("bad-token");
+
+    if (state.channelError !== "" && path === "/api/conversations.list") {
+      return Response.json({ ok: false, error: state.channelError });
+    }
 
     if (state.api && !rejected) {
       return Response.json(replies.get(path));
@@ -809,6 +814,31 @@ test.each(["skip", "continue"] as const)(
     expect(f.output.join("\n")).toContain("Telegram rejected the bot token.");
   },
 );
+
+test("when Slack refuses the channel list, setup reports the refusal and asks for the channel ID", async () => {
+  const f = await fixture(["slack"]);
+  f.state.channelError = "missing_scope";
+  expect(
+    await f.run([
+      answer(),
+      answer(),
+      answer(),
+      selectAll,
+      answer("xoxb-secret"),
+      answer("xapp-secret"),
+      answer("U100"),
+      answer("C300"),
+      answer(),
+      answer(),
+    ]),
+  ).toBeNull();
+  expect(JSON.parse(await readFile(f.path, "utf8")).slack.homeChannelId).toBe("C300");
+  const output = f.output.join("\n");
+  expect(output).toContain(
+    "Slack refused conversations.list with missing_scope. Check the token and the app's scopes. Enter the home channel ID instead.",
+  );
+  expect(output).not.toContain("/invite");
+});
 
 test("setup offers both bundled channels in one list and preserves skipped configuration", async () => {
   const f = await fixture(["discord", "slack"]);
