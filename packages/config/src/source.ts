@@ -29,6 +29,8 @@ export const SlackConfiguration = Schema.Struct({
   homeChannelId: Schema.String.check(Schema.isPattern(/^[CG][A-Z0-9]+$/)),
 });
 
+export const GatewayId = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,63}$/));
+
 export const TaskApprovalPolicy = Schema.Literals(["fail", "wait"]);
 
 export type TaskApprovalPolicy = typeof TaskApprovalPolicy.Type;
@@ -42,6 +44,7 @@ const FileSettings = Schema.Struct({
   timeZone: Schema.optionalKey(TimeZone),
   mcpServers: Schema.optionalKey(MCPServers),
   gatewayPackages: Schema.optionalKey(Schema.Array(ConfigText)),
+  homeGateway: Schema.optionalKey(GatewayId),
   tasks: Schema.optionalKey(
     Schema.Struct({
       catchUpMinutes: Schema.optionalKey(Schema.Int),
@@ -127,6 +130,7 @@ export const loadConfigSource = Effect.gen(function* () {
     mcpServers: mcpFileValue(file.mcpServers, directory),
     gatewayPackages:
       file.gatewayPackages === undefined ? undefined : JSON.stringify(file.gatewayPackages),
+    homeGateway: file.homeGateway,
     catchUpMinutes: file.tasks?.catchUpMinutes,
     taskApprovals: file.tasks?.approvals,
     quietHours:

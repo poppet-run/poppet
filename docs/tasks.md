@@ -106,7 +106,7 @@ repository's command lock serializes worker commands and occurrence claims.
   (`approvals: "fail"`), a call that needs a person fails the occurrence at
   once. With `approvals: "wait"` (set globally in `tasks.approvals` or per task
   with `--approvals`) and either a task destination or a gateway home
-  conversation, the run parks and posts an approval prompt there, keeping the
+  conversation (see [home gateway](configuration.md#home-gateway)), the run parks and posts an approval prompt there, keeping the
   occurrence `running` and capping the approval expiry at the smaller of
   `timeouts.approvalSeconds` and the next due slot. Once answered, the worker
   resumes the run and delivers its result through scheduled delivery (see

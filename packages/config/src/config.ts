@@ -4,6 +4,7 @@ import { Config, Context, Effect, Layer, Option, Schema } from "effect";
 import {
   ConfigSourceLive,
   ConfigText,
+  GatewayId,
   TaskApprovalPolicy,
   dataDirectory as configuredDataDirectory,
 } from "#src/source";
@@ -14,6 +15,7 @@ export {
   ConfigSourceLive,
   dataDirectory,
   DiscordConfiguration,
+  GatewayId,
   SlackConfiguration,
   TaskApprovalPolicy,
   readConfigFile,
@@ -28,6 +30,12 @@ export const gatewayPackages = Config.schema(
   Schema.fromJsonString(Schema.Array(ConfigText)),
   "gatewayPackages",
 ).pipe(Config.withDefault([]));
+
+/** The gateway whose home conversation the worker uses when a task has no destination. */
+export const homeGateway = Config.schema(GatewayId, "homeGateway").pipe(
+  Config.option,
+  Config.map(Option.getOrNull),
+);
 
 export const taskCatchUpMinutes = Config.schema(
   Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1440 })),
