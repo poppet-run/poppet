@@ -605,7 +605,11 @@ export const telegramAdapterLayer = (
                       chat_id: chatId,
                       text: approvalHtml(prompt),
                       parse_mode: "HTML",
-                      reply_markup: approvalMarkup(prompt.requestId, prompt.truncated),
+                      reply_markup: approvalMarkup(
+                        prompt.requestId,
+                        prompt.truncated,
+                        prompt.alwaysAllow !== undefined,
+                      ),
                       link_preview_options: { is_disabled: true },
                     },
                     threadId,

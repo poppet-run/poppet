@@ -139,6 +139,18 @@ export const approvalBlocks = (
       elements: [{ type: "mrkdwn", text: slackSettlementText(settled.state, settled.settlement) }],
     });
   } else {
+    if (prompt.alwaysAllow !== undefined) {
+      blocks.push({
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: `*Always allow saves:* ${safeSlack(prompt.alwaysAllow, 1800)}`,
+          },
+        ],
+      });
+    }
+
     const unixSeconds = Math.floor(prompt.expiresAt / 1000);
     const fallbackExpiry = formatApprovalDuration(prompt.expiresAfterSeconds);
 
@@ -147,7 +159,10 @@ export const approvalBlocks = (
       elements: [
         {
           type: "mrkdwn",
-          text: `Expires <!date^${unixSeconds}^{ago}|in ${fallbackExpiry}> · Permits one execution only`,
+          text:
+            prompt.alwaysAllow !== undefined
+              ? `Expires <!date^${unixSeconds}^{ago}|in ${fallbackExpiry}> · Approve once or save a reusable rule`
+              : `Expires <!date^${unixSeconds}^{ago}|in ${fallbackExpiry}> · Permits one execution only`,
         },
       ],
     });
@@ -159,6 +174,15 @@ export const approvalBlocks = (
         text: { type: "plain_text", text: "Approve once" },
         style: "primary",
       },
+      ...(prompt.alwaysAllow !== undefined
+        ? [
+            {
+              type: "button" as const,
+              action_id: `${prefix}always:${prompt.requestId}`,
+              text: { type: "plain_text" as const, text: "Always allow" },
+            },
+          ]
+        : []),
       {
         type: "button",
         action_id: `${prefix}deny:${prompt.requestId}`,
@@ -217,7 +241,7 @@ export type ApprovalClick =
   | {
       readonly kind: "accepted";
       readonly requestId: string;
-      readonly decision: "approve" | "deny";
+      readonly decision: "approve" | "approve-always" | "deny";
       readonly source: IncomingMessage;
       readonly thread?: string;
     };
@@ -233,7 +257,7 @@ export const approvalClick = (
     return { kind: "ignored" };
   }
 
-  const match = /^poppet:approval:(approve|deny|details):([a-f0-9-]{36})$/.exec(action);
+  const match = /^poppet:approval:(approve|always|deny|details):([a-f0-9-]{36})$/.exec(action);
   const requestId = match?.[2];
   const { channel, message, team, user } = body;
   const thread = message.thread_ts;
@@ -259,10 +283,18 @@ export const approvalClick = (
     };
   }
 
+  let decision: "approve" | "approve-always" | "deny" = "deny";
+
+  if (match[1] === "always") {
+    decision = "approve-always";
+  } else if (match[1] === "approve") {
+    decision = "approve";
+  }
+
   return {
     kind: "accepted",
     requestId,
-    decision: match[1] === "approve" ? "approve" : "deny",
+    decision,
     source: {
       messageId: message.ts,
       scopeId: team.id,

@@ -33,10 +33,18 @@ export const messagingRequest = (text: string, attached = false) =>
     return { fresh: true, prompt, skill };
   });
 
-export const isApprovalReply = (text: string) => /^\/(?:approve|deny)(?:\s|$)/.test(text.trim());
+export const isApprovalReply = (text: string) =>
+  /^\/(?:approve|approve-always|deny)(?:\s|$)/.test(text.trim());
+
+export const isApprovalManagement = (text: string) => /^\/approvals(?:\s|$)/.test(text.trim());
 
 export const isControl = (text: string) => {
   const command = text.trim();
 
-  return command === "/status" || command === "/cancel" || isApprovalReply(command);
+  return (
+    command === "/status" ||
+    command === "/cancel" ||
+    isApprovalReply(command) ||
+    isApprovalManagement(command)
+  );
 };

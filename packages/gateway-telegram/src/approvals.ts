@@ -94,8 +94,17 @@ export const approvalHtml = (
   if (settled) {
     lines.push("", telegramSettlementHtml(settled.state, settled.settlement));
   } else {
+    if (prompt.alwaysAllow !== undefined) {
+      lines.push(`<b>Always allow saves:</b> ${safeHtml(prompt.alwaysAllow, 400)}`);
+    }
+
     const expiry = formatApprovalDuration(prompt.expiresAfterSeconds);
-    lines.push("", `Expires in ${expiry} · Permits one execution only`);
+    lines.push(
+      "",
+      prompt.alwaysAllow !== undefined
+        ? `Expires in ${expiry} · Approve once or save a reusable rule`
+        : `Expires in ${expiry} · Permits one execution only`,
+    );
   }
 
   return lines.join("\n");
@@ -109,13 +118,28 @@ export const approvalDetailsHtml = (payload: string): ReadonlyArray<string> =>
     return `<pre><code class="language-json">${escapeTelegramHtml(slice) || " "}</code></pre>`;
   });
 
-export const approvalMarkup = (requestId: string, showDetails = false): Schema.JsonObject => ({
+export const approvalMarkup = (
+  requestId: string,
+  showDetails = false,
+  alwaysAllow = false,
+): Schema.JsonObject => ({
   inline_keyboard: [
     [
       { text: "Approve once", callback_data: `${prefix}a:${requestId}` },
       { text: "Deny", callback_data: `${prefix}d:${requestId}` },
     ],
-    ...(showDetails ? [[{ text: "Show details", callback_data: `${prefix}s:${requestId}` }]] : []),
+    ...(alwaysAllow || showDetails
+      ? [
+          [
+            ...(alwaysAllow
+              ? [{ text: "Always allow", callback_data: `${prefix}w:${requestId}` }]
+              : []),
+            ...(showDetails
+              ? [{ text: "Show details", callback_data: `${prefix}s:${requestId}` }]
+              : []),
+          ],
+        ]
+      : []),
   ],
 });
 
@@ -134,7 +158,7 @@ export type ApprovalCallback =
       readonly kind: "accepted";
       readonly queryId: string;
       readonly requestId: string;
-      readonly decision: "approve" | "deny";
+      readonly decision: "approve" | "approve-always" | "deny";
       readonly source: IncomingMessage;
     };
 
@@ -149,7 +173,7 @@ export const approvalCallback = (
     return { kind: "ignored" };
   }
 
-  const match = /^poppet:([ads]):([a-f0-9-]{36})$/.exec(data);
+  const match = /^poppet:([adsw]):([a-f0-9-]{36})$/.exec(data);
   const requestId = match?.[2];
   const message = query.message;
 
@@ -174,11 +198,19 @@ export const approvalCallback = (
     return { kind: "details", queryId: query.id, requestId, threadId };
   }
 
+  let decision: "approve" | "approve-always" | "deny" = "deny";
+
+  if (match[1] === "w") {
+    decision = "approve-always";
+  } else if (match[1] === "a") {
+    decision = "approve";
+  }
+
   return {
     kind: "accepted",
     queryId: query.id,
     requestId,
-    decision: match[1] === "a" ? "approve" : "deny",
+    decision,
     source: {
       messageId: String(message.message_id),
       scopeId: settings.chatId,

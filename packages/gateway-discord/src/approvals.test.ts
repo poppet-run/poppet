@@ -223,7 +223,7 @@ describe("Discord approval components", () => {
                       { name: "Expires", value: "<t:1700000120:R>", inline: true },
                     ]),
                     footer: {
-                      text: "Permits one execution only",
+                      text: "Approve once or save a reusable rule",
                     },
                   }),
                 ],
@@ -236,6 +236,12 @@ describe("Discord approval components", () => {
                         custom_id: `poppet:approval:approve:${id}`,
                         label: "Approve once",
                         style: 3,
+                      },
+                      {
+                        type: 2,
+                        custom_id: `poppet:approval:always:${id}`,
+                        label: "Always allow",
+                        style: 2,
                       },
                       { type: 2, custom_id: `poppet:approval:deny:${id}`, label: "Deny", style: 4 },
                     ],

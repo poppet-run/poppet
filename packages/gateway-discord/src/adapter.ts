@@ -381,7 +381,11 @@ export const discordAdapterLayer = (
 
             const sent = await target.send({
               embeds: [approvalEmbed(prompt)],
-              components: approvalComponents(prompt.requestId, prompt.truncated),
+              components: approvalComponents(
+                prompt.requestId,
+                prompt.truncated,
+                prompt.alwaysAllow !== undefined,
+              ),
               nonce,
               enforceNonce: true,
               allowedMentions: { parse: [], repliedUser: false },

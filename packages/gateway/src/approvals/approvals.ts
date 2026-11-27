@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { deriveApprovalRule, describeApprovalRule } from "@poppet/agent";
 import type { ActionApproval } from "@poppet/agent";
 import type { Approval } from "@poppet/store";
 import { Effect, Option, Schema } from "effect";
@@ -127,7 +128,7 @@ export const actionApprovals = (context: GatewayContext) => {
     );
 
   // Shows a settled approval on its prompt once. A failed update cannot reopen it.
-  const render = (id: string, state: ApprovalState, senderId?: string) =>
+  const render = (id: string, state: ApprovalState, senderId?: string, text?: string) =>
     Effect.gen(function* () {
       const saved = yield* repo.approval(id);
 
@@ -145,7 +146,7 @@ export const actionApprovals = (context: GatewayContext) => {
         .update(saved.conversationId, saved.messageId, id, state, {
           ...(senderId !== undefined &&
             (state === "approved" || state === "denied") && { senderId }),
-          text: formatApprovalStatus(state),
+          text: text ?? formatApprovalStatus(state),
         })
         .pipe(
           Effect.timeout("5 seconds"),
@@ -156,7 +157,14 @@ export const actionApprovals = (context: GatewayContext) => {
   const renderApproval = (approval: Approval) =>
     approval.state === "pending"
       ? Effect.void
-      : render(approval.id, approval.state, approval.decidedBy?.senderId);
+      : render(
+          approval.id,
+          approval.state,
+          approval.decidedBy?.senderId,
+          approval.state === "approved" && approval.decidedBy?.ruleId !== undefined
+            ? "Approved and saved rule"
+            : undefined,
+        );
 
   // Ends a run that is waiting or ready to resume, then shows the outcome on its prompt.
   const end = (runId: string, reason: "cancelled" | "superseded") =>
@@ -283,7 +291,7 @@ export const actionApprovals = (context: GatewayContext) => {
   const decide = (
     requestId: string,
     source: IncomingMessage,
-    approve: boolean,
+    decision: ApprovalAction["decision"],
     saved: SavedApproval | null,
   ) =>
     Effect.gen(function* () {
@@ -291,12 +299,40 @@ export const actionApprovals = (context: GatewayContext) => {
         return missing;
       }
 
-      const approval = yield* store.decideApproval(requestId, {
-        decision: approve ? "approved" : "denied",
-        adapter: adapter.id,
-        senderId: source.senderId,
-        at: clock.currentTimeMillisUnsafe(),
-      });
+      const approve = decision !== "deny";
+      let rule = undefined;
+
+      if (decision === "approve-always") {
+        const current = yield* store.approval(requestId);
+
+        if (current === null) {
+          return missing;
+        }
+
+        if (current.state !== "pending") {
+          return ended(current.state);
+        }
+
+        const decoded = Schema.decodeUnknownOption(ActionRequest)(current.request);
+        const derived = Option.isSome(decoded) ? deriveApprovalRule(decoded.value) : null;
+
+        if (derived === null) {
+          return "A saved approval rule cannot be created for this action. Use Approve once or Deny.";
+        }
+
+        rule = derived;
+      }
+
+      const approval = yield* store.decideApproval(
+        requestId,
+        {
+          decision: approve ? "approved" : "denied",
+          adapter: adapter.id,
+          senderId: source.senderId,
+          at: clock.currentTimeMillisUnsafe(),
+        },
+        rule === undefined ? undefined : { rule },
+      );
 
       if (approval === null) {
         yield* sweep;
@@ -315,6 +351,10 @@ export const actionApprovals = (context: GatewayContext) => {
       yield* repo.requeue(approval.runId);
       yield* wake(context.wakes.inbox);
       yield* renderApproval(approval);
+
+      if (rule !== undefined && approval.decidedBy?.ruleId !== undefined) {
+        return `Approved and saved rule ${approval.decidedBy.ruleId}: ${describeApprovalRule(rule)}.`;
+      }
 
       return decided(approval.kind, approve);
     });
@@ -340,19 +380,72 @@ export const actionApprovals = (context: GatewayContext) => {
         return "Only the configured owner can answer this approval.";
       }
 
-      const reply = /^\/(approve|deny) ([a-f0-9-]{36})$/.exec(source.text.trim());
+      const reply = /^\/(approve|approve-always|deny) ([a-f0-9-]{36})$/.exec(source.text.trim());
       const requestId = reply?.[2];
 
       if (reply === null || requestId === undefined || source.conversationId !== conversation) {
         return missing;
       }
 
-      return yield* decide(
-        requestId,
-        source,
-        reply[1] === "approve",
-        yield* promptFor(requestId, source, false),
-      );
+      let decision: ApprovalAction["decision"] = "deny";
+
+      if (reply[1] === "approve-always") {
+        decision = "approve-always";
+      } else if (reply[1] === "approve") {
+        decision = "approve";
+      }
+
+      return yield* decide(requestId, source, decision, yield* promptFor(requestId, source, false));
+    });
+
+  const manageRules = (source: IncomingMessage) =>
+    Effect.gen(function* () {
+      if (!authorized(adapter.policy, source)) {
+        return "Only the configured owner can manage approval rules.";
+      }
+
+      const text = source.text.trim();
+
+      if (text === "/approvals" || text === "/approvals list") {
+        const rules = yield* store.approvalRules;
+
+        if (rules.length === 0) {
+          return "No saved approval rules.";
+        }
+
+        return [
+          "Saved approval rules:",
+          ...rules.map(
+            (rule) =>
+              `- ${rule.id}: ${describeApprovalRule(rule.matcher)} (used ${rule.useCount} ${rule.useCount === 1 ? "time" : "times"})`,
+          ),
+        ].join("\n");
+      }
+
+      const revoke = /^\/approvals\s+revoke\s+(\S+)$/.exec(text);
+
+      if (revoke?.[1] !== undefined) {
+        if (revoke[1] === "all") {
+          const revoked = yield* store.revokeAllApprovalRules;
+
+          return revoked.length === 0
+            ? "No saved approval rules to revoke."
+            : `Revoked ${revoked.length} saved approval ${revoked.length === 1 ? "rule" : "rules"}.`;
+        }
+
+        const revoked = yield* store.revokeApprovalRule(revoke[1]).pipe(
+          Effect.catchIf(
+            (error) => error.reason === "invalid-request",
+            () => Effect.succeed(null),
+          ),
+        );
+
+        return revoked === null
+          ? "No active saved approval rule matched that ID."
+          : `Revoked saved approval rule ${revoked.id}.`;
+      }
+
+      return "Usage: `/approvals list` or `/approvals revoke <id|all>`.";
     });
 
   const answerAction = (action: ApprovalAction) =>
@@ -369,7 +462,7 @@ export const actionApprovals = (context: GatewayContext) => {
         yield* adapter.checkAccess(source, saved.conversationId);
       }
 
-      return yield* decide(requestId, source, action.decision === "approve", saved);
+      return yield* decide(requestId, source, action.decision, saved);
     }).pipe(
       Effect.catchTag("GatewayError", () =>
         Effect.succeed(
@@ -380,7 +473,7 @@ export const actionApprovals = (context: GatewayContext) => {
       Effect.catchTag("GatewayError", () => Effect.void),
     );
 
-  return { post, end, supersede, reconcile, sweep, answer, answerAction };
+  return { post, end, supersede, reconcile, sweep, answer, manageRules, answerAction };
 };
 
 export type ActionApprovals = ReturnType<typeof actionApprovals>;
