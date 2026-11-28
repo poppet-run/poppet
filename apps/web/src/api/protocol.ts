@@ -24,11 +24,24 @@ export interface Receipt {
   readonly error: string | null;
 }
 
+export interface ChatApproval {
+  readonly id: string;
+  readonly title: string;
+  readonly summary: string;
+  readonly fields: ReadonlyArray<{ readonly label: string; readonly value: string }>;
+  readonly codeBlock?: { readonly label: string; readonly content: string };
+  readonly args?: ReadonlyArray<{ readonly key: string; readonly value: string }>;
+  readonly details?: string;
+  readonly state: string;
+  readonly actor: string | null;
+}
+
 export interface ChatSnapshot {
   readonly session: ChatSession;
   readonly messages: ReadonlyArray<{
     readonly id: number;
     readonly runId: string | null;
+    readonly approvals?: ReadonlyArray<ChatApproval>;
     readonly role: "user" | "assistant";
     readonly text: string;
   }>;

@@ -336,6 +336,18 @@ export const webHandler = (
       );
     }
 
+    const approval = /^\/api\/approvals\/([a-f0-9-]{36})$/.exec(url.pathname);
+
+    if (request.method === "POST" && approval?.[1]) {
+      const { decision } = await body(
+        request,
+        Schema.Struct({ decision: Schema.Literals(["approved", "denied"]) }),
+        limits.bodyBytes,
+      );
+
+      return Response.json(await run(chat.decide(approval[1], decision)));
+    }
+
     const receipt = /^\/api\/submissions\/([a-f0-9-]{36})$/.exec(url.pathname);
 
     if (request.method === "GET" && receipt?.[1]) {

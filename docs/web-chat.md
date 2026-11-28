@@ -73,6 +73,7 @@ why and keeps running everything else.
 | `GET /api/sessions`                     | Every session, most recent first                               |
 | `GET /api/session-list?source=<origin>` | Sessions with one origin, plus the gateways that have sessions |
 | `POST /api/submissions`                 | Submit a message with a client ID. Returns 202.                |
+| `POST /api/approvals/<id>`              | Decide a web approval and return the stored outcome            |
 | `GET /api/submissions/<id>`             | Read a submission receipt, or 404                              |
 | `GET /api/sessions/<id>`                | A conversation snapshot                                        |
 | `GET /api/sessions/<id>/events`         | Server-sent snapshots                                          |
@@ -94,12 +95,16 @@ run. Deleting a session removes its receipts.
 
 Accepted replies run in worker-scoped fibers and keep going after a browser
 disconnects or signs out. Stop interrupts only a reply started from the web. A
-worker restart leaves unfinished replies interrupted, with no replay. A completed
-answer stays saved even when updating its receipt was interrupted.
+worker restart preserves runs parked for approval and interrupts other unfinished
+replies. A completed answer stays saved even when updating its receipt was interrupted.
 
-Web runs have no attachments, no task destination context, and no approval
-callback. A command or reviewed MCP action that needs a person stops the run. The
-first message supplies the title. `$name` mentions work, because `Agent.send`
+When bash or a reviewed MCP action needs approval, the reply pauses. Its card
+shows the request in the transcript and locks the composer. Choose **Approve
+once** or **Deny**. The authenticated decision is attributed to the web access-key
+holder. The card keeps its outcome across reloads. The worker resumes decided
+runs after disconnects or restarts and fails requests that expire.
+
+Web runs have no attachments or task destination context. The first message supplies the title. `$name` mentions work, because `Agent.send`
 resolves them.
 
 ## Event stream

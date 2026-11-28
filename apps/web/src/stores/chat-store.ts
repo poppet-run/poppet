@@ -220,6 +220,7 @@ export const createChatStore = () => {
       $state.get().sending ||
       $state.get().pending ||
       $state.get().snapshot?.active ||
+      $state.get().snapshot?.receipts.some((receipt) => receipt.status === "accepted") ||
       ($state.get().sessionId && !$state.get().connected)
     ) {
       return;

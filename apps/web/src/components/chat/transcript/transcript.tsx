@@ -1,8 +1,10 @@
 /** @jsxImportSource preact */
 import { useStore } from "@nanostores/preact";
+import { Fragment } from "preact";
 import { useLayoutEffect, useRef } from "preact/hooks";
 
 import type { ChatSnapshot } from "../../../api/protocol";
+import { ApprovalCard } from "./approval-card";
 import { $markdownRenderer } from "./markdown";
 import { Message } from "./message";
 
@@ -47,7 +49,14 @@ export const Transcript = ({
           </div>
         )}
         {snapshot?.messages.map((message) => (
-          <Message key={message.id} role={message.role} text={message.text} />
+          <Fragment key={message.id}>
+            {(message.text || !message.approvals?.length) && (
+              <Message role={message.role} text={message.text} />
+            )}
+            {message.approvals?.map((approval) => (
+              <ApprovalCard key={approval.id} approval={approval} />
+            ))}
+          </Fragment>
         ))}
         {active && (
           <>

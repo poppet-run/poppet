@@ -11,7 +11,11 @@ export class ApiError extends Error {
 
 const request = async <T>(
   path: string,
-  body?: Submission | { readonly key: string } | Record<string, never>,
+  body?:
+    | { readonly decision: "approved" | "denied" }
+    | Submission
+    | { readonly key: string }
+    | Record<string, never>,
   method = body === undefined ? "GET" : "POST",
 ): Promise<T> => {
   const response = await fetch(
@@ -40,6 +44,8 @@ const request = async <T>(
 };
 
 export const api = {
+  decide: (id: string, decision: "approved" | "denied") =>
+    request(`/api/approvals/${encodeURIComponent(id)}`, { decision }),
   snapshot: (id: string) => request<ChatSnapshot>(`/api/sessions/${encodeURIComponent(id)}`),
   sessions: (source: string) =>
     request<SessionList>(`/api/session-list?source=${encodeURIComponent(source)}`),
