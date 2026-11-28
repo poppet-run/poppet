@@ -1,4 +1,4 @@
-import type { SessionList, ChatSnapshot, Receipt, Submission } from "./protocol";
+import type { InboxApproval, SessionList, ChatSnapshot, Receipt, Submission } from "./protocol";
 
 export class ApiError extends Error {
   constructor(
@@ -44,6 +44,7 @@ const request = async <T>(
 };
 
 export const api = {
+  approvals: () => request<ReadonlyArray<InboxApproval>>("/api/approvals"),
   decide: (id: string, decision: "approved" | "denied") =>
     request(`/api/approvals/${encodeURIComponent(id)}`, { decision }),
   snapshot: (id: string) => request<ChatSnapshot>(`/api/sessions/${encodeURIComponent(id)}`),

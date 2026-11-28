@@ -73,7 +73,8 @@ why and keeps running everything else.
 | `GET /api/sessions`                     | Every session, most recent first                               |
 | `GET /api/session-list?source=<origin>` | Sessions with one origin, plus the gateways that have sessions |
 | `POST /api/submissions`                 | Submit a message with a client ID. Returns 202.                |
-| `POST /api/approvals/<id>`              | Decide a web approval and return the stored outcome            |
+| `GET /api/approvals`                    | List pending approvals across all conversations                |
+| `POST /api/approvals/<id>`              | Decide an approval and return the stored outcome               |
 | `GET /api/submissions/<id>`             | Read a submission receipt, or 404                              |
 | `GET /api/sessions/<id>`                | A conversation snapshot                                        |
 | `GET /api/sessions/<id>/events`         | Server-sent snapshots                                          |
@@ -106,6 +107,16 @@ runs after disconnects or restarts and fails requests that expire.
 
 Web runs have no attachments or task destination context. The first message supplies the title. `$name` mentions work, because `Agent.send`
 resolves them.
+
+## Needs you
+
+Open **Needs you** in the sidebar to see pending Bash and MCP approvals across web,
+gateway, and scheduled runs. Each entry shows the source conversation, requested
+action, and expiry time. Expand it to inspect the full card and choose **Approve
+once** or **Deny**. Anyone signed in with the web access key can make that decision.
+
+The open inbox refreshes every five seconds and after a decision. The first
+decision wins. The original channel resumes the run and delivers its reply there.
 
 ## Event stream
 

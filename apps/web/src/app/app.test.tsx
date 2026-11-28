@@ -896,3 +896,75 @@ test("when navigating to the current session, avoids duplicate history entries a
     history.replaceState(null, "", "/");
   }
 });
+
+test("when a pending approval is expanded and denied, shows the command and refreshes the inbox", async () => {
+  const { ApprovalInbox } = await import("../components/chat/sidebar/approval-inbox");
+  const root = document.createElement("div");
+  const originalFetch = globalThis.fetch;
+  const prototype = dom.window.HTMLDialogElement.prototype;
+  const showModal = Object.getOwnPropertyDescriptor(prototype, "showModal");
+  Object.defineProperty(prototype, "showModal", { configurable: true, value() {} });
+  const decisions: Array<string> = [];
+
+  const item = {
+    conversation: "discord:thread",
+    action: "restart service",
+    expiresAt: Date.now() + 60_000,
+    card: {
+      id: "request",
+      title: "Bash approval required",
+      summary: "Restart the service",
+      codeBlock: { label: "Command", content: "restart service" },
+      fields: [],
+      state: "pending",
+      actor: null,
+    },
+  };
+
+  const fakeFetch = async (path: RequestInfo | URL, init?: RequestInit) => {
+    if (path === "/api/approvals/request" && init?.method === "POST") {
+      decisions.push(String(init.body));
+
+      return Response.json({ state: "denied" });
+    }
+
+    if (path === "/api/approvals") {
+      return Response.json(decisions.length ? [] : [item]);
+    }
+
+    throw new Error("Unexpected request");
+  };
+
+  globalThis.fetch = Object.assign(fakeFetch, { preconnect: originalFetch.preconnect });
+
+  try {
+    await act(() => render(<ApprovalInbox onClose={() => {}} />, root));
+    await flush();
+    const details = root.querySelector("details")!;
+    expect(details.open).toBe(false);
+    expect(details.querySelector("summary")?.textContent).toContain("discord:thread");
+    details.open = true;
+    expect(details.querySelector("code")?.textContent).toBe("restart service");
+    await act(() => {
+      [...details.querySelectorAll("button")]
+        .find((button) => button.textContent === "Deny")!
+        .click();
+    });
+
+    for (let attempt = 0; attempt < 50 && root.querySelector("details"); attempt++) {
+      await flush();
+    }
+
+    expect(decisions).toEqual([JSON.stringify({ decision: "denied" })]);
+    expect(root.textContent).toContain("No pending approvals.");
+  } finally {
+    render(null, root);
+    globalThis.fetch = originalFetch;
+
+    if (showModal) {
+      Object.defineProperty(prototype, "showModal", showModal);
+    } else {
+      Reflect.deleteProperty(prototype, "showModal");
+    }
+  }
+});

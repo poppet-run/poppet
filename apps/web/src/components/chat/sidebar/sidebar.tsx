@@ -7,6 +7,7 @@ interface SidebarProps {
   readonly open: boolean;
   readonly source: string;
   readonly gateways: ReadonlyArray<string>;
+  readonly onOpenInbox: () => void;
   readonly onFilter: (source: string) => void;
   readonly sessions: ReadonlyArray<ChatSession>;
   readonly sessionId: string | null;
@@ -19,6 +20,7 @@ export const Sidebar = ({
   open,
   source,
   gateways,
+  onOpenInbox,
   onFilter,
   sessions,
   sessionId,
@@ -49,6 +51,13 @@ export const Sidebar = ({
         }}
       >
         + New conversation
+      </button>
+      <button
+        type="button"
+        class="bg-transparent text-left hover:bg-surface-hover"
+        onClick={onOpenInbox}
+      >
+        Needs you
       </button>
       <label class="flex items-center gap-2 px-1 text-muted">
         Show
