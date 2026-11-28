@@ -5,12 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { AgentLive, ChatSettings, defaultPolicy, ModelResolver, Pages } from "@poppet/agent";
+import { AgentLive, Bash, ChatSettings, defaultPolicy, ModelResolver, Pages } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
 import { gatewaySchema } from "@poppet/gateway";
 import { LocalMemoryLive } from "@poppet/memory";
 import { invalidRequest } from "@poppet/provider";
-import type { ModelOperations } from "@poppet/provider";
+import type { ModelOperations, Output } from "@poppet/provider";
 import { Store, StoreLive, migrate } from "@poppet/store";
 import { taskSchema } from "@poppet/tasks";
 import type { SessionList } from "@poppet/web/protocol";
@@ -54,18 +54,19 @@ const fixture = async (
       },
     ],
   ]),
+  approvalCommands?: Array<string>,
 ) => {
   const release = Deferred.makeUnsafe<void>();
   const entered = Deferred.makeUnsafe<void>();
   const state = { calls: 0, fail: false };
 
-  const model: ModelOperations = {
+  let model: ModelOperations = {
     description: {
       provider: "test-provider",
       id: "test-model",
       name: "Test model",
       capabilities: {
-        tools: false,
+        tools: !!approvalCommands,
         images: false,
         generationSettings: [],
         contextWindow: null,
@@ -106,11 +107,54 @@ const fixture = async (
       ),
   };
 
+  if (approvalCommands) {
+    model = {
+      ...model,
+      stream: (request) => {
+        const output: Array<Output> =
+          request.tools.length === 0
+            ? [
+                {
+                  type: "text",
+                  text: JSON.stringify({ decision: "needs_approval", reason: "Review requested" }),
+                },
+              ]
+            : request.messages.at(-1)?.role === "tool"
+              ? [{ type: "text", text: "Finished" }]
+              : ["first", "second"].map((callId) => ({
+                  type: "tool-call",
+                  name: "bash",
+                  namespace: "poppet_system",
+                  callId,
+                  arguments: JSON.stringify({ command: callId, cwd: "/tmp", timeoutSeconds: 5 }),
+                }));
+
+        return Stream.make({
+          type: "completed",
+          response: {
+            output,
+            continuation: { version: 1, provider: "test-provider", model: "test-model", data: {} },
+            finishReason: output[0]?.type === "tool-call" ? "tool-calls" : "stop",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          },
+        });
+      },
+    };
+  }
+
   const store = storeLayer(directory);
 
   const agent = AgentLive.pipe(
     Layer.provideMerge([
       store,
+      Layer.succeed(Bash, {
+        run: (request) =>
+          Effect.sync(() => {
+            approvalCommands?.push(request.command);
+
+            return { stdout: "ok", stderr: "", exitCode: 0, truncated: false };
+          }),
+      }),
       LocalMemoryLive.pipe(Layer.provide(store)),
       Layer.succeed(ChatSettings, defaultPolicy),
       Layer.succeed(Pages, { fetch: () => Effect.die("Unexpected fetch") }),
@@ -163,6 +207,81 @@ const fixture = async (
 };
 
 describe("web chat", () => {
+  test("when a parked web reply survives restart and two tabs approve it, executes once and displays the next approval", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-web-approval-"));
+    const executed: Array<string> = [];
+    let app = await fixture(directory, undefined, executed);
+    const id = randomUUID();
+
+    try {
+      const receipt = await app.runtime.runPromise(
+        app.chat.submit({ id, sessionId: null, text: "Run both commands" }),
+      );
+
+      const pending = () =>
+        app.runtime.runPromise(
+          Effect.gen(function* () {
+            for (;;) {
+              const snapshot = yield* app.chat.snapshot(receipt.sessionId);
+
+              const card = snapshot.messages
+                .flatMap((message) => message.approvals ?? [])
+                .find((card) => card.state === "pending");
+
+              if (card && !snapshot.active) {
+                return card;
+              }
+
+              yield* Effect.sleep("10 millis");
+            }
+          }).pipe(Effect.timeout("3 seconds")),
+        );
+
+      const first = await pending();
+      expect(first.codeBlock?.content).toBe("first");
+      await app.runtime.dispose();
+      app = await fixture(directory, undefined, executed);
+      expect((await pending()).id).toBe(first.id);
+      const cookie = await app.login();
+      const endpoint = `/api/approvals/${first.id}`;
+      expect((await app.send(endpoint, { decision: "approved" })).status).toBe(401);
+
+      const answers = await Promise.all([
+        app.send(endpoint, { decision: "approved" }, cookie),
+        app.send(endpoint, { decision: "approved" }, cookie),
+      ]);
+
+      for (const answer of answers) {
+        expect(await answer.json()).toEqual({ state: "approved" });
+      }
+
+      const second = await pending();
+      expect(second.codeBlock?.content).toBe("second");
+      expect(executed).toEqual(["first"]);
+      const stale = await app.send(endpoint, { decision: "denied" }, cookie);
+      expect(await stale.json()).toEqual({ state: "approved" });
+      await app.runtime.runPromise(
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`UPDATE approvals SET created_at=0,expires_at=1 WHERE id=${second.id}`;
+        }),
+      );
+      expect((await app.settled(id))?.status).toBe("failed");
+      const snapshot = await app.runtime.runPromise(app.chat.snapshot(receipt.sessionId));
+      expect(
+        snapshot.messages
+          .flatMap((message) => message.approvals ?? [])
+          .map((card) => [card.state, card.actor]),
+      ).toEqual([
+        ["approved", "web (access-key holder)"],
+        ["expired", null],
+      ]);
+      expect(executed).toEqual(["first"]);
+    } finally {
+      await app.runtime.dispose();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
   test("when browsing mixed session history after upgrading, filters by the original source", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-web-origins-"));
 

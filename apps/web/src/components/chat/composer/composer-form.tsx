@@ -4,6 +4,7 @@ import type { RefObject } from "preact";
 interface ComposerFormProps {
   readonly textareaRef: RefObject<HTMLTextAreaElement | null>;
   readonly draft: string;
+  readonly waiting: boolean;
   readonly active: boolean;
   readonly sendDisabled: boolean;
   readonly onDraftChange: (value: string) => void;
@@ -14,6 +15,7 @@ interface ComposerFormProps {
 export const ComposerForm = ({
   textareaRef,
   draft,
+  waiting,
   active,
   sendDisabled,
   onDraftChange,
@@ -29,6 +31,7 @@ export const ComposerForm = ({
   >
     <textarea
       class="min-h-11 max-h-[30dvh] w-full resize-y border-0 bg-transparent p-1 text-inherit outline-none placeholder:text-muted placeholder:opacity-100 focus-visible:outline-none mobile:text-base"
+      disabled={waiting}
       ref={textareaRef}
       aria-label="Message Poppet"
       placeholder="Message Poppet…"
@@ -45,7 +48,11 @@ export const ComposerForm = ({
     />
     <div class="flex items-center justify-between gap-[0.8rem]">
       <small class="text-[0.7rem] text-muted">
-        {active ? "Draft your next message…" : "Enter to send · Shift+Enter for a new line"}
+        {waiting
+          ? "Waiting for this reply to continue…"
+          : active
+            ? "Draft your next message…"
+            : "Enter to send · Shift+Enter for a new line"}
       </small>
       {active ? (
         <button type="button" onClick={onStop}>

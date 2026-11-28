@@ -2,18 +2,20 @@ import { createHash } from "node:crypto";
 
 import { Agent } from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
-import { gatewaySchema } from "@poppet/gateway";
+import { formatApprovalPrompt, gatewaySchema } from "@poppet/gateway";
 import { outputText } from "@poppet/provider";
 import { Store, decodeRow, decodeRows, migrate, packageSchema } from "@poppet/store";
 import { taskSchema } from "@poppet/tasks";
 import type {
   SessionList,
+  ChatApproval,
   ChatSession,
   ChatSnapshot,
   Receipt,
   Submission,
 } from "@poppet/web/protocol";
 import {
+  Clock,
   Cause,
   Context,
   Data,
@@ -27,6 +29,7 @@ import {
 } from "effect";
 import { SqlClient } from "effect/sql";
 
+import { ActionRequest } from "#src/commands/approvals/approvals";
 import { removeSessions } from "#src/commands/chat/chat";
 
 export class WebChatError extends Data.TaggedError("WebChatError")<{
@@ -82,6 +85,7 @@ interface ActiveReply {
   id: string;
   input: string;
   text: string;
+  previousMessageId: number;
   fiber: Fiber.Fiber<void> | null;
 }
 
@@ -109,7 +113,10 @@ const makeWebChat = Effect.gen(function* () {
     status = COALESCE((SELECT status FROM runs WHERE runs.id = web_chat_submissions.id AND status IN ('completed', 'failed', 'interrupted')), 'interrupted'),
     error = CASE WHEN EXISTS (SELECT 1 FROM runs WHERE runs.id = web_chat_submissions.id AND status = 'completed') THEN NULL
       ELSE 'Worker restarted. Inspect the conversation before sending again.' END
-    WHERE status = 'accepted'`;
+    WHERE status = 'accepted' AND id NOT IN (
+      SELECT a.run_id FROM approvals a JOIN tool_calls c USING(run_id, call_id)
+      WHERE c.status = 'pending' AND a.state IN ('pending','approved','denied')
+    )`;
 
   const receipt = (id: string) =>
     sql`SELECT * FROM web_chat_submissions WHERE id = ${id}`.pipe(decodeRow(ReceiptRow));
@@ -131,6 +138,43 @@ const makeWebChat = Effect.gen(function* () {
 
       const running = active.get(id);
 
+      const cards = new Map<string, ChatApproval>();
+
+      const ids = yield* sql<{
+        id: string;
+      }>`SELECT a.id FROM approvals a JOIN web_chat_submissions w ON a.run_id = w.id WHERE w.session_id = ${id}`;
+
+      for (const row of ids) {
+        const approval = yield* store.approval(row.id);
+
+        if (!approval) {
+          continue;
+        }
+
+        const request = yield* Schema.decodeUnknownEffect(ActionRequest)(approval.request);
+
+        const prompt = formatApprovalPrompt({
+          requestId: approval.id,
+          approval: request,
+          expiresAt: approval.expiresAt,
+          expiresAfterSeconds: (approval.expiresAt - approval.createdAt) / 1000,
+        });
+
+        cards.set(JSON.stringify([approval.runId, approval.callId]), {
+          id: approval.id,
+          title: prompt.title,
+          summary: prompt.summary,
+          fields: prompt.fields,
+          ...(prompt.args && { args: prompt.args }),
+          ...(prompt.codeBlock && { codeBlock: prompt.codeBlock }),
+          ...(prompt.truncated && { details: prompt.canonicalPayload }),
+          state: approval.state,
+          actor: approval.decidedBy
+            ? `${approval.decidedBy.adapter} (${approval.decidedBy.senderId})`
+            : null,
+        });
+      }
+
       return {
         session: summary(session),
         messages: messages.flatMap<ChatSnapshot["messages"][number]>((entry) => {
@@ -141,17 +185,31 @@ const makeWebChat = Effect.gen(function* () {
           }
 
           if (entry.message.role === "assistant") {
-            if (entry.runId === running?.id) {
+            if (running && entry.runId === running.id && entry.id > running.previousMessageId) {
               return [];
             }
 
             const text = outputText(entry.message.output);
 
-            if (!text.trim()) {
+            const approvals = entry.message.output.flatMap((part) =>
+              part.type === "tool-call"
+                ? (cards.get(JSON.stringify([entry.runId, part.callId])) ?? [])
+                : [],
+            );
+
+            if (!text.trim() && !approvals.length) {
               return [];
             }
 
-            return [{ id: entry.id, runId: entry.runId, role: "assistant", text }];
+            return [
+              {
+                id: entry.id,
+                runId: entry.runId,
+                role: "assistant",
+                text,
+                ...(approvals.length && { approvals }),
+              },
+            ];
           }
 
           return [];
@@ -168,12 +226,14 @@ const makeWebChat = Effect.gen(function* () {
         readonly title: string | null;
         readonly titleSource: string | null;
         readonly lastMessage: number | null;
+        readonly approvals: string | null;
         readonly statuses: string | null;
       }>`SELECT
         (SELECT updated_at FROM sessions WHERE id = ${id}) AS updatedAt,
         (SELECT title FROM sessions WHERE id = ${id}) AS title,
         (SELECT title_source FROM sessions WHERE id = ${id}) AS titleSource,
         (SELECT MAX(id) FROM messages WHERE session_id = ${id}) AS lastMessage,
+        (SELECT group_concat(a.id || a.state) FROM approvals a JOIN web_chat_submissions w ON w.id=a.run_id WHERE w.session_id=${id}) AS approvals,
         (SELECT group_concat(status) FROM web_chat_submissions WHERE session_id = ${id}) AS statuses`;
 
       const running = active.get(id);
@@ -184,8 +244,125 @@ const makeWebChat = Effect.gen(function* () {
         row?.titleSource ?? null,
         row?.lastMessage ?? null,
         row?.statuses ?? null,
+        row?.approvals ?? null,
         running ? [running.id, running.text.length] : null,
       ]);
+    });
+
+  const start = (sessionId: string, id: string, text: string, resumed: boolean) =>
+    Effect.gen(function* () {
+      const previousMessageId = resumed
+        ? ((yield* sql<{
+            lastId: number;
+          }>`SELECT MAX(id) AS last_id FROM messages WHERE run_id = ${id}`)[0]?.lastId ?? 0)
+        : 0;
+
+      const running: ActiveReply = { id, input: text, previousMessageId, text: "", fiber: null };
+      active.set(sessionId, running);
+
+      let waiting = false;
+      const options = { runId: id, approvalRequester: { surface: "web" } };
+      const stream = resumed ? agent.resume(id, options) : agent.send(sessionId, text, options);
+
+      const execute = stream.pipe(
+        Stream.runForEach((event) =>
+          Effect.sync(() => {
+            if (event.type === "waiting") {
+              waiting = true;
+            }
+
+            if (event.type === "text-delta") {
+              running.text += event.text;
+            }
+          }),
+        ),
+        Effect.onExit((exit) =>
+          Effect.gen(function* () {
+            if (waiting) {
+              return;
+            }
+
+            const status = Exit.isSuccess(exit)
+              ? "completed"
+              : Cause.hasInterrupts(exit.cause)
+                ? "interrupted"
+                : "failed";
+
+            let error: string | null = null;
+
+            if (status === "interrupted") {
+              error = "Reply stopped. It will not restart automatically.";
+            }
+
+            if (status === "failed") {
+              error = "The reply failed. Run poppet chat show for details.";
+            }
+
+            yield* sql`UPDATE web_chat_submissions SET status = ${status}, error = ${error} WHERE id = ${id}`;
+          }).pipe(Effect.ensuring(Effect.sync(() => active.delete(sessionId)))),
+        ),
+        Effect.catchCause(() => Effect.void),
+      );
+
+      running.fiber = yield* execute.pipe(Effect.interruptible, Effect.forkIn(scope));
+    });
+
+  const reconcile = submissions.withPermit(
+    Effect.gen(function* () {
+      yield* store.expireApprovals;
+
+      const rows = yield* sql<{
+        id: string;
+        sessionId: string;
+        status: string;
+      }>`SELECT w.id,w.session_id,r.status FROM web_chat_submissions w JOIN runs r ON w.id=r.id WHERE w.status='accepted' AND EXISTS (SELECT 1 FROM approvals a WHERE a.run_id=w.id AND a.state != 'pending')`;
+
+      for (const row of rows) {
+        if (active.has(row.sessionId)) {
+          continue;
+        }
+
+        if (row.status === "running") {
+          const latest = yield* store.latestApproval(row.id);
+
+          if (active.size < 16 && (latest?.state === "approved" || latest?.state === "denied")) {
+            yield* start(row.sessionId, row.id, "", true);
+          }
+        } else if (
+          row.status === "failed" ||
+          row.status === "interrupted" ||
+          row.status === "completed"
+        ) {
+          yield* sql`UPDATE web_chat_submissions SET status=${row.status},error=${row.status === "completed" ? null : "Reply ended. See the approval for details."} WHERE id=${row.id}`;
+        }
+      }
+    }),
+  );
+
+  yield* reconcile.pipe(
+    Effect.catchCause(Effect.logError),
+    Effect.delay("500 millis"),
+    Effect.forever,
+    Effect.forkScoped,
+  );
+
+  const decide = (id: string, decision: "approved" | "denied") =>
+    Effect.gen(function* () {
+      const approval = yield* store.approval(id);
+
+      if (!approval || approval.requester.surface !== "web" || !(yield* receipt(approval.runId))) {
+        return yield* new WebChatError({ status: 404, message: "Approval not found." });
+      }
+
+      yield* store.decideApproval(id, {
+        decision,
+        adapter: "web",
+        senderId: "access-key holder",
+        at: yield* Clock.currentTimeMillis,
+      });
+      yield* store.expireApprovals;
+
+      return { state: (yield* store.approval(id))?.state };
     });
 
   const submit = (input: Submission) =>
@@ -265,42 +442,7 @@ const makeWebChat = Effect.gen(function* () {
         }),
       );
 
-      const running: ActiveReply = { id: input.id, input: input.text, text: "", fiber: null };
-      active.set(accepted.sessionId, running);
-
-      const execute = agent.send(accepted.sessionId, input.text, { runId: input.id }).pipe(
-        Stream.runForEach((event) =>
-          Effect.sync(() => {
-            if (event.type === "text-delta") {
-              running.text += event.text;
-            }
-          }),
-        ),
-        Effect.onExit((exit) =>
-          Effect.gen(function* () {
-            const status = Exit.isSuccess(exit)
-              ? "completed"
-              : Cause.hasInterrupts(exit.cause)
-                ? "interrupted"
-                : "failed";
-
-            let error: string | null = null;
-
-            if (status === "interrupted") {
-              error = "Reply stopped. It will not restart automatically.";
-            }
-
-            if (status === "failed") {
-              error = "The reply failed. Run poppet chat show for details.";
-            }
-
-            yield* sql`UPDATE web_chat_submissions SET status = ${status}, error = ${error} WHERE id = ${input.id}`;
-          }).pipe(Effect.ensuring(Effect.sync(() => active.delete(accepted.sessionId)))),
-        ),
-        Effect.catchCause(() => Effect.void),
-      );
-
-      running.fiber = yield* execute.pipe(Effect.interruptible, Effect.forkIn(scope));
+      yield* start(accepted.sessionId, input.id, input.text, false);
 
       return accepted;
     }).pipe((effect) => submissions.withPermit(effect), Effect.uninterruptible);
@@ -348,6 +490,7 @@ const makeWebChat = Effect.gen(function* () {
     });
 
   return {
+    decide,
     remove,
     sessions: sessions("all"),
     sessionList,

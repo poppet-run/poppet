@@ -66,7 +66,7 @@ export const RevokedApprovalRules = Schema.Struct({
 
 export type RevokedApprovalRules = typeof RevokedApprovalRules.Type;
 
-const ActionRequest = Schema.Union([
+export const ActionRequest = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("bash"),
     command: Schema.String,

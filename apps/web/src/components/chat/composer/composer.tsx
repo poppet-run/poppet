@@ -7,6 +7,7 @@ import { RecoveryNotice } from "./recovery-notice";
 interface ComposerProps {
   readonly textareaRef: RefObject<HTMLTextAreaElement | null>;
   readonly draft: string;
+  readonly waiting: boolean;
   readonly active: boolean;
   readonly pending: boolean;
   readonly sending: boolean;
@@ -24,6 +25,7 @@ interface ComposerProps {
 export const Composer = ({
   textareaRef,
   draft,
+  waiting,
   active,
   pending,
   sending,
@@ -52,6 +54,7 @@ export const Composer = ({
     <ComposerForm
       textareaRef={textareaRef}
       draft={draft}
+      waiting={waiting}
       active={active}
       sendDisabled={sendDisabled}
       onDraftChange={onDraftChange}

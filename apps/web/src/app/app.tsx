@@ -37,6 +37,10 @@ export const App = () => {
   const draftKey = sessionId ?? "new";
   const draft = drafts[draftKey] ?? "";
   const active = snapshot?.active ?? null;
+
+  const waiting =
+    !active && snapshot?.receipts.some((receipt) => receipt.status === "accepted") === true;
+
   useEffect(() => store.start(), [store]);
 
   const navigate = (id: string | null) => {
@@ -77,7 +81,7 @@ export const App = () => {
         <ChatHeader
           session={snapshot?.session ?? null}
           reconnecting={!!sessionId && !connected}
-          deletable={connected && !active}
+          deletable={connected && !active && !waiting}
           onOpenSidebar={() => store.set("sidebar", true)}
           onDelete={store.remove}
         />
@@ -90,10 +94,13 @@ export const App = () => {
         <Composer
           textareaRef={composer}
           draft={draft}
+          waiting={waiting}
           active={!!active}
           pending={!!pending}
           sending={sending}
-          sendDisabled={sending || !!pending || !draft.trim() || (!!sessionId && !connected)}
+          sendDisabled={
+            waiting || sending || !!pending || !draft.trim() || (!!sessionId && !connected)
+          }
           atBottom={atBottom}
           error={error}
           onDraftChange={(value) =>
