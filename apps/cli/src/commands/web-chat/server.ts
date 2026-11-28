@@ -336,6 +336,10 @@ export const webHandler = (
       );
     }
 
+    if (request.method === "GET" && url.pathname === "/api/approvals") {
+      return Response.json(await run(chat.inbox));
+    }
+
     const approval = /^\/api\/approvals\/([a-f0-9-]{36})$/.exec(url.pathname);
 
     if (request.method === "POST" && approval?.[1]) {

@@ -4,7 +4,13 @@ import { useState } from "preact/hooks";
 import { api } from "../../../api/client";
 import type { ChatApproval } from "../../../api/protocol";
 
-export const ApprovalCard = ({ approval }: { approval: ChatApproval }) => {
+export const ApprovalCard = ({
+  approval,
+  onDecided,
+}: {
+  approval: ChatApproval;
+  onDecided?: () => void;
+}) => {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
@@ -14,6 +20,7 @@ export const ApprovalCard = ({ approval }: { approval: ChatApproval }) => {
 
     try {
       await api.decide(approval.id, decision);
+      onDecided?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save decision.");
     } finally {

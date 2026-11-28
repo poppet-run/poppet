@@ -6,11 +6,13 @@ import { Connecting } from "../components/auth/connecting";
 import { Login } from "../components/auth/login";
 import { ChatHeader } from "../components/chat/chat-header";
 import { Composer } from "../components/chat/composer/composer";
+import { ApprovalInbox } from "../components/chat/sidebar/approval-inbox";
 import { Sidebar } from "../components/chat/sidebar/sidebar";
 import { Transcript } from "../components/chat/transcript/transcript";
 import { createChatStore } from "../stores/chat-store";
 
 export const App = () => {
+  const [inbox, setInbox] = useState(false);
   const [store] = useState(createChatStore);
 
   const {
@@ -71,12 +73,17 @@ export const App = () => {
         sessions={sessions}
         source={source}
         gateways={gateways}
+        onOpenInbox={() => setInbox(true)}
         onFilter={store.filterSessions}
         sessionId={sessionId}
         onClose={() => store.set("sidebar", false)}
         onNavigate={navigate}
-        onSignOut={store.logout}
+        onSignOut={() => {
+          setInbox(false);
+          void store.logout();
+        }}
       />
+      {inbox && <ApprovalInbox onClose={() => setInbox(false)} />}
       <main class="flex min-w-0 flex-1 flex-col">
         <ChatHeader
           session={snapshot?.session ?? null}

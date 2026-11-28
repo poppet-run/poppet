@@ -36,6 +36,13 @@ export interface ChatApproval {
   readonly actor: string | null;
 }
 
+export interface InboxApproval {
+  readonly card: ChatApproval;
+  readonly conversation: string;
+  readonly action: string;
+  readonly expiresAt: number;
+}
+
 export interface ChatSnapshot {
   readonly session: ChatSession;
   readonly messages: ReadonlyArray<{

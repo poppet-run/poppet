@@ -89,7 +89,7 @@ const stringField = (value: Schema.JsonObject, key: string) => {
   return Schema.is(Schema.String)(entry) && entry.trim().length > 0 ? entry.trim() : null;
 };
 
-const summarizeRequest = (approval: Approval) => {
+export const summarizeRequest = (approval: Approval) => {
   if (approval.kind === "bash") {
     const command = stringField(approval.request, "command");
 
@@ -112,7 +112,7 @@ const summarizeRequest = (approval: Approval) => {
   return stringField(approval.request, "reason") ?? approval.kind;
 };
 
-const formatConversation = (requester: Schema.JsonObject) => {
+export const formatConversation = (requester: Schema.JsonObject) => {
   const adapter = stringField(requester, "adapter");
   const conversationId = stringField(requester, "conversationId");
 

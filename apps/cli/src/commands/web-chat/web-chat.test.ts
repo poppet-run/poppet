@@ -5,15 +5,29 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { AgentLive, Bash, ChatSettings, defaultPolicy, ModelResolver, Pages } from "@poppet/agent";
+import {
+  AgentLive,
+  Bash,
+  ChatSettings,
+  defaultPolicy,
+  ModelResolver,
+  Pages,
+  SkillsLive,
+} from "@poppet/agent";
 import { AppConfig } from "@poppet/config";
-import { gatewaySchema } from "@poppet/gateway";
+import {
+  gatewaySchema,
+  Gateway,
+  GatewayLive,
+  GatewayAdapter,
+  GatewayRepositoryLive,
+} from "@poppet/gateway";
 import { LocalMemoryLive } from "@poppet/memory";
 import { invalidRequest } from "@poppet/provider";
 import type { ModelOperations, Output } from "@poppet/provider";
 import { Store, StoreLive, migrate } from "@poppet/store";
 import { taskSchema } from "@poppet/tasks";
-import type { SessionList } from "@poppet/web/protocol";
+import type { InboxApproval, SessionList } from "@poppet/web/protocol";
 import { Deferred, Effect, Layer, ManagedRuntime, Schema, Stream } from "effect";
 import { SqlClient } from "effect/sql";
 
@@ -207,6 +221,129 @@ const fixture = async (
 };
 
 describe("web chat", () => {
+  test("when web and Discord decide the same requests, settles both prompts and delivers one reply to Discord", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "poppet-web-discord-"));
+    const executed: Array<string> = [];
+    const app = await fixture(directory, undefined, executed);
+    const prompts: Array<string> = [];
+    const updates = new Map<string, string>();
+    const delivered: Array<string> = [];
+
+    const channel = Layer.succeed(GatewayAdapter, {
+      id: "discord",
+      accountId: Effect.succeed("bot"),
+      policy: { ownerId: "owner", scopeId: "guild" },
+      messages: Stream.never,
+      checkAccess: () => Effect.void,
+      destination: () => Effect.succeed("thread"),
+      typing: () => Effect.void,
+      mark: () => Effect.void,
+      status: Effect.succeed({ connected: true }),
+      textLimit: 2000,
+      naming: {
+        sanitize: (title) => title,
+        conversation: () => Effect.succeed({ id: "thread", managedName: null }),
+        current: () => Effect.die("Unexpected lookup"),
+        rename: () => Effect.die("Unexpected rename"),
+        changes: Stream.never,
+      },
+      send: (conversation, text) =>
+        Effect.sync(() => {
+          delivered.push(`${conversation}: ${text}`);
+
+          return "reply";
+        }),
+      approvals: {
+        actions: Stream.never,
+        send: (_conversation, prompt) =>
+          Effect.sync(() => {
+            prompts.push(prompt.requestId);
+
+            return prompt.requestId;
+          }),
+        update: (_conversation, _message, id, state) =>
+          Effect.sync(() => {
+            updates.set(id, state);
+          }),
+      },
+    });
+
+    try {
+      const cookie = await app.login();
+      expect((await app.send("/api/approvals")).status).toBe(401);
+
+      const inbox = () =>
+        Effect.promise(async (): Promise<Array<InboxApproval>> =>
+          (await app.send("/api/approvals", undefined, cookie)).json(),
+        );
+
+      const approve = (id: string) =>
+        Effect.promise(async () => {
+          const response = await app.send(`/api/approvals/${id}`, { decision: "approved" }, cookie);
+          expect(await response.json()).toEqual({ state: "approved" });
+        });
+
+      await app.runtime.runPromise(
+        Effect.gen(function* () {
+          const gateway = yield* Gateway;
+
+          const source = {
+            scopeId: "guild",
+            parentId: "parent",
+            conversationId: "thread",
+            senderId: "owner",
+            text: "Run both commands",
+            mentioned: true,
+            messageId: "start",
+          };
+
+          yield* gateway.accept(source);
+          yield* gateway.processNext;
+          const [first] = yield* inbox();
+          expect(first).toMatchObject({
+            action: "first",
+            conversation: expect.stringContaining("discord:thread"),
+            expiresAt: expect.any(Number),
+            card: { id: prompts[0], codeBlock: { content: "first" } },
+          });
+          yield* approve(first!.card.id);
+          expect(yield* inbox()).toEqual([]);
+          yield* gateway.sweepApprovals;
+          yield* gateway.processNext;
+          const [second] = yield* inbox();
+          expect(second?.card.id).toBe(prompts[1]);
+          yield* Effect.all(
+            [
+              gateway.answerApproval({
+                requestId: second!.card.id,
+                decision: "approve",
+                source: { ...source, messageId: second!.card.id },
+                reply: () => Effect.void,
+              }),
+              approve(second!.card.id),
+            ],
+            { concurrency: "unbounded" },
+          );
+          yield* gateway.sweepApprovals;
+          yield* gateway.processNext;
+          expect(yield* gateway.processNext).toBe(false);
+          expect(yield* gateway.deliverNext).toBe(true);
+          expect(yield* gateway.deliverNext).toBe(false);
+          expect(delivered).toEqual(["thread: Finished"]);
+          expect(executed).toEqual(["first", "second"]);
+          expect([...updates.values()]).toEqual(["approved", "approved"]);
+          expect(yield* inbox()).toEqual([]);
+        }).pipe(
+          Effect.provide(
+            GatewayLive.pipe(Layer.provide([channel, GatewayRepositoryLive, SkillsLive])),
+          ),
+        ),
+      );
+    } finally {
+      await app.runtime.dispose();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
   test("when a parked web reply survives restart and two tabs approve it, executes once and displays the next approval", async () => {
     const directory = await mkdtemp(join(tmpdir(), "poppet-web-approval-"));
     const executed: Array<string> = [];

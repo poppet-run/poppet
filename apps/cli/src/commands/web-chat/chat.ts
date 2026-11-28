@@ -5,10 +5,12 @@ import { AppConfig } from "@poppet/config";
 import { formatApprovalPrompt, gatewaySchema } from "@poppet/gateway";
 import { outputText } from "@poppet/provider";
 import { Store, decodeRow, decodeRows, migrate, packageSchema } from "@poppet/store";
+import type { Approval } from "@poppet/store";
 import { taskSchema } from "@poppet/tasks";
 import type {
   SessionList,
   ChatApproval,
+  InboxApproval,
   ChatSession,
   ChatSnapshot,
   Receipt,
@@ -29,7 +31,11 @@ import {
 } from "effect";
 import { SqlClient } from "effect/sql";
 
-import { ActionRequest } from "#src/commands/approvals/approvals";
+import {
+  ActionRequest,
+  formatConversation,
+  summarizeRequest,
+} from "#src/commands/approvals/approvals";
 import { removeSessions } from "#src/commands/chat/chat";
 
 export class WebChatError extends Data.TaggedError("WebChatError")<{
@@ -97,6 +103,32 @@ const summary = (session: ChatSession): ChatSession => ({
   updatedAt: session.updatedAt,
 });
 
+const approvalCard = (approval: Approval) =>
+  Effect.gen(function* () {
+    const request = yield* Schema.decodeUnknownEffect(ActionRequest)(approval.request);
+
+    const prompt = formatApprovalPrompt({
+      requestId: approval.id,
+      approval: request,
+      expiresAt: approval.expiresAt,
+      expiresAfterSeconds: (approval.expiresAt - approval.createdAt) / 1000,
+    });
+
+    return {
+      id: approval.id,
+      title: prompt.title,
+      summary: prompt.summary,
+      fields: prompt.fields,
+      ...(prompt.args && { args: prompt.args }),
+      ...(prompt.codeBlock && { codeBlock: prompt.codeBlock }),
+      ...(prompt.truncated && { details: prompt.canonicalPayload }),
+      state: approval.state,
+      actor: approval.decidedBy
+        ? `${approval.decidedBy.adapter} (${approval.decidedBy.senderId})`
+        : null,
+    } satisfies ChatApproval;
+  });
+
 const makeWebChat = Effect.gen(function* () {
   const store = yield* Store;
   const agent = yield* Agent;
@@ -151,28 +183,7 @@ const makeWebChat = Effect.gen(function* () {
           continue;
         }
 
-        const request = yield* Schema.decodeUnknownEffect(ActionRequest)(approval.request);
-
-        const prompt = formatApprovalPrompt({
-          requestId: approval.id,
-          approval: request,
-          expiresAt: approval.expiresAt,
-          expiresAfterSeconds: (approval.expiresAt - approval.createdAt) / 1000,
-        });
-
-        cards.set(JSON.stringify([approval.runId, approval.callId]), {
-          id: approval.id,
-          title: prompt.title,
-          summary: prompt.summary,
-          fields: prompt.fields,
-          ...(prompt.args && { args: prompt.args }),
-          ...(prompt.codeBlock && { codeBlock: prompt.codeBlock }),
-          ...(prompt.truncated && { details: prompt.canonicalPayload }),
-          state: approval.state,
-          actor: approval.decidedBy
-            ? `${approval.decidedBy.adapter} (${approval.decidedBy.senderId})`
-            : null,
-        });
+        cards.set(JSON.stringify([approval.runId, approval.callId]), yield* approvalCard(approval));
       }
 
       return {
@@ -346,11 +357,30 @@ const makeWebChat = Effect.gen(function* () {
     Effect.forkScoped,
   );
 
+  const inbox = Effect.gen(function* () {
+    yield* store.expireApprovals;
+
+    return yield* Effect.forEach(yield* store.pendingApprovals, (approval) =>
+      Effect.gen(function* () {
+        const source = formatConversation(approval.requester);
+        const run = yield* store.run(approval.runId);
+        const session = run && (yield* store.session(run.sessionId));
+
+        return {
+          card: yield* approvalCard(approval),
+          action: summarizeRequest(approval),
+          conversation: session ? `${source} · ${session.title || session.id}` : source,
+          expiresAt: approval.expiresAt,
+        } satisfies InboxApproval;
+      }),
+    );
+  });
+
   const decide = (id: string, decision: "approved" | "denied") =>
     Effect.gen(function* () {
       const approval = yield* store.approval(id);
 
-      if (!approval || approval.requester.surface !== "web" || !(yield* receipt(approval.runId))) {
+      if (!approval) {
         return yield* new WebChatError({ status: 404, message: "Approval not found." });
       }
 
@@ -491,6 +521,7 @@ const makeWebChat = Effect.gen(function* () {
 
   return {
     decide,
+    inbox,
     remove,
     sessions: sessions("all"),
     sessionList,
